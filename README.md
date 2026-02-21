@@ -114,7 +114,60 @@ Follow the rest of the framework’s docs (registration, menu callbacks, etc.) a
 
 ---
 
-## 4. Building Your Mods
+## 4. Configuration File Location
+
+Mod config files should be saved next to the DLL for portability and better distribution.
+
+### Setting Up Portable Config Location
+
+In your config manager (e.g., `MasteryManager.cpp`), implement the `GetConfigPath()` method:
+
+```cpp
+std::filesystem::path Manager::GetConfigPath() const
+{
+	// Get the DLL directory and place config next to the DLL
+	wchar_t dllPath[MAX_PATH];
+	GetModuleFileNameW(GetModuleHandleW(L"YourModName.dll"), dllPath, MAX_PATH);
+	std::filesystem::path dllDir = std::filesystem::path(dllPath).parent_path();
+	return dllDir / "YourModName.json";
+}
+```
+
+**Benefits:**
+- ✅ Config files stay with your mod files
+- ✅ Easier distribution and backups
+- ✅ No conflicts between different mod installations
+- ✅ Users can keep multiple config versions
+
+---
+
+## 4.5. Save Data Behavior
+
+**Important:** Mod save data is stored **per save game file**, not globally across all playthroughs.
+
+### Save Data vs Config Data
+
+**Save Data (SKSE Serialization):**
+- Stored in each Skyrim `.ess` save file
+- Contains: mastery levels, kill counts, equipped time
+- **Per-playthrough**: Loading an older save restores progress as it was when saved
+- If you load a save from before gaining mastery, you won't have those levels
+
+**Config Data (JSON file):**
+- Stored next to DLL (portable)
+- Contains: settings, multipliers, thresholds, enabled weapons
+- **Global**: Same config applies to all saves/playthroughs
+
+### Examples:
+- Save from Day 1: No mastery data → fresh start
+- Save from Day 30: Full mastery progress → loads with all progress
+- New game: No mastery data → fresh start (even if other saves have progress)
+
+This is standard SKSE behavior. Players can backup/modify individual save files as needed.
+
+---
+
+## 6. Building Your Mods
 
 ### Prerequisites
 - Visual Studio 2022 with C++ workload
@@ -142,7 +195,7 @@ Built DLLs are placed in `.bin/x64-release/` or `.bin/x64-debug/` at the project
 
 ---
 
-## 5. Quick Reference
+## 7. Quick Reference
 
 | Task | Action |
 |------|--------|

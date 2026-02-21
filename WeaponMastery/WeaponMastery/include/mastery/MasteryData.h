@@ -13,14 +13,15 @@ namespace MITHRAS::MASTERY
 
 	struct ItemKey
 	{
-		RE::FormID baseFormID{ 0 };
+		std::string baseName;
 		std::uint16_t uniqueID{ 0 };
+		RE::WEAPON_TYPE weaponType{ RE::WEAPON_TYPE::kHandToHandMelee };
 		bool leftHand{ false };
 		bool shield{ false };
 
 		[[nodiscard]] bool operator==(const ItemKey& a_rhs) const noexcept
 		{
-			return baseFormID == a_rhs.baseFormID && uniqueID == a_rhs.uniqueID && leftHand == a_rhs.leftHand && shield == a_rhs.shield;
+			return baseName == a_rhs.baseName && uniqueID == a_rhs.uniqueID && weaponType == a_rhs.weaponType && leftHand == a_rhs.leftHand && shield == a_rhs.shield;
 		}
 	};
 
@@ -28,8 +29,9 @@ namespace MITHRAS::MASTERY
 	{
 		[[nodiscard]] std::size_t operator()(const ItemKey& a_key) const noexcept
 		{
-			std::size_t hash = static_cast<std::size_t>(a_key.baseFormID);
+			std::size_t hash = std::hash<std::string>{}(a_key.baseName);
 			hash ^= static_cast<std::size_t>(a_key.uniqueID) << 1;
+			hash ^= static_cast<std::size_t>(a_key.weaponType) << 8;
 			hash ^= static_cast<std::size_t>(a_key.leftHand) << 20;
 			hash ^= static_cast<std::size_t>(a_key.shield) << 21;
 			return hash;
@@ -92,11 +94,6 @@ namespace MITHRAS::MASTERY
 		std::array<WeaponTypeBonusConfig, kWeaponTypeCount> weaponTypeBonuses{};
 	};
 
-	[[nodiscard]] inline std::string ToString(const ItemKey& a_key)
-	{
-		return std::format("{:08X}:{:04X}:{}:{}", a_key.baseFormID, a_key.uniqueID, a_key.leftHand ? "L" : "R", a_key.shield ? "S" : "W");
-	}
-
 	[[nodiscard]] inline std::string_view WeaponTypeName(RE::WEAPON_TYPE a_type)
 	{
 		switch (a_type) {
@@ -123,6 +120,11 @@ namespace MITHRAS::MASTERY
 			default:
 				return "Unknown";
 		}
+	}
+
+	[[nodiscard]] inline std::string ToString(const ItemKey& a_key)
+	{
+		return std::format("{}:{:04X}:{}:{}:{}", a_key.baseName, a_key.uniqueID, std::string(WeaponTypeName(a_key.weaponType)), a_key.leftHand ? "L" : "R", a_key.shield ? "S" : "W");
 	}
 
 	[[nodiscard]] inline std::optional<RE::WEAPON_TYPE> GetWeaponTypeFromForm(const RE::TESForm* a_form)

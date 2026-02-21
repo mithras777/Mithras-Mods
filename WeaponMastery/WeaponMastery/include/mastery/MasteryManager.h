@@ -28,6 +28,8 @@ namespace MITHRAS::MASTERY
 		[[nodiscard]] std::string GetCurrentWeaponTypeName() const;
 		[[nodiscard]] MasteryStats GetStats(const ItemKey& a_key) const;
 		[[nodiscard]] std::string GetItemName(const ItemKey& a_key) const;
+		[[nodiscard]] static std::string ExtractBaseWeaponName(const std::string& a_fullName);
+		[[nodiscard]] const std::unordered_map<ItemKey, MasteryStats, ItemKeyHash>& GetMasteryData() const { return m_mastery; }
 		[[nodiscard]] std::size_t GetDatabaseSize() const;
 
 		[[nodiscard]] static MasteryConfig DefaultConfig();

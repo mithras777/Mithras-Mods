@@ -208,12 +208,55 @@ namespace UI
 			auto* manager = MITHRAS::MASTERY::Manager::GetSingleton();
 			DrawResetButton("Defaults##debug", "Mithras: Reset config defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
-			ImGui::SeparatorText("Database");
-			ImGui::Text("Tracked items: %u", static_cast<unsigned>(manager->GetDatabaseSize()));
+			ImGui::SeparatorText("Mastery Database");
 
-			if (ImGui::Button("Clear Mastery Database")) {
-				manager->ClearDatabase();
-				RE::DebugNotification("Mithras: Mastery database cleared");
+			// Get all mastery data
+			const auto& masteryData = manager->GetMasteryData();
+
+			if (masteryData.empty()) {
+				ImGui::Text("No weapons tracked yet.");
+			} else {
+				if (ImGui::BeginTable("MasteryTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Sortable)) {
+					ImGui::TableSetupColumn("Weapon Name", ImGuiTableColumnFlags_WidthStretch);
+					ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+					ImGui::TableSetupColumn("Kills", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+					ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+					ImGui::TableHeadersRow();
+
+					for (const auto& [key, stats] : masteryData) {
+						ImGui::TableNextRow();
+
+						// Weapon Name
+						ImGui::TableSetColumnIndex(0);
+						ImGui::TextUnformatted(manager->GetItemName(key).c_str());
+
+						// Level
+						ImGui::TableSetColumnIndex(1);
+						ImGui::Text("%u", stats.level);
+
+						// Kills
+						ImGui::TableSetColumnIndex(2);
+						ImGui::Text("%u", stats.kills);
+
+						// Type
+						ImGui::TableSetColumnIndex(3);
+						if (key.shield) {
+							ImGui::Text("Shield");
+						} else {
+							ImGui::Text("Weapon");
+						}
+					}
+
+					ImGui::EndTable();
+				}
+
+				ImGui::Separator();
+				if (ImGui::Button("Clear Mastery Database")) {
+					manager->ClearDatabase();
+					RE::DebugNotification("Mithras: Mastery database cleared");
+				}
+				ImGui::SameLine();
+				ImGui::Text("Total tracked: %u", static_cast<unsigned>(masteryData.size()));
 			}
 		}
 	}

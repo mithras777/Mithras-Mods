@@ -223,10 +223,23 @@ namespace MITHRAS::MASTERY
 
 		std::scoped_lock lock(m_lock);
 		if (isShield) {
-			ItemKey key{ a_event.baseObject, a_event.uniqueID, true, true };
+			std::string baseName;
+			RE::WEAPON_TYPE weaponType = RE::WEAPON_TYPE::kHandToHandMelee; // Shields don't have weapon types
+			if (const char* name = form->GetName(); name && name[0] != '\0') {
+				baseName = ExtractBaseWeaponName(name);
+			}
+			ItemKey key{ baseName, a_event.uniqueID, weaponType, true, true };
 			SetEquippedKeyLocked(m_shield, a_event.equipped ? std::optional<ItemKey>(key) : std::nullopt);
 		} else {
-			ItemKey key{ a_event.baseObject, a_event.uniqueID, false, false };
+			std::string baseName;
+			RE::WEAPON_TYPE weaponType = RE::WEAPON_TYPE::kHandToHandMelee;
+			if (const auto weaponTypeOpt = GetWeaponTypeFromForm(form); weaponTypeOpt.has_value()) {
+				weaponType = *weaponTypeOpt;
+			}
+			if (const char* name = form->GetName(); name && name[0] != '\0') {
+				baseName = ExtractBaseWeaponName(name);
+			}
+			ItemKey key{ baseName, a_event.uniqueID, weaponType, false, false };
 			SetEquippedKeyLocked(m_weapon, a_event.equipped ? std::optional<ItemKey>(key) : std::nullopt);
 		}
 		ReapplyBonuses();
@@ -331,8 +344,14 @@ namespace MITHRAS::MASTERY
 		const std::uint32_t count = static_cast<std::uint32_t>(m_mastery.size());
 		a_intfc->WriteRecordData(count);
 		for (const auto& [key, stats] : m_mastery) {
-			a_intfc->WriteRecordData(key.baseFormID);
+			// Write baseName string
+			const std::uint32_t nameLength = static_cast<std::uint32_t>(key.baseName.size());
+			a_intfc->WriteRecordData(nameLength);
+			for (char c : key.baseName) {
+				a_intfc->WriteRecordData(c);
+			}
 			a_intfc->WriteRecordData(key.uniqueID);
+			a_intfc->WriteRecordData(key.weaponType);
 			a_intfc->WriteRecordData(key.leftHand);
 			a_intfc->WriteRecordData(key.shield);
 			a_intfc->WriteRecordData(stats.kills);
@@ -410,8 +429,17 @@ namespace MITHRAS::MASTERY
 				for (std::uint32_t i = 0; i < count; ++i) {
 					ItemKey key{};
 					MasteryStats stats{};
-					a_intfc->ReadRecordData(key.baseFormID);
+					// Read baseName string
+					std::uint32_t nameLength = 0;
+					a_intfc->ReadRecordData(nameLength);
+					key.baseName.resize(nameLength);
+					for (std::uint32_t j = 0; j < nameLength; ++j) {
+						char c;
+						a_intfc->ReadRecordData(c);
+						key.baseName[j] = c;
+					}
 					a_intfc->ReadRecordData(key.uniqueID);
+					a_intfc->ReadRecordData(key.weaponType);
 					a_intfc->ReadRecordData(key.leftHand);
 					a_intfc->ReadRecordData(key.shield);
 					a_intfc->ReadRecordData(stats.kills);
@@ -502,12 +530,38 @@ namespace MITHRAS::MASTERY
 
 	std::string Manager::GetItemName(const ItemKey& a_key) const
 	{
-		if (const auto* form = RE::TESForm::LookupByID(a_key.baseFormID)) {
-			if (const char* name = form->GetName(); name && name[0] != '\0') {
-				return name;
+		return a_key.baseName;
+	}
+
+	std::string Manager::ExtractBaseWeaponName(const std::string& a_fullName)
+	{
+		// Common enchantments and effects to strip
+		static const std::vector<std::string> suffixes = {
+			" of Fire", " of Frost", " of Shock", " of Poison", " of Absorb Health", " of Absorb Magicka", " of Absorb Stamina",
+			" of Soul Trap", " of Fear", " of Silence", " of Paralysis", " of Banishment",
+			" of Burning", " of Freezing", " of Shocking", " of Draining", " of Weakening",
+			" of the Vampire", " of the Mage", " of the Warrior", " of the Thief",
+			" of Flames", " of Ice", " of Storms", " of Venom",
+			" of Health", " of Magicka", " of Stamina",
+			" of Regeneration", " of Restoration", " of Fortification",
+			" of Damage", " of Destruction", " of Alteration", " of Conjuration", " of Restoration", " of Illusion",
+			" of the Crusader", " of the Sentinel", " of the Guardian", " of the Beast", " of the Dragon",
+			" of the Sun", " of the Moon", " of the Stars", " of the Night",
+			" of Arcane", " of Mystic", " of Ancient", " of Divine", " of Daedric"
+		};
+
+		std::string result = a_fullName;
+
+		// Remove common suffixes
+		for (const auto& suffix : suffixes) {
+			if (result.size() > suffix.size() &&
+				result.substr(result.size() - suffix.size()) == suffix) {
+				result = result.substr(0, result.size() - suffix.size());
+				break; // Only remove one suffix
 			}
 		}
-		return std::format("0x{:08X}", a_key.baseFormID);
+
+		return result;
 	}
 
 	std::size_t Manager::GetDatabaseSize() const
@@ -586,11 +640,11 @@ namespace MITHRAS::MASTERY
 
 	std::filesystem::path Manager::GetConfigPath() const
 	{
-		auto base = std::filesystem::path(DLLMAIN::Plugin::GetSingleton()->Info().gameDirectory);
-		if (base.empty()) {
-			base = std::filesystem::current_path();
-		}
-		return base / "Data" / "SKSE" / "Plugins" / "WeaponMasterySKSE.json";
+		// Get the DLL directory and place config next to the DLL
+		wchar_t dllPath[MAX_PATH];
+		GetModuleFileNameW(GetModuleHandleW(L"WeaponMastery.dll"), dllPath, MAX_PATH);
+		std::filesystem::path dllDir = std::filesystem::path(dllPath).parent_path();
+		return dllDir / "WeaponMasterySKSE.json";
 	}
 
 	void Manager::RefreshEquippedFromPlayer()
@@ -608,6 +662,15 @@ namespace MITHRAS::MASTERY
 
 		if (rightEntry && rightEntry->object && IsTrackedWeapon(rightEntry->object)) {
 			std::uint16_t rightUniqueID = 0;
+			std::string rightBaseName;
+			RE::WEAPON_TYPE rightWeaponType = RE::WEAPON_TYPE::kHandToHandMelee;
+			if (const auto weaponTypeOpt = GetWeaponTypeFromForm(rightEntry->object); weaponTypeOpt.has_value()) {
+				rightWeaponType = *weaponTypeOpt;
+			}
+			if (const char* name = rightEntry->object->GetName(); name && name[0] != '\0') {
+				rightBaseName = ExtractBaseWeaponName(name);
+			}
+
 			if (rightEntry->extraLists) {
 				for (const auto& xList : *rightEntry->extraLists) {
 					if (xList) {
@@ -619,10 +682,16 @@ namespace MITHRAS::MASTERY
 					}
 				}
 			}
-			rightKey = ItemKey{ rightEntry->object->GetFormID(), rightUniqueID, false, false };
+			rightKey = ItemKey{ rightBaseName, rightUniqueID, rightWeaponType, false, false };
 		}
 		if (leftEntry && leftEntry->object && IsShield(leftEntry->object)) {
 			std::uint16_t leftUniqueID = 0;
+			std::string leftBaseName;
+			RE::WEAPON_TYPE leftWeaponType = RE::WEAPON_TYPE::kHandToHandMelee; // Shields don't have weapon types
+			if (const char* name = leftEntry->object->GetName(); name && name[0] != '\0') {
+				leftBaseName = ExtractBaseWeaponName(name);
+			}
+
 			if (leftEntry->extraLists) {
 				for (const auto& xList : *leftEntry->extraLists) {
 					if (xList) {
@@ -634,7 +703,7 @@ namespace MITHRAS::MASTERY
 					}
 				}
 			}
-			shieldKey = ItemKey{ leftEntry->object->GetFormID(), leftUniqueID, true, true };
+			shieldKey = ItemKey{ leftBaseName, leftUniqueID, leftWeaponType, true, true };
 		}
 
 		SetEquippedKeyLocked(m_weapon, rightKey);
@@ -692,8 +761,7 @@ namespace MITHRAS::MASTERY
 		if (!m_weapon.key.has_value()) {
 			return std::nullopt;
 		}
-		const auto* form = RE::TESForm::LookupByID(m_weapon.key->baseFormID);
-		return GetWeaponTypeFromForm(form);
+		return m_weapon.key->weaponType;
 	}
 
 	void Manager::RefreshLevelLocked(MasteryStats& a_stats) const
