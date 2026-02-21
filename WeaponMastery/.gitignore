@@ -90,6 +90,8 @@ packages/
 # Skyrim specific
 # Ignore extern directories (contains CommonLibSSE and dependencies) in all mod projects
 */extern/
+# Ignore shared folders
+/Shared/
 # But keep the framework headers if they're in the repo root
 !/SKSEMenuFramework/
 

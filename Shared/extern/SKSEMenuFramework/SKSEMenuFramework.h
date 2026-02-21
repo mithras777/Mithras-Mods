@@ -5,7 +5,7 @@
 #include <locale>
 #include <string>
 
-static auto menuFramework = GetModuleHandle(L"SKSEMenuFramework");
+static auto menuFramework = GetModuleHandleA("SKSEMenuFramework");
 #define MENU_WINDOW SKSEMenuFramework::Model::WindowInterface*
 
 namespace SKSEMenuFramework {
