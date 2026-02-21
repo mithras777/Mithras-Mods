@@ -108,9 +108,10 @@ namespace UI
 
 			DrawResetButton("Defaults##overview", "Mithras: Reset overview defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
-			ImGui::SeparatorText("Core");
-			ImGui::Checkbox("Enable Weapon Mastery", &config.enabled);
-			ImGui::SliderFloat("Global gain multiplier", &config.gainMultiplier, 0.1f, 10.0f, "%.2f");
+			if (ImGui::CollapsingHeader("Core", ImGuiTreeNodeFlags_DefaultOpen)) {
+				ImGui::Checkbox("Enable Weapon Mastery", &config.enabled);
+				ImGui::SliderFloat("Global gain multiplier", &config.gainMultiplier, 0.1f, 10.0f, "%.2f");
+			}
 
 			if (const auto key = manager->GetCurrentWeaponKey(); key.has_value()) {
 				const auto stats = manager->GetStats(*key);
@@ -207,7 +208,7 @@ namespace UI
 		{
 			auto* manager = MITHRAS::MASTERY::Manager::GetSingleton();
 
-			ImGui::SeparatorText("Mastery Database");
+			// No separator needed
 
 			// Get all mastery data
 			const auto& masteryData = manager->GetMasteryData();
@@ -218,9 +219,9 @@ namespace UI
 				// Total tracked and Clear button on same line
 				ImGui::Text("Total tracked: %u", static_cast<unsigned>(masteryData.size()));
 				ImGui::SameLine(ImGui::GetWindowWidth() - 150.0f);
-				if (ImGui::Button("Clear Mastery Database")) {
+				if (ImGui::Button("Reset")) {
 					manager->ClearDatabase();
-					RE::DebugNotification("Weapon Mastery: Database cleared");
+					RE::DebugNotification("Weapon Mastery: Database reset");
 				}
 
 				ImGui::Separator();
