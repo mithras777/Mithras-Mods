@@ -174,6 +174,19 @@ This is standard SKSE behavior. Players can backup/modify individual save files 
 - Git
 - CMake 3.24+
 
+### Optional: Shared Dependencies (Faster Setup)
+
+To avoid re-downloading dependencies for each new mod:
+
+1. Create a `Shared/` folder in your modding root (same level as this README)
+2. Copy dependencies from an existing mod's `extern/` folder:
+   - `CommonLibSSE/extern/openvr/`
+   - `CommonLibSSE/extern/spdlog/`
+   - `CommonLibSSE/extern/DirectXTK/`
+   - `CommonLibSSE/` (entire folder)
+
+The build system will automatically detect and use shared dependencies instead of downloading them.
+
 ### Build Commands
 ```bash
 # Configure and build Release
