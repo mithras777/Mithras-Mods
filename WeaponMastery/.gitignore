@@ -88,8 +88,8 @@ node_modules/
 packages/
 
 # Skyrim specific
-# Ignore extern directory (contains CommonLibSSE and dependencies)
-/WeaponMastery/extern/
+# Ignore extern directories (contains CommonLibSSE and dependencies) in all mod projects
+*/extern/
 # But keep the framework headers if they're in the repo root
 !/SKSEMenuFramework/
 

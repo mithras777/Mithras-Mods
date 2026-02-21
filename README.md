@@ -114,7 +114,35 @@ Follow the rest of the framework’s docs (registration, menu callbacks, etc.) a
 
 ---
 
-## 4. Quick Reference
+## 4. Building Your Mods
+
+### Prerequisites
+- Visual Studio 2022 with C++ workload
+- Git
+- CMake 3.24+
+
+### Build Commands
+```bash
+# Configure and build Release
+cmake --preset vs2022-ng-rel
+cmake --build --preset vs2022-ng-rel
+
+# Or use the interactive batch script
+./CMake_Build.bat
+```
+
+### Available Build Presets
+- `vs2022-ng-rel` - NG variant, RelWithDebInfo (recommended for release)
+- `vs2022-ng-debug` - NG variant, Debug (for development)
+- `vs2022-po3-rel` - PowerOf3 variant, RelWithDebInfo
+- `vs2022-po3-debug` - PowerOf3 variant, Debug
+
+### Output Location
+Built DLLs are placed in `.bin/x64-release/` or `.bin/x64-debug/` at the project root.
+
+---
+
+## 5. Quick Reference
 
 | Task | Action |
 |------|--------|
