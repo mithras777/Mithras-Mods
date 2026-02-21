@@ -90,12 +90,12 @@ namespace UI
 			return;
 		}
 
-		SKSEMenuFramework::SetSection("Mithras Weapon Mastery");
+		SKSEMenuFramework::SetSection("Weapon Mastery");
 		SKSEMenuFramework::AddSectionItem("Overview", MasteryPanel::Render);
 		SKSEMenuFramework::AddSectionItem("Progression", ProgressionPanel::Render);
 		SKSEMenuFramework::AddSectionItem("Bonuses", BonusesPanel::Render);
 		SKSEMenuFramework::AddSectionItem("Debug", DebugPanel::Render);
-		LOG_INFO("Registered SKSE Menu Framework section: Mithras Weapon Mastery");
+		LOG_INFO("Registered SKSE Menu Framework section: Weapon Mastery");
 	}
 
 	namespace MasteryPanel
@@ -112,17 +112,15 @@ namespace UI
 			ImGui::Checkbox("Enable Weapon Mastery", &config.enabled);
 			ImGui::SliderFloat("Global gain multiplier", &config.gainMultiplier, 0.1f, 10.0f, "%.2f");
 
-			ImGui::SeparatorText("Current Weapon");
 			if (const auto key = manager->GetCurrentWeaponKey(); key.has_value()) {
 				const auto stats = manager->GetStats(*key);
-				ImGui::Text("Name: %s", manager->GetItemName(*key).c_str());
+				ImGui::Text("Currently Equipped: %s", manager->GetItemName(*key).c_str());
 				ImGui::Text("Type: %s", manager->GetCurrentWeaponTypeName().c_str());
-				ImGui::Text("Key: %s", MITHRAS::MASTERY::ToString(*key).c_str());
 				ImGui::Text("Mastery level: %u", stats.level);
 				ImGui::Text("Kills: %u", stats.kills);
 				ImGui::Text("Equipped time: %.1fs", stats.secondsEquipped);
 			} else {
-				ImGui::Text("No weapon equipped.");
+				ImGui::Text("Currently Equipped: None");
 			}
 
 			if (ImGui::Button("Reset Equipped Item Mastery")) {
@@ -144,24 +142,26 @@ namespace UI
 
 			DrawResetButton("Defaults##progression", "Mithras: Reset progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
-			ImGui::SeparatorText("Experience Sources");
-			if (ImGui::BeginTable("gainSources", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV)) {
-				ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Checkbox("Gain from kills", &config.gainFromKills);
-				ImGui::TableSetColumnIndex(1); ImGui::Checkbox("Gain from hits", &config.gainFromHits);
-				ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Checkbox("Gain from power hits", &config.gainFromPowerHits);
-				ImGui::TableSetColumnIndex(1); ImGui::Checkbox("Gain from blocks", &config.gainFromBlocks);
-				ImGui::EndTable();
+			if (ImGui::CollapsingHeader("Experience Sources", ImGuiTreeNodeFlags_DefaultOpen)) {
+				if (ImGui::BeginTable("gainSources", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV)) {
+					ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Checkbox("Gain from kills", &config.gainFromKills);
+					ImGui::TableSetColumnIndex(1); ImGui::Checkbox("Gain from hits", &config.gainFromHits);
+					ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::Checkbox("Gain from power hits", &config.gainFromPowerHits);
+					ImGui::TableSetColumnIndex(1); ImGui::Checkbox("Gain from blocks", &config.gainFromBlocks);
+					ImGui::EndTable();
+				}
+				ImGui::Checkbox("Time-based leveling", &config.timeBasedLeveling);
 			}
-			ImGui::Checkbox("Time-based leveling", &config.timeBasedLeveling);
 
-			ImGui::SeparatorText("Kill Thresholds");
-			if (config.thresholds.size() < 5) {
-				config.thresholds.resize(5, 200);
-			}
-			for (std::size_t i = 0; i < config.thresholds.size(); ++i) {
-				int value = static_cast<int>(config.thresholds[i]);
-				if (ImGui::InputInt(std::format("Level {} requirement", i + 1).c_str(), &value)) {
-					config.thresholds[i] = static_cast<std::uint32_t>(std::max(1, value));
+			if (ImGui::CollapsingHeader("Kill Thresholds", ImGuiTreeNodeFlags_DefaultOpen)) {
+				if (config.thresholds.size() < 5) {
+					config.thresholds.resize(5, 200);
+				}
+				for (std::size_t i = 0; i < config.thresholds.size(); ++i) {
+					int value = static_cast<int>(config.thresholds[i]);
+					if (ImGui::InputInt(std::format("Level {} requirement", i + 1).c_str(), &value)) {
+						config.thresholds[i] = static_cast<std::uint32_t>(std::max(1, value));
+					}
 				}
 			}
 
@@ -206,7 +206,6 @@ namespace UI
 		void __stdcall Render()
 		{
 			auto* manager = MITHRAS::MASTERY::Manager::GetSingleton();
-			DrawResetButton("Defaults##debug", "Mithras: Reset config defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			ImGui::SeparatorText("Mastery Database");
 
@@ -216,6 +215,16 @@ namespace UI
 			if (masteryData.empty()) {
 				ImGui::Text("No weapons tracked yet.");
 			} else {
+				// Total tracked and Clear button on same line
+				ImGui::Text("Total tracked: %u", static_cast<unsigned>(masteryData.size()));
+				ImGui::SameLine(ImGui::GetWindowWidth() - 150.0f);
+				if (ImGui::Button("Clear Mastery Database")) {
+					manager->ClearDatabase();
+					RE::DebugNotification("Weapon Mastery: Database cleared");
+				}
+
+				ImGui::Separator();
+
 				if (ImGui::BeginTable("MasteryTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Sortable)) {
 					ImGui::TableSetupColumn("Weapon Name", ImGuiTableColumnFlags_WidthStretch);
 					ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 60.0f);
@@ -249,14 +258,6 @@ namespace UI
 
 					ImGui::EndTable();
 				}
-
-				ImGui::Separator();
-				if (ImGui::Button("Clear Mastery Database")) {
-					manager->ClearDatabase();
-					RE::DebugNotification("Mithras: Mastery database cleared");
-				}
-				ImGui::SameLine();
-				ImGui::Text("Total tracked: %u", static_cast<unsigned>(masteryData.size()));
 			}
 		}
 	}

@@ -644,7 +644,7 @@ namespace MITHRAS::MASTERY
 		wchar_t dllPath[MAX_PATH];
 		GetModuleFileNameW(GetModuleHandleW(L"WeaponMastery.dll"), dllPath, MAX_PATH);
 		std::filesystem::path dllDir = std::filesystem::path(dllPath).parent_path();
-		return dllDir / "WeaponMasterySKSE.json";
+		return dllDir / "WeaponMastery.json";
 	}
 
 	void Manager::RefreshEquippedFromPlayer()
