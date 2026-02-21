@@ -600,17 +600,41 @@ namespace MITHRAS::MASTERY
 			return;
 		}
 
-		const auto* rightForm = player->GetEquippedObject(false);
-		const auto* leftForm = player->GetEquippedObject(true);
+		const auto* rightEntry = player->GetEquippedEntryData(false);
+		const auto* leftEntry = player->GetEquippedEntryData(true);
 
 		std::optional<ItemKey> rightKey;
 		std::optional<ItemKey> shieldKey;
 
-		if (rightForm && IsTrackedWeapon(rightForm)) {
-			rightKey = ItemKey{ rightForm->GetFormID(), 0, false, false };
+		if (rightEntry && rightEntry->object && IsTrackedWeapon(rightEntry->object)) {
+			std::uint16_t rightUniqueID = 0;
+			if (rightEntry->extraLists) {
+				for (const auto& xList : *rightEntry->extraLists) {
+					if (xList) {
+						const auto* uniqueID = xList->GetByType<RE::ExtraUniqueID>();
+						if (uniqueID) {
+							rightUniqueID = uniqueID->uniqueID;
+							break;
+						}
+					}
+				}
+			}
+			rightKey = ItemKey{ rightEntry->object->GetFormID(), rightUniqueID, false, false };
 		}
-		if (leftForm && IsShield(leftForm)) {
-			shieldKey = ItemKey{ leftForm->GetFormID(), 0, true, true };
+		if (leftEntry && leftEntry->object && IsShield(leftEntry->object)) {
+			std::uint16_t leftUniqueID = 0;
+			if (leftEntry->extraLists) {
+				for (const auto& xList : *leftEntry->extraLists) {
+					if (xList) {
+						const auto* uniqueID = xList->GetByType<RE::ExtraUniqueID>();
+						if (uniqueID) {
+							leftUniqueID = uniqueID->uniqueID;
+							break;
+						}
+					}
+				}
+			}
+			shieldKey = ItemKey{ leftEntry->object->GetFormID(), leftUniqueID, true, true };
 		}
 
 		SetEquippedKeyLocked(m_weapon, rightKey);

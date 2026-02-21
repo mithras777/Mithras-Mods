@@ -106,7 +106,7 @@ namespace UI
 			auto config = manager->GetConfig();
 			const auto before = config;
 
-			DrawResetButton("Reset To Defaults##overview", "Mithras: Reset overview defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
+			DrawResetButton("Defaults##overview", "Mithras: Reset overview defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			ImGui::SeparatorText("Core");
 			ImGui::Checkbox("Enable Weapon Mastery", &config.enabled);
@@ -142,7 +142,7 @@ namespace UI
 			auto config = manager->GetConfig();
 			const auto before = config;
 
-			DrawResetButton("Reset To Defaults##progression", "Mithras: Reset progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
+			DrawResetButton("Defaults##progression", "Mithras: Reset progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			ImGui::SeparatorText("Experience Sources");
 			if (ImGui::BeginTable("gainSources", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV)) {
@@ -177,7 +177,7 @@ namespace UI
 			auto config = manager->GetConfig();
 			const auto before = config;
 
-			DrawResetButton("Reset To Defaults##bonuses", "Mithras: Reset bonus defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
+			DrawResetButton("Defaults##bonuses", "Mithras: Reset bonus defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			if (ImGui::CollapsingHeader("General Bonuses", ImGuiTreeNodeFlags_DefaultOpen)) {
 				DrawBonusTuningEditor(config.generalBonuses, "general");
@@ -206,7 +206,7 @@ namespace UI
 		void __stdcall Render()
 		{
 			auto* manager = MITHRAS::MASTERY::Manager::GetSingleton();
-			DrawResetButton("Reset To Defaults##debug", "Mithras: Reset config defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
+			DrawResetButton("Defaults##debug", "Mithras: Reset config defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			ImGui::SeparatorText("Database");
 			ImGui::Text("Tracked items: %u", static_cast<unsigned>(manager->GetDatabaseSize()));
