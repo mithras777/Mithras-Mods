@@ -1,0 +1,35 @@
+#include "hook/InputHook.h"
+
+#include "console/ConsoleCommands.h"
+
+namespace HOOK::INPUT {
+
+	static constexpr auto CONSOLE_PREFIX = "mithras_test";
+
+	struct ProcessConsole {
+
+		static void thunk(RE::Script* a_script, RE::ScriptCompiler* a_compiler, RE::COMPILER_NAME a_name, RE::TESObjectREFR* a_objectRefr)
+		{
+			if (!a_script) {
+				func(a_script, a_compiler, a_name, a_objectRefr);
+				return;
+			}
+
+			const std::string text = a_script->text;
+			// Search for specific prefix.
+			if (text.starts_with(CONSOLE_PREFIX)) {
+				CONSOLE::COMMANDS::Plugin(a_script);
+				return;
+			}
+
+			func(a_script, a_compiler, a_name, a_objectRefr);
+		}
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	void Install()
+	{
+		// Called when ProcessConsole is updated
+		stl::Hook::call<ProcessConsole>(RELOCATION_ID(52065, 52952).address() + RELOCATION_OFFSET(0xE2, 0x52));
+	}
+}

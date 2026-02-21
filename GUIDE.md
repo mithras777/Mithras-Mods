@@ -1,0 +1,128 @@
+# Mithras Mods – SKSE Plugin Development Guide
+
+This folder contains Skyrim SE/AE SKSE plugins built from the **SkyrimSE-Plugin-Template**. The guide below covers the workflow, where to find game APIs, and how to add the SKSE Menu Framework.
+
+---
+
+## 1. Template and Workflow
+
+### Source
+
+- Start from **SkyrimSE-Plugin-Template-main.zip**: unzip it and use the folder that contains `CMake_Build.bat`.
+
+### First-time setup (new mod)
+
+1. **Run `CMake_Build.bat`** from that folder (no `CMakeLists.txt` or build cache yet).
+2. When asked for **CommonLibSSE variant**, choose **2 (alandtse)** — this is the **NG** fork and works across all Skyrim versions.
+3. Enter **project name** (no spaces), e.g. `WeaponMastery`, `SpellMastery`.
+4. Enter **author**, then optional description, version, year, license (Enter uses defaults).
+5. Choose a **template**: Bare, Basic (console + events), or Menu (console + ImGui menu).
+6. The batch creates a **subfolder with the same name** as the project (e.g. `WeaponMastery\WeaponMastery\`) and writes `CMakeLists.txt` at the template root.
+7. **Rename the top-level folder** from `SkyrimSE-Plugin-Template-main` to your mod name (e.g. `WeaponMastery`).
+
+Resulting layout:
+
+```
+ModName/                    ← renamed from SkyrimSE-Plugin-Template-main
+├── CMake_Build.bat
+├── CMakeLists.txt
+├── cmake/
+└── ModName/                ← project folder (scripts, sources)
+    ├── include/
+    ├── src/
+    ├── pch/
+    ├── resource/
+    └── extern/             ← CommonLibSSE etc. go here (created by CMake)
+```
+
+### Daily workflow
+
+- **Edit or add** code under `ModName/ModName/` (e.g. `include/`, `src/`).
+- **Run `CMake_Build.bat`** again to configure (if needed) and build. Output DLL/PDB goes to `.bin/x64-release` or `.bin/x64-debug` at the mod root (same level as `CMake_Build.bat`).
+- Copy the built DLL (and PDB if debugging) into `Skyrim SE/Data/SKSE/Plugins/` for testing.
+
+---
+
+## 2. Where to Find Functions and Hooks (RE / CommonLibSSE)
+
+### Location of headers
+
+After the first successful configure/build, CommonLibSSE is fetched into your project’s **extern** folder. All game/RE and SKSE headers live there:
+
+| What you need | Path (relative to mod root) |
+|---------------|------------------------------|
+| RE (game) API | `ModName/extern/CommonLibSSE/include/RE/` |
+| RE subfolders | `ModName/extern/CommonLibSSE/include/RE/A/`, `RE/B/`, `RE/P/`, etc. |
+| Single include | `ModName/extern/CommonLibSSE/include/RE/Skyrim.h` |
+| SKSE API | `ModName/extern/CommonLibSSE/include/SKSE/` |
+| PROXY (NG compatibility) | `ModName/extern/CommonLibSSE/include/PROXY/` |
+
+Example: in **WeaponMastery**, `WeaponMastery/extern/CommonLibSSE/include/RE/` holds the full RE tree (Actor, PlayerCharacter, TESForm, etc.). Use that tree as the reference for types and function signatures.
+
+### Template patch (NG builds)
+
+For the **NG (alandtse)** variant, the template can copy extra patches into CommonLibSSE. Those patches live under the **template** repo, not under your mod:
+
+- **Path in template:** `cmake/submodule/CommonLibSSE/patch/`
+- Contents include PROXY headers and any patched RE headers. They are copied into the fetched CommonLibSSE during configure. You don’t need to edit these for normal plugin code.
+
+### How to use them (match WeaponMastery style)
+
+- **PCH:** In your precompiled header (e.g. `ModName/pch/PCH.h`), include once:
+  - `#include <RE/Skyrim.h>`
+  - `#include <SKSE/SKSE.h>`
+  - If using NG proxies: `#include <PROXY/Proxies.h>`
+- **Includes in .cpp:** Prefer the same style as in **WeaponMastery**: include via the PCH or use specific RE headers (e.g. `#include "RE/P/PlayerCharacter.h"`) and the same REL/RELOCATION_ID and hook patterns as in WeaponMastery.
+- **Hooks / addresses:** Use the same patterns as in `WeaponMastery/WeaponMastery` (e.g. `RELOCATION_ID`, `REL::`, and the hook utilities in `include/util/` and `include/hook/`). Keeping the same formatting and include style avoids subtle ABI/header mismatches.
+
+If a type or function is missing in your mod’s `extern`, compare with **WeaponMastery**’s `extern/CommonLibSSE/include/RE/` (and its docs, e.g. `extern/CommonLibSSE/docs/VERIFICATION_MIGRATION.md` for patch verification).
+
+---
+
+## 3. SKSE Menu Framework
+
+To use **SKSE Menu Framework** in your plugin:
+
+### Get the headers
+
+**Option A – Reusable copy at repo root (recommended)**  
+Keep a single copy at the **Mithras Mods** root so you can add it to any project:
+
+- **Location:** `Mithras Mods/External Libraries to Copy into extern/` (contents of the example repo’s `include` folder, e.g. `SKSEMenuFramework.h`).
+- **Use in a project:** Copy this folder into the mod’s extern, e.g. `ModName/extern/SKSEMenuFramework/`, or add the root path to the project’s include path in CMake so all mods share the same copy.
+
+**Option B – Per‑project setup**  
+1. Clone or download the example repo:  
+   **https://github.com/Thiago099/SKSE-Menu-Framework-2-Example**
+2. Open the **`include`** folder and copy its contents into your mod’s **extern** with a clear name (no repo suffix), e.g. `ModName/extern/SKSEMenuFramework/`.
+
+So you end up with either:
+
+- `Mithras Mods/SKSEMenuFramework/SKSEMenuFramework.h` (shared), **or**
+- `ModName/extern/SKSEMenuFramework/SKSEMenuFramework.h` (per‑project)
+
+### Use it in your code
+
+- Add the framework include path to your target if it’s not already under `extern` (in this setup, `target_include_directories` already has `PROJECT_EXTERN_ROOT_DIR`, so `extern/SKSEMenuFramework` is enough).
+- In your plugin code (e.g. in a source or a header that builds with your plugin), include the framework:
+  - `#include "SKSEMenuFramework.h"`  
+  if the file is at `extern/SKSEMenuFramework/SKSEMenuFramework.h`, or
+  - `#include "SKSEMenuFramework/SKSEMenuFramework.h"`  
+  if you prefer a subfolder name in the path.
+
+Follow the rest of the framework’s docs (registration, menu callbacks, etc.) as in the example repo.
+
+---
+
+## 4. Quick Reference
+
+| Task | Action |
+|------|--------|
+| New mod from scratch | Unzip template → run `CMake_Build.bat` → choose NG (2) → enter name/author/template → rename root folder to mod name. |
+| Edit plugin code | Edit under `ModName/ModName/include/` and `ModName/ModName/src/`. |
+| Rebuild | Run `CMake_Build.bat`; choose build type (e.g. RelWithDebInfo). |
+| Output | `.bin/x64-release/ModName.dll` (or `x64-debug` for debug). |
+| RE / game API | `ModName/extern/CommonLibSSE/include/RE/` (use same style as WeaponMastery). |
+| SKSE Menu Framework | Keep `SKSEMenuFramework/` at **Mithras Mods** root for reuse; copy into `ModName/extern/` (or add root to includes). In code: `#include "SKSEMenuFramework/SKSEMenuFramework.h"`. |
+
+Always use **NG (alandtse)** when prompted so the same build works on all Skyrim versions.
