@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -17,9 +18,6 @@ namespace MITHRAS::KICK
 		float force{ 450.0f };
 		float upwardBias{ 0.25f };
 		float cooldownSeconds{ 0.35f };
-		float downwardKickThreshold{ 0.35f };
-		float selfBoostForce{ 900.0f };
-		float selfBoostUpwardMin{ 0.6f };
 		float raySpread{ 0.20f };
 	};
 
@@ -39,6 +37,10 @@ namespace MITHRAS::KICK
 		void TryKick();
 
 	private:
+		void SaveConfigToJson() const;
+		void LoadConfigFromJson();
+		[[nodiscard]] std::filesystem::path GetConfigPath() const;
+
 		struct RaycastResult
 		{
 			RE::TESObjectREFR* reference{ nullptr };
@@ -54,7 +56,6 @@ namespace MITHRAS::KICK
 		[[nodiscard]] static std::optional<RaycastResult> RaycastFrom(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_origin, const RE::NiPoint3& a_direction, float a_range);
 		[[nodiscard]] static std::optional<RaycastResult> AcquireKickTarget(RE::PlayerCharacter* a_player, const KickConfig& a_cfg);
 		static bool ApplyKickImpulse(RE::TESObjectREFR* a_ref, const RE::NiPoint3& a_dir, float a_force, float a_upwardBias);
-		static void ApplySelfBoost(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_kickDir, const KickConfig& a_cfg);
 
 		mutable std::mutex m_lock;
 		KickConfig m_config{};

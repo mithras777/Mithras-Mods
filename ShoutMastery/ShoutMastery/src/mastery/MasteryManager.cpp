@@ -5,12 +5,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <format>
+#include <nlohmann/json.hpp>
 
 namespace MITHRAS::SHOUT_MASTERY
 {
 	namespace
 	{
+		using json = nlohmann::json;
+
 		constexpr std::uint32_t kSerializationVersion = 1;
 		constexpr std::uint32_t kConfigRecord = 'SHCF';
 		constexpr std::uint32_t kMasteryRecord = 'SHMR';
@@ -37,6 +41,61 @@ namespace MITHRAS::SHOUT_MASTERY
 			a_config.bonuses.voicePointsCap = std::clamp(a_config.bonuses.voicePointsCap, 0.0f, 500.0f);
 			a_config.bonuses.staminaRatePerLevel = std::clamp(a_config.bonuses.staminaRatePerLevel, 0.0f, 20.0f);
 			a_config.bonuses.staminaRateCap = std::clamp(a_config.bonuses.staminaRateCap, 0.0f, 200.0f);
+		}
+
+		json ToJson(const MasteryConfig::BonusTuning& a_bonus)
+		{
+			return {
+				{ "shoutRecoveryPerLevel", a_bonus.shoutRecoveryPerLevel },
+				{ "shoutRecoveryCap", a_bonus.shoutRecoveryCap },
+				{ "shoutPowerPerLevel", a_bonus.shoutPowerPerLevel },
+				{ "shoutPowerCap", a_bonus.shoutPowerCap },
+				{ "voiceRatePerLevel", a_bonus.voiceRatePerLevel },
+				{ "voiceRateCap", a_bonus.voiceRateCap },
+				{ "voicePointsPerLevel", a_bonus.voicePointsPerLevel },
+				{ "voicePointsCap", a_bonus.voicePointsCap },
+				{ "staminaRatePerLevel", a_bonus.staminaRatePerLevel },
+				{ "staminaRateCap", a_bonus.staminaRateCap }
+			};
+		}
+
+		void FromJson(const json& a_json, MasteryConfig::BonusTuning& a_bonus)
+		{
+			a_bonus.shoutRecoveryPerLevel = a_json.value("shoutRecoveryPerLevel", a_bonus.shoutRecoveryPerLevel);
+			a_bonus.shoutRecoveryCap = a_json.value("shoutRecoveryCap", a_bonus.shoutRecoveryCap);
+			a_bonus.shoutPowerPerLevel = a_json.value("shoutPowerPerLevel", a_bonus.shoutPowerPerLevel);
+			a_bonus.shoutPowerCap = a_json.value("shoutPowerCap", a_bonus.shoutPowerCap);
+			a_bonus.voiceRatePerLevel = a_json.value("voiceRatePerLevel", a_bonus.voiceRatePerLevel);
+			a_bonus.voiceRateCap = a_json.value("voiceRateCap", a_bonus.voiceRateCap);
+			a_bonus.voicePointsPerLevel = a_json.value("voicePointsPerLevel", a_bonus.voicePointsPerLevel);
+			a_bonus.voicePointsCap = a_json.value("voicePointsCap", a_bonus.voicePointsCap);
+			a_bonus.staminaRatePerLevel = a_json.value("staminaRatePerLevel", a_bonus.staminaRatePerLevel);
+			a_bonus.staminaRateCap = a_json.value("staminaRateCap", a_bonus.staminaRateCap);
+		}
+
+		json ToJson(const MasteryConfig& a_config)
+		{
+			return {
+				{ "enabled", a_config.enabled },
+				{ "gainMultiplier", a_config.gainMultiplier },
+				{ "gainFromUses", a_config.gainFromUses },
+				{ "thresholds", a_config.thresholds },
+				{ "bonuses", ToJson(a_config.bonuses) }
+			};
+		}
+
+		void FromJson(const json& a_json, MasteryConfig& a_config)
+		{
+			a_config.enabled = a_json.value("enabled", a_config.enabled);
+			a_config.gainMultiplier = a_json.value("gainMultiplier", a_config.gainMultiplier);
+			a_config.gainFromUses = a_json.value("gainFromUses", a_config.gainFromUses);
+			if (a_json.contains("thresholds") && a_json["thresholds"].is_array()) {
+				a_config.thresholds = a_json["thresholds"].get<std::vector<std::uint32_t>>();
+			}
+			if (a_json.contains("bonuses")) {
+				FromJson(a_json["bonuses"], a_config.bonuses);
+			}
+			ClampConfig(a_config);
 		}
 	}
 
@@ -323,8 +382,61 @@ namespace MITHRAS::SHOUT_MASTERY
 		ReapplyBonusesLocked();
 	}
 
-	void Manager::SaveConfigToJson() const {}
-	void Manager::LoadConfigFromJson() {}
+	void Manager::SaveConfigToJson() const
+	{
+		const auto path = GetConfigPath();
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+
+		MasteryConfig cfg{};
+		{
+			std::scoped_lock lock(m_lock);
+			cfg = m_config;
+		}
+
+		std::ofstream file(path, std::ios::trunc);
+		if (!file.is_open()) {
+			LOG_WARN("ShoutMastery: failed to open config for write: {}", path.string());
+			return;
+		}
+
+		file << ToJson(cfg).dump(2);
+	}
+
+	void Manager::LoadConfigFromJson()
+	{
+		const auto path = GetConfigPath();
+		if (!std::filesystem::exists(path)) {
+			SaveConfigToJson();
+			return;
+		}
+
+		std::ifstream file(path);
+		if (!file.is_open()) {
+			LOG_WARN("ShoutMastery: failed to open config for read: {}", path.string());
+			return;
+		}
+
+		json parsed{};
+		try {
+			file >> parsed;
+		} catch (const std::exception& e) {
+			LOG_WARN("ShoutMastery: failed parsing JSON config ({}), rewriting defaults", e.what());
+			ResetAllConfigToDefault(true);
+			return;
+		}
+
+		MasteryConfig cfg = DefaultConfig();
+		FromJson(parsed, cfg);
+		SetConfig(cfg, false);
+	}
+
+	std::filesystem::path Manager::GetConfigPath() const
+	{
+		wchar_t dllPath[MAX_PATH]{};
+		GetModuleFileNameW(GetModuleHandleW(L"ShoutMastery.dll"), dllPath, MAX_PATH);
+		return std::filesystem::path(dllPath).parent_path() / "ShoutMastery.json";
+	}
 
 	void Manager::RefreshCurrentShoutLocked()
 	{

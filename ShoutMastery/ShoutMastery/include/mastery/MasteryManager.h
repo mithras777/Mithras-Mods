@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mastery/BonusApplier.h"
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -32,6 +33,7 @@ namespace MITHRAS::SHOUT_MASTERY
 
 	private:
 		void LoadConfigFromJson();
+		[[nodiscard]] std::filesystem::path GetConfigPath() const;
 		void RefreshCurrentShoutLocked();
 		void ReapplyBonusesLocked();
 		void RefreshLevelLocked(MasteryStats& a_stats) const;

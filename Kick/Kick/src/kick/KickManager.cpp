@@ -5,12 +5,17 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <format>
+#include <limits>
+#include <nlohmann/json.hpp>
 
 namespace MITHRAS::KICK
 {
 	namespace
 	{
+		using json = nlohmann::json;
+
 		constexpr float kMinVectorLen = 1e-4f;
 		constexpr float kMinRange = 32.0f;
 		constexpr float kMaxRange = 700.0f;
@@ -58,27 +63,57 @@ namespace MITHRAS::KICK
 			}
 			return a_ref->GetPosition();
 		}
+
+		json ToJson(const KickConfig& a_config)
+		{
+			return {
+				{ "enabled", a_config.enabled },
+				{ "debugLogging", a_config.debugLogging },
+				{ "hotkey", a_config.hotkey },
+				{ "range", a_config.range },
+				{ "force", a_config.force },
+				{ "upwardBias", a_config.upwardBias },
+				{ "cooldownSeconds", a_config.cooldownSeconds },
+				{ "raySpread", a_config.raySpread }
+			};
+		}
+
+		void FromJson(const json& a_json, KickConfig& a_config)
+		{
+			a_config.enabled = a_json.value("enabled", a_config.enabled);
+			a_config.debugLogging = a_json.value("debugLogging", a_config.debugLogging);
+			a_config.hotkey = a_json.value("hotkey", a_config.hotkey);
+			a_config.range = a_json.value("range", a_config.range);
+			a_config.force = a_json.value("force", a_config.force);
+			a_config.upwardBias = a_json.value("upwardBias", a_config.upwardBias);
+			a_config.cooldownSeconds = a_json.value("cooldownSeconds", a_config.cooldownSeconds);
+			a_config.raySpread = a_json.value("raySpread", a_config.raySpread);
+		}
 	}
 
 	void Manager::Initialize()
 	{
-		std::scoped_lock lock(m_lock);
-		m_lastKick = {};
-		m_captureHotkey = false;
+		{
+			std::scoped_lock lock(m_lock);
+			m_lastKick = {};
+			m_captureHotkey = false;
+		}
+
+		LoadConfigFromJson();
 	}
 
 	void Manager::SetConfig(const KickConfig& a_config)
 	{
-		std::scoped_lock lock(m_lock);
-		m_config = a_config;
-		m_config.range = std::clamp(m_config.range, kMinRange, kMaxRange);
-		m_config.force = std::clamp(m_config.force, kMinForce, kMaxForce);
-		m_config.selfBoostForce = std::clamp(m_config.selfBoostForce, 0.0f, kMaxForce);
-		m_config.upwardBias = std::clamp(m_config.upwardBias, 0.0f, 1.0f);
-		m_config.selfBoostUpwardMin = std::clamp(m_config.selfBoostUpwardMin, 0.0f, 1.0f);
-		m_config.downwardKickThreshold = std::clamp(m_config.downwardKickThreshold, 0.0f, 0.95f);
-		m_config.cooldownSeconds = std::clamp(m_config.cooldownSeconds, 0.0f, 5.0f);
-		m_config.raySpread = std::clamp(m_config.raySpread, 0.0f, 1.0f);
+		{
+			std::scoped_lock lock(m_lock);
+			m_config = a_config;
+			m_config.range = std::clamp(m_config.range, kMinRange, kMaxRange);
+			m_config.force = std::clamp(m_config.force, kMinForce, kMaxForce);
+			m_config.upwardBias = std::clamp(m_config.upwardBias, 0.0f, 1.0f);
+			m_config.cooldownSeconds = std::clamp(m_config.cooldownSeconds, 0.0f, 5.0f);
+			m_config.raySpread = std::clamp(m_config.raySpread, 0.0f, 1.0f);
+		}
+		SaveConfigToJson();
 	}
 
 	KickConfig Manager::GetConfig() const
@@ -101,13 +136,21 @@ namespace MITHRAS::KICK
 
 	void Manager::OnHotkeyPressed(std::uint32_t a_keyCode)
 	{
-		std::scoped_lock lock(m_lock);
-		if (!m_captureHotkey) {
-			return;
+		bool updated = false;
+		{
+			std::scoped_lock lock(m_lock);
+			if (!m_captureHotkey) {
+				return;
+			}
+			m_captureHotkey = false;
+			m_config.hotkey = a_keyCode;
+			updated = true;
+			LOG_INFO("Kick: hotkey updated to {}", a_keyCode);
 		}
-		m_captureHotkey = false;
-		m_config.hotkey = a_keyCode;
-		LOG_INFO("Kick: hotkey updated to {}", a_keyCode);
+
+		if (updated) {
+			SaveConfigToJson();
+		}
 	}
 
 	bool Manager::PollCaptureHotkey()
@@ -186,13 +229,7 @@ namespace MITHRAS::KICK
 			debug("raycast hit had no resolved reference");
 		}
 
-		const bool downwardKick = hit->direction.z < -cfg.downwardKickThreshold;
-		if (downwardKick && hit->hitPoint.z < player->GetPositionZ() + 16.0f) {
-			ApplySelfBoost(player, hit->direction, cfg);
-			debug("self boost applied");
-		} else {
-			debug("self boost not applied");
-		}
+		debug("kick completed");
 	}
 
 	void Manager::DebugForceKick()
@@ -411,7 +448,22 @@ namespace MITHRAS::KICK
 		}
 
 		if (auto* actor = a_ref->As<RE::Actor>(); actor && !actor->IsDead()) {
-			actor->NotifyAnimationGraph("RagdollInstant");
+			// Actor-specific path: use actor/current-process knockback so actors recover naturally.
+			const RE::hkVector4 impulse(impulseDir.x * a_force, impulseDir.y * a_force, impulseDir.z * a_force, 0.0f);
+			const bool hadCurrent = actor->ApplyCurrent(0.2f, impulse);
+
+			bool hadKnock = false;
+			auto* process = actor->GetActorRuntimeData().currentProcess;
+			if (process) {
+				process->KnockExplosion(actor, a_ref->GetPosition(), std::max(1.0f, a_force / 160.0f));
+				hadKnock = true;
+			}
+
+			if (actor->IsInRagdollState()) {
+				actor->PotentiallyFixRagdollState();
+			}
+
+			return hadCurrent || hadKnock;
 		}
 
 		auto* root = a_ref->Get3D();
@@ -441,18 +493,70 @@ namespace MITHRAS::KICK
 		return true;
 	}
 
-	void Manager::ApplySelfBoost(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_kickDir, const KickConfig& a_cfg)
+	void Manager::SaveConfigToJson() const
 	{
-		if (!a_player || a_cfg.selfBoostForce <= 0.0f) {
+		const auto path = GetConfigPath();
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+
+		KickConfig cfg{};
+		{
+			std::scoped_lock lock(m_lock);
+			cfg = m_config;
+		}
+
+		std::ofstream file(path, std::ios::trunc);
+		if (!file.is_open()) {
+			LOG_WARN("Kick: failed to open config for write: {}", path.string());
 			return;
 		}
 
-		auto boostDir = NormalizeOrZero(RE::NiPoint3(-a_kickDir.x, -a_kickDir.y, std::max(a_cfg.selfBoostUpwardMin, -a_kickDir.z)));
-		if (boostDir.SqrLength() <= kMinVectorLen) {
+		file << ToJson(cfg).dump(2);
+	}
+
+	void Manager::LoadConfigFromJson()
+	{
+		const auto path = GetConfigPath();
+		if (!std::filesystem::exists(path)) {
+			SaveConfigToJson();
 			return;
 		}
 
-		const RE::hkVector4 current(boostDir.x * a_cfg.selfBoostForce, boostDir.y * a_cfg.selfBoostForce, boostDir.z * a_cfg.selfBoostForce, 0.0f);
-		a_player->ApplyCurrent(0.15f, current);
+		std::ifstream file(path);
+		if (!file.is_open()) {
+			LOG_WARN("Kick: failed to open config for read: {}", path.string());
+			return;
+		}
+
+		json parsed{};
+		try {
+			file >> parsed;
+		} catch (const std::exception& e) {
+			LOG_WARN("Kick: failed parsing JSON config ({}), rewriting defaults", e.what());
+			SaveConfigToJson();
+			return;
+		}
+
+		KickConfig loaded{};
+		{
+			std::scoped_lock lock(m_lock);
+			loaded = m_config;
+		}
+		FromJson(parsed, loaded);
+
+		std::scoped_lock lock(m_lock);
+		m_config = loaded;
+		m_config.range = std::clamp(m_config.range, kMinRange, kMaxRange);
+		m_config.force = std::clamp(m_config.force, kMinForce, kMaxForce);
+		m_config.upwardBias = std::clamp(m_config.upwardBias, 0.0f, 1.0f);
+		m_config.cooldownSeconds = std::clamp(m_config.cooldownSeconds, 0.0f, 5.0f);
+		m_config.raySpread = std::clamp(m_config.raySpread, 0.0f, 1.0f);
+	}
+
+	std::filesystem::path Manager::GetConfigPath() const
+	{
+		wchar_t dllPath[MAX_PATH]{};
+		GetModuleFileNameW(GetModuleHandleW(L"Kick.dll"), dllPath, MAX_PATH);
+		return std::filesystem::path(dllPath).parent_path() / "Kick.json";
 	}
 }

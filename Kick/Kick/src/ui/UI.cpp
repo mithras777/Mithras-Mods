@@ -77,12 +77,6 @@ namespace UI
 			ImGui::SliderFloat("Cooldown (seconds)", &cfg.cooldownSeconds, 0.0f, 3.0f, "%.2f");
 			ImGui::SliderFloat("Ray spread", &cfg.raySpread, 0.0f, 0.8f, "%.2f");
 
-			ImGui::Separator();
-			ImGui::Text("Downward Kick Parkour");
-			ImGui::SliderFloat("Downward threshold", &cfg.downwardKickThreshold, 0.05f, 0.9f, "%.2f");
-			ImGui::SliderFloat("Self boost force", &cfg.selfBoostForce, 0.0f, 3000.0f, "%.0f");
-			ImGui::SliderFloat("Self boost up minimum", &cfg.selfBoostUpwardMin, 0.0f, 1.0f, "%.2f");
-
 			if (before.enabled != cfg.enabled ||
 				before.debugLogging != cfg.debugLogging ||
 				before.hotkey != cfg.hotkey ||
@@ -90,9 +84,6 @@ namespace UI
 				before.force != cfg.force ||
 				before.upwardBias != cfg.upwardBias ||
 				before.cooldownSeconds != cfg.cooldownSeconds ||
-				before.downwardKickThreshold != cfg.downwardKickThreshold ||
-				before.selfBoostForce != cfg.selfBoostForce ||
-				before.selfBoostUpwardMin != cfg.selfBoostUpwardMin ||
 				before.raySpread != cfg.raySpread) {
 				manager->SetConfig(cfg);
 			}

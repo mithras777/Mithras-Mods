@@ -5,12 +5,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <format>
+#include <nlohmann/json.hpp>
 
 namespace MITHRAS::SPELL_MASTERY
 {
 	namespace
 	{
+		using json = nlohmann::json;
+
 		constexpr std::uint32_t kSerializationVersion = 1;
 		constexpr std::uint32_t kConfigRecord = 'SMCF';
 		constexpr std::uint32_t kMasteryRecord = 'SMMR';
@@ -54,6 +58,126 @@ namespace MITHRAS::SPELL_MASTERY
 				ClampProgression(schoolCfg.progression);
 				ClampBonuses(schoolCfg.bonus);
 			}
+		}
+
+		json ToJson(const MasteryConfig::BonusTuning& a_bonus)
+		{
+			return {
+				{ "skillBonusPerLevel", a_bonus.skillBonusPerLevel },
+				{ "skillBonusCap", a_bonus.skillBonusCap },
+				{ "skillAdvancePerLevel", a_bonus.skillAdvancePerLevel },
+				{ "skillAdvanceCap", a_bonus.skillAdvanceCap },
+				{ "powerBonusPerLevel", a_bonus.powerBonusPerLevel },
+				{ "powerBonusCap", a_bonus.powerBonusCap },
+				{ "costReductionPerLevel", a_bonus.costReductionPerLevel },
+				{ "costReductionCap", a_bonus.costReductionCap },
+				{ "magickaRatePerLevel", a_bonus.magickaRatePerLevel },
+				{ "magickaRateCap", a_bonus.magickaRateCap },
+				{ "magickaFlatPerLevel", a_bonus.magickaFlatPerLevel },
+				{ "magickaFlatCap", a_bonus.magickaFlatCap }
+			};
+		}
+
+		void FromJson(const json& a_json, MasteryConfig::BonusTuning& a_bonus)
+		{
+			a_bonus.skillBonusPerLevel = a_json.value("skillBonusPerLevel", a_bonus.skillBonusPerLevel);
+			a_bonus.skillBonusCap = a_json.value("skillBonusCap", a_bonus.skillBonusCap);
+			a_bonus.skillAdvancePerLevel = a_json.value("skillAdvancePerLevel", a_bonus.skillAdvancePerLevel);
+			a_bonus.skillAdvanceCap = a_json.value("skillAdvanceCap", a_bonus.skillAdvanceCap);
+			a_bonus.powerBonusPerLevel = a_json.value("powerBonusPerLevel", a_bonus.powerBonusPerLevel);
+			a_bonus.powerBonusCap = a_json.value("powerBonusCap", a_bonus.powerBonusCap);
+			a_bonus.costReductionPerLevel = a_json.value("costReductionPerLevel", a_bonus.costReductionPerLevel);
+			a_bonus.costReductionCap = a_json.value("costReductionCap", a_bonus.costReductionCap);
+			a_bonus.magickaRatePerLevel = a_json.value("magickaRatePerLevel", a_bonus.magickaRatePerLevel);
+			a_bonus.magickaRateCap = a_json.value("magickaRateCap", a_bonus.magickaRateCap);
+			a_bonus.magickaFlatPerLevel = a_json.value("magickaFlatPerLevel", a_bonus.magickaFlatPerLevel);
+			a_bonus.magickaFlatCap = a_json.value("magickaFlatCap", a_bonus.magickaFlatCap);
+		}
+
+		json ToJson(const MasteryConfig::ProgressionTuning& a_progression)
+		{
+			return {
+				{ "gainFromKills", a_progression.gainFromKills },
+				{ "gainFromUses", a_progression.gainFromUses },
+				{ "gainFromSummons", a_progression.gainFromSummons },
+				{ "gainFromHits", a_progression.gainFromHits },
+				{ "gainFromEquipTime", a_progression.gainFromEquipTime },
+				{ "equipSecondsPerPoint", a_progression.equipSecondsPerPoint }
+			};
+		}
+
+		void FromJson(const json& a_json, MasteryConfig::ProgressionTuning& a_progression)
+		{
+			a_progression.gainFromKills = a_json.value("gainFromKills", a_progression.gainFromKills);
+			a_progression.gainFromUses = a_json.value("gainFromUses", a_progression.gainFromUses);
+			a_progression.gainFromSummons = a_json.value("gainFromSummons", a_progression.gainFromSummons);
+			a_progression.gainFromHits = a_json.value("gainFromHits", a_progression.gainFromHits);
+			a_progression.gainFromEquipTime = a_json.value("gainFromEquipTime", a_progression.gainFromEquipTime);
+			a_progression.equipSecondsPerPoint = a_json.value("equipSecondsPerPoint", a_progression.equipSecondsPerPoint);
+		}
+
+		json ToJson(const MasteryConfig::SchoolConfig& a_school)
+		{
+			return {
+				{ "progression", ToJson(a_school.progression) },
+				{ "useBonusOverride", a_school.useBonusOverride },
+				{ "bonus", ToJson(a_school.bonus) }
+			};
+		}
+
+		void FromJson(const json& a_json, MasteryConfig::SchoolConfig& a_school)
+		{
+			if (a_json.contains("progression")) {
+				FromJson(a_json["progression"], a_school.progression);
+			}
+			a_school.useBonusOverride = a_json.value("useBonusOverride", a_school.useBonusOverride);
+			if (a_json.contains("bonus")) {
+				FromJson(a_json["bonus"], a_school.bonus);
+			}
+		}
+
+		json ToJson(const MasteryConfig& a_config)
+		{
+			json schools = json::array();
+			for (std::size_t i = 0; i < kSchoolCount; ++i) {
+				schools.push_back({
+					{ "school", static_cast<std::uint32_t>(i) },
+					{ "config", ToJson(a_config.schools[i]) }
+				});
+			}
+
+			return {
+				{ "enabled", a_config.enabled },
+				{ "gainMultiplier", a_config.gainMultiplier },
+				{ "thresholds", a_config.thresholds },
+				{ "generalBonuses", ToJson(a_config.generalBonuses) },
+				{ "schools", schools }
+			};
+		}
+
+		void FromJson(const json& a_json, MasteryConfig& a_config)
+		{
+			a_config.enabled = a_json.value("enabled", a_config.enabled);
+			a_config.gainMultiplier = a_json.value("gainMultiplier", a_config.gainMultiplier);
+			if (a_json.contains("thresholds") && a_json["thresholds"].is_array()) {
+				a_config.thresholds = a_json["thresholds"].get<std::vector<std::uint32_t>>();
+			}
+
+			if (a_json.contains("generalBonuses")) {
+				FromJson(a_json["generalBonuses"], a_config.generalBonuses);
+			}
+
+			if (a_json.contains("schools") && a_json["schools"].is_array()) {
+				for (const auto& schoolEntry : a_json["schools"]) {
+					const auto index = schoolEntry.value("school", static_cast<std::uint32_t>(kSchoolCount));
+					if (index >= kSchoolCount || !schoolEntry.contains("config")) {
+						continue;
+					}
+					FromJson(schoolEntry["config"], a_config.schools[index]);
+				}
+			}
+
+			ClampConfig(a_config);
 		}
 	}
 
@@ -502,8 +626,54 @@ namespace MITHRAS::SPELL_MASTERY
 		ReapplyBonusesLocked();
 	}
 
-	void Manager::SaveConfigToJson() const {}
-	void Manager::LoadConfigFromJson() {}
+	void Manager::SaveConfigToJson() const
+	{
+		const auto path = GetConfigPath();
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+
+		MasteryConfig config{};
+		{
+			std::scoped_lock lock(m_lock);
+			config = m_config;
+		}
+
+		std::ofstream file(path, std::ios::trunc);
+		if (!file.is_open()) {
+			LOG_WARN("SpellMastery: failed to open config for write: {}", path.string());
+			return;
+		}
+
+		file << ToJson(config).dump(2);
+	}
+
+	void Manager::LoadConfigFromJson()
+	{
+		const auto path = GetConfigPath();
+		if (!std::filesystem::exists(path)) {
+			SaveConfigToJson();
+			return;
+		}
+
+		std::ifstream file(path);
+		if (!file.is_open()) {
+			LOG_WARN("SpellMastery: failed to open config for read: {}", path.string());
+			return;
+		}
+
+		json parsed{};
+		try {
+			file >> parsed;
+		} catch (const std::exception& e) {
+			LOG_WARN("SpellMastery: failed to parse JSON config ({}), rewriting defaults", e.what());
+			ResetAllConfigToDefault(true);
+			return;
+		}
+
+		MasteryConfig cfg = DefaultConfig();
+		FromJson(parsed, cfg);
+		SetConfig(cfg, false);
+	}
 
 	std::filesystem::path Manager::GetConfigPath() const
 	{
