@@ -4,6 +4,7 @@
 #include "version.h"
 #include "event/GameEventManager.h"
 #include "util/LogUtil.h"
+#include "ui/UI.h"
 
 //#define DUMP_OFFSETS
 
@@ -45,6 +46,7 @@ namespace SKSE {
 			case SKSE::MessagingInterface::kDataLoaded: {
 				// Register game events
 				GAME_EVENT::Manager::Register();
+				UI::Register();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;

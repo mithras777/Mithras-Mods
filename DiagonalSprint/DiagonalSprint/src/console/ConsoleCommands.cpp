@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include "hook/FunctionHook.h"
 #include "game/GameHelper.h"
+#include "diagonal/FakeDiagonalSprint.h"
 
 namespace CONSOLE::COMMANDS {
 
@@ -69,6 +70,11 @@ namespace CONSOLE::COMMANDS {
 		// Display current delta time
 		else if (command.compare("delta") == 0) {
 			consoleLog->Print("Current delta time is >> %f", GAME::HELPER::Get_DeltaWorldTime());
+		}
+		// Reload fake diagonal sprint JSON
+		else if (command.compare("reload") == 0) {
+			DIAGONAL::FakeDiagonalSprint::GetSingleton()->Reload();
+			consoleLog->Print("%s: reloaded DiagonalSprint.json", pluginInfo->name.c_str());
 		}
 #if defined(_DEBUG)
 		// Display current stack trace
