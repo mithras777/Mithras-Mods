@@ -1,6 +1,6 @@
-# JumpAttacksNoBehaviors
+# JumpAttack
 
-SKSE plugin for Skyrim SE/AE (CommonLibSSE NG) that enables mid-air melee jump hits in first and third person without FNIS/Nemesis behavior edits.
+SKSE plugin for Skyrim SE/AE (CommonLibSSE NG) that enables mid-air melee jump hits in first and third person without behavior edits.
 
 ## Build (VS2022)
 
@@ -10,31 +10,22 @@ SKSE plugin for Skyrim SE/AE (CommonLibSSE NG) that enables mid-air melee jump h
    - `cmake --build --preset vs2022-ng-rel`
 
 Output DLL:
-- `JumpAttack/.bin/x64-release/JumpAttacksNoBehaviors.dll`
+- `JumpAttack/.bin/x64-release/JumpAttack.dll`
 
 ## Install
 
 1. Copy DLL to:
-   - `Data/SKSE/Plugins/JumpAttacksNoBehaviors.dll`
-2. Copy INI to:
-   - `Data/SKSE/Plugins/JumpAttacks.ini`
-3. (Optional, auto-created) JSON settings:
-   - `Data/SKSE/Plugins/JumpAttacksNoBehaviors.json`
+   - `Data/SKSE/Plugins/JumpAttack.dll`
+2. JSON settings file (auto-created and used at runtime):
+   - `Data/SKSE/Plugins/JumpAttack.json`
 
-Sample INI is included at:
-- `JumpAttack/JumpAttacks.ini`
-
-## SKSE Menu + JSON
+## SKSE Menu Framework + JSON
 
 - If `SKSEMenuFramework` is installed, the mod registers a `Jump Attacks` section.
-- In-game changes are saved to:
-  - `Data/SKSE/Plugins/JumpAttacksNoBehaviors.json`
-- Load order for settings:
-  1. Built-in defaults
-  2. INI defaults (`JumpAttacks.ini`)
-  3. JSON overrides (`JumpAttacksNoBehaviors.json`)
+- In-game changes save immediately to `JumpAttack.json`.
+- Runtime config is JSON-only (no INI/backward compatibility).
 
-## INI keys
+## JSON keys
 
 - `enable`
 - `range`
@@ -45,9 +36,7 @@ Sample INI is included at:
 - `allowThroughActorsOnly`
 - `allowIfBowDrawn`
 - `allowIfSpellEquipped`
-- `debugLog`
-
-Extra optional keys:
 - `applyStagger`
 - `staggerMagnitude`
 - `landingGraceMs`
+- `debugLog`

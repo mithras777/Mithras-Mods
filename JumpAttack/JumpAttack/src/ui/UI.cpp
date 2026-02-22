@@ -8,7 +8,7 @@ namespace UI
     void Register()
     {
         if (!SKSEMenuFramework::IsInstalled()) {
-            LOG_WARN("SKSE Menu Framework not installed - JumpAttacksNoBehaviors page unavailable");
+            LOG_WARN("SKSE Menu Framework not installed - JumpAttack page unavailable");
             return;
         }
 

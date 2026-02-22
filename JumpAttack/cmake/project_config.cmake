@@ -104,6 +104,11 @@ target_include_directories(
 		${PROJECT_PCH_ROOT_DIR}
 		${PROJECT_EXTERN_ROOT_DIR}
 )
+
+set(PROJECT_SHARED_JSON_DIR "${PROJECT_SOURCE_DIR}/../Kick/Kick/extern/json/single_include")
+if(EXISTS "${PROJECT_SHARED_JSON_DIR}/nlohmann/json.hpp")
+	target_include_directories(${PROJECT_NAME} PRIVATE "${PROJECT_SHARED_JSON_DIR}")
+endif()
 # Setup precompiled header, cmake does it weird.
 if(MSVC)
 	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/YuPCH.h")
@@ -114,7 +119,7 @@ endif()
 # Define unified output directory for all configurations
 set_target_properties(
 	${PROJECT_NAME} PROPERTIES
-		OUTPUT_NAME "JumpAttacksNoBehaviors"
+		OUTPUT_NAME "JumpAttack"
 		RUNTIME_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug,${PROJECT_SOURCE_DIR}/.bin/x64-release>"
 		LIBRARY_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug,${PROJECT_SOURCE_DIR}/.bin/x64-release>"
 		ARCHIVE_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.lib/x64-debug,${PROJECT_SOURCE_DIR}/.lib/x64-release>"

@@ -3,8 +3,6 @@
 #include <Windows.h>
 
 #include <algorithm>
-#include <array>
-#include <cctype>
 #include <fstream>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -12,106 +10,6 @@
 namespace
 {
     using json = nlohmann::json;
-
-    std::string Trim(std::string a_value)
-    {
-        auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
-
-        while (!a_value.empty() && isSpace(static_cast<unsigned char>(a_value.front()))) {
-            a_value.erase(a_value.begin());
-        }
-        while (!a_value.empty() && isSpace(static_cast<unsigned char>(a_value.back()))) {
-            a_value.pop_back();
-        }
-        return a_value;
-    }
-
-    std::string ToLower(std::string a_value)
-    {
-        std::transform(a_value.begin(), a_value.end(), a_value.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return a_value;
-    }
-
-    bool ParseIniBool(std::string a_value, bool a_fallback)
-    {
-        auto lowered = ToLower(Trim(std::move(a_value)));
-        if (lowered == "1" || lowered == "true" || lowered == "yes" || lowered == "on") {
-            return true;
-        }
-        if (lowered == "0" || lowered == "false" || lowered == "no" || lowered == "off") {
-            return false;
-        }
-        return a_fallback;
-    }
-
-    void ReadIniInto(const std::filesystem::path& a_path, JA::SettingsData& a_data)
-    {
-        std::ifstream file(a_path);
-        if (!file.is_open()) {
-            return;
-        }
-
-        std::string line{};
-        auto parseFloat = [](const std::string& a_text, float a_fallback) {
-            try {
-                return std::stof(a_text);
-            } catch (...) {
-                return a_fallback;
-            }
-        };
-        auto parseUInt = [](const std::string& a_text, std::uint32_t a_fallback) {
-            try {
-                return static_cast<std::uint32_t>(std::stoul(a_text));
-            } catch (...) {
-                return a_fallback;
-            }
-        };
-
-        while (std::getline(file, line)) {
-            line = Trim(line);
-            if (line.empty() || line.starts_with('#') || line.starts_with(';') || line.starts_with('[')) {
-                continue;
-            }
-
-            const auto sep = line.find('=');
-            if (sep == std::string::npos) {
-                continue;
-            }
-
-            const auto key = ToLower(Trim(line.substr(0, sep)));
-            const auto value = Trim(line.substr(sep + 1));
-
-            if (key == "enable") {
-                a_data.enable = ParseIniBool(value, a_data.enable);
-            } else if (key == "range") {
-                a_data.range = parseFloat(value, a_data.range);
-            } else if (key == "rayscount") {
-                a_data.raysCount = parseUInt(value, a_data.raysCount);
-            } else if (key == "coneangledegrees") {
-                a_data.coneAngleDegrees = parseFloat(value, a_data.coneAngleDegrees);
-            } else if (key == "swingdelayms") {
-                a_data.swingDelayMs = parseUInt(value, a_data.swingDelayMs);
-            } else if (key == "cooldownms") {
-                a_data.cooldownMs = parseUInt(value, a_data.cooldownMs);
-            } else if (key == "allowthroughactorsonly") {
-                a_data.allowThroughActorsOnly = ParseIniBool(value, a_data.allowThroughActorsOnly);
-            } else if (key == "allowifbowdrawn") {
-                a_data.allowIfBowDrawn = ParseIniBool(value, a_data.allowIfBowDrawn);
-            } else if (key == "allowifspellequipped") {
-                a_data.allowIfSpellEquipped = ParseIniBool(value, a_data.allowIfSpellEquipped);
-            } else if (key == "debuglog") {
-                a_data.debugLog = ParseIniBool(value, a_data.debugLog);
-            } else if (key == "applystagger") {
-                a_data.applyStagger = ParseIniBool(value, a_data.applyStagger);
-            } else if (key == "staggermagnitude") {
-                a_data.staggerMagnitude = parseFloat(value, a_data.staggerMagnitude);
-            } else if (key == "landinggracems") {
-                a_data.landingGraceMs = parseUInt(value, a_data.landingGraceMs);
-            }
-        }
-    }
 
     json ToJson(const JA::SettingsData& a_data)
     {
@@ -155,7 +53,6 @@ namespace JA
     void Settings::Load()
     {
         SettingsData loaded{};
-        LoadFromIni(loaded);
         LoadFromJson(loaded);
         Clamp(loaded);
 
@@ -194,26 +91,6 @@ namespace JA
     {
         std::shared_lock lk(_lock);
         return _data.debugLog;
-    }
-
-    void Settings::LoadFromIni(SettingsData& a_data)
-    {
-        std::array<std::filesystem::path, 2> paths{
-            std::filesystem::path("Data/SKSE/Plugins/JumpAttacks.ini"),
-            std::filesystem::path("Data/SKSE/Plugins/JumpAttacksNoBehaviors.ini")
-        };
-
-        for (const auto& path : paths) {
-            if (!std::filesystem::exists(path)) {
-                continue;
-            }
-
-            ReadIniInto(path, a_data);
-            LOG_INFO("[JA] Loaded INI defaults from '{}'", path.string());
-            return;
-        }
-
-        LOG_WARN("[JA] INI not found, using built-in defaults");
     }
 
     void Settings::LoadFromJson(SettingsData& a_data)
@@ -258,11 +135,11 @@ namespace JA
     std::filesystem::path Settings::GetJsonPath()
     {
         wchar_t dllPath[MAX_PATH]{};
-        const auto handle = GetModuleHandleW(L"JumpAttacksNoBehaviors.dll");
+        const auto handle = GetModuleHandleW(L"JumpAttack.dll");
         if (GetModuleFileNameW(handle, dllPath, MAX_PATH) == 0) {
-            return std::filesystem::path("Data/SKSE/Plugins/JumpAttacksNoBehaviors.json");
+            return std::filesystem::path("Data/SKSE/Plugins/JumpAttack.json");
         }
-        return std::filesystem::path(dllPath).parent_path() / "JumpAttacksNoBehaviors.json";
+        return std::filesystem::path(dllPath).parent_path() / "JumpAttack.json";
     }
 
     void Settings::ApplyLoggingLevel(bool a_debugEnabled)
@@ -283,18 +160,6 @@ namespace JA
         a_data.cooldownMs = std::clamp<std::uint32_t>(a_data.cooldownMs, 50, 2000);
         a_data.staggerMagnitude = std::clamp(a_data.staggerMagnitude, 0.0f, 2.0f);
         a_data.landingGraceMs = std::clamp<std::uint32_t>(a_data.landingGraceMs, 0, 500);
-    }
-
-    bool Settings::ParseBool(std::string a_value, bool a_fallback)
-    {
-        auto lowered = ToLower(Trim(std::move(a_value)));
-        if (lowered == "1" || lowered == "true" || lowered == "yes" || lowered == "on") {
-            return true;
-        }
-        if (lowered == "0" || lowered == "false" || lowered == "no" || lowered == "off") {
-            return false;
-        }
-        return a_fallback;
     }
 
     void DebugLog(std::string_view a_message)

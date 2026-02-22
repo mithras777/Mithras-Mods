@@ -63,8 +63,8 @@ namespace DLLMAIN {
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	Plugin::Plugin()
 	{
-		m_info.name = "JumpAttacksNoBehaviors";
-		m_info.description = "Jump attacks without behavior edits";
+		m_info.name = "JumpAttack";
+		m_info.description = "JumpAttack";
 		m_info.version = { VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION, VERSION_BUILD };
 		m_info.directory = get_game_directory(true) + m_info.name + "\\";
 		m_info.gameDirectory = get_game_directory();

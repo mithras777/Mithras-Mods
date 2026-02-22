@@ -8,7 +8,7 @@
 #define VERSION_REVISION                    0
 #define VERSION_BUILD                       0
 #define VERSION_STR                         MAKE_STR(VERSION_MAJOR) "." MAKE_STR(VERSION_MINOR) "." MAKE_STR(VERSION_REVISION) "." MAKE_STR(VERSION_BUILD)
-#define VERSION_PRODUCTNAME_DESCRIPTION_STR "JumpAttacksNoBehaviors" " v" VERSION_STR
+#define VERSION_PRODUCTNAME_DESCRIPTION_STR "JumpAttack" " v" VERSION_STR
 
 #define VERSION_PRODUCTNAME_STR             "JumpAttack"
 #define VERSION_YEAR_STR                    "2026"

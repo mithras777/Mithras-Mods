@@ -29,7 +29,7 @@ static void DumpOffsets(REL::Version a_gameVersion)
 
 namespace SKSE {
 
-	static constexpr auto PLUGIN_RUNTIME_NAME = "JumpAttacksNoBehaviors";
+	static constexpr auto PLUGIN_RUNTIME_NAME = "JumpAttack";
 
 	static void SKSEPlugin_Message(SKSE::MessagingInterface::Message* a_message)
 	{
