@@ -73,8 +73,8 @@ namespace CONSOLE::COMMANDS {
 		}
 		// Force kick for debug testing
 		else if (command.compare("kick") == 0) {
-			MITHRAS::KICK::Manager::GetSingleton()->DebugForceKick();
-			consoleLog->Print("%s: requested debug kick", pluginInfo->name.c_str());
+			MITHRAS::KICK::Manager::GetSingleton()->TryKick();
+			consoleLog->Print("%s: requested kick", pluginInfo->name.c_str());
 		}
 #if defined(_DEBUG)
 		// Display current stack trace

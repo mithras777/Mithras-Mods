@@ -1,5 +1,6 @@
 #include "kick/KickManager.h"
 
+#include "PROXY/Proxies.h"
 #include "util/LogUtil.h"
 
 #include <algorithm>
@@ -21,6 +22,27 @@ namespace MITHRAS::KICK
 		constexpr float kMaxRange = 700.0f;
 		constexpr float kMinForce = 1.0f;
 		constexpr float kMaxForce = 4000.0f;
+
+		bool ApplyActorKnockExplosion(RE::Actor* a_target, RE::Actor* a_source, float a_force)
+		{
+			if (!a_target || a_target->IsDead()) {
+				return false;
+			}
+
+			auto* source = a_source ? a_source : RE::PlayerCharacter::GetSingleton();
+			auto* process = source ? PROXY::Actor::Data(source)->currentProcess : nullptr;
+			if (!process) {
+				process = PROXY::Actor::Data(a_target)->currentProcess;
+			}
+
+			if (!process) {
+				return false;
+			}
+
+			const auto sourcePos = source ? source->GetPosition() : a_target->GetPosition();
+			process->KnockExplosion(a_target, sourcePos, std::max(0.1f, a_force / 160.0f));
+			return true;
+		}
 
 		bool IsGameplayBlocked()
 		{
@@ -64,30 +86,48 @@ namespace MITHRAS::KICK
 			return a_ref->GetPosition();
 		}
 
+		bool IsDesiredTargetType(RE::TESObjectREFR* a_ref, bool a_wantActor)
+		{
+			if (!a_ref) {
+				return false;
+			}
+
+			const bool isActor = (a_ref->As<RE::Actor>() != nullptr);
+			return isActor == a_wantActor;
+		}
+
 		json ToJson(const KickConfig& a_config)
 		{
 			return {
 				{ "enabled", a_config.enabled },
-				{ "debugLogging", a_config.debugLogging },
 				{ "hotkey", a_config.hotkey },
-				{ "range", a_config.range },
-				{ "force", a_config.force },
-				{ "upwardBias", a_config.upwardBias },
-				{ "cooldownSeconds", a_config.cooldownSeconds },
-				{ "raySpread", a_config.raySpread }
+				{ "objectRange", a_config.objectRange },
+				{ "objectForce", a_config.objectForce },
+				{ "objectUpwardBias", a_config.objectUpwardBias },
+				{ "objectCooldownSeconds", a_config.objectCooldownSeconds },
+				{ "objectRaySpread", a_config.objectRaySpread },
+				{ "npcRange", a_config.npcRange },
+				{ "npcForce", a_config.npcForce },
+				{ "npcUpwardBias", a_config.npcUpwardBias },
+				{ "npcCooldownSeconds", a_config.npcCooldownSeconds },
+				{ "npcRaySpread", a_config.npcRaySpread }
 			};
 		}
 
 		void FromJson(const json& a_json, KickConfig& a_config)
 		{
 			a_config.enabled = a_json.value("enabled", a_config.enabled);
-			a_config.debugLogging = a_json.value("debugLogging", a_config.debugLogging);
 			a_config.hotkey = a_json.value("hotkey", a_config.hotkey);
-			a_config.range = a_json.value("range", a_config.range);
-			a_config.force = a_json.value("force", a_config.force);
-			a_config.upwardBias = a_json.value("upwardBias", a_config.upwardBias);
-			a_config.cooldownSeconds = a_json.value("cooldownSeconds", a_config.cooldownSeconds);
-			a_config.raySpread = a_json.value("raySpread", a_config.raySpread);
+			a_config.objectRange = a_json.value("objectRange", a_config.objectRange);
+			a_config.objectForce = a_json.value("objectForce", a_config.objectForce);
+			a_config.objectUpwardBias = a_json.value("objectUpwardBias", a_config.objectUpwardBias);
+			a_config.objectCooldownSeconds = a_json.value("objectCooldownSeconds", a_config.objectCooldownSeconds);
+			a_config.objectRaySpread = a_json.value("objectRaySpread", a_config.objectRaySpread);
+			a_config.npcRange = a_json.value("npcRange", a_config.npcRange);
+			a_config.npcForce = a_json.value("npcForce", a_config.npcForce);
+			a_config.npcUpwardBias = a_json.value("npcUpwardBias", a_config.npcUpwardBias);
+			a_config.npcCooldownSeconds = a_json.value("npcCooldownSeconds", a_config.npcCooldownSeconds);
+			a_config.npcRaySpread = a_json.value("npcRaySpread", a_config.npcRaySpread);
 		}
 	}
 
@@ -95,7 +135,8 @@ namespace MITHRAS::KICK
 	{
 		{
 			std::scoped_lock lock(m_lock);
-			m_lastKick = {};
+			m_lastObjectKick = {};
+			m_lastNPCKick = {};
 			m_captureHotkey = false;
 		}
 
@@ -107,11 +148,16 @@ namespace MITHRAS::KICK
 		{
 			std::scoped_lock lock(m_lock);
 			m_config = a_config;
-			m_config.range = std::clamp(m_config.range, kMinRange, kMaxRange);
-			m_config.force = std::clamp(m_config.force, kMinForce, kMaxForce);
-			m_config.upwardBias = std::clamp(m_config.upwardBias, 0.0f, 1.0f);
-			m_config.cooldownSeconds = std::clamp(m_config.cooldownSeconds, 0.0f, 5.0f);
-			m_config.raySpread = std::clamp(m_config.raySpread, 0.0f, 1.0f);
+			m_config.objectRange = std::clamp(m_config.objectRange, kMinRange, kMaxRange);
+			m_config.objectForce = std::clamp(m_config.objectForce, kMinForce, kMaxForce);
+			m_config.objectUpwardBias = std::clamp(m_config.objectUpwardBias, 0.0f, 1.0f);
+			m_config.objectCooldownSeconds = std::clamp(m_config.objectCooldownSeconds, 0.0f, 5.0f);
+			m_config.objectRaySpread = std::clamp(m_config.objectRaySpread, 0.0f, 1.0f);
+			m_config.npcRange = std::clamp(m_config.npcRange, kMinRange, kMaxRange);
+			m_config.npcForce = std::clamp(m_config.npcForce, kMinForce, kMaxForce);
+			m_config.npcUpwardBias = std::clamp(m_config.npcUpwardBias, 0.0f, 1.0f);
+			m_config.npcCooldownSeconds = std::clamp(m_config.npcCooldownSeconds, 0.0f, 5.0f);
+			m_config.npcRaySpread = std::clamp(m_config.npcRaySpread, 0.0f, 1.0f);
 		}
 		SaveConfigToJson();
 	}
@@ -177,68 +223,65 @@ namespace MITHRAS::KICK
 	void Manager::TryKick()
 	{
 		KickConfig cfg{};
-		auto debug = [&](std::string_view a_msg) {
-			if (cfg.debugLogging) {
-				LOG_INFO("Kick Debug: {}", a_msg);
-			}
-		};
 
 		{
 			std::scoped_lock lock(m_lock);
 			cfg = m_config;
-			const auto now = std::chrono::steady_clock::now();
-			if (cfg.cooldownSeconds > 0.0f) {
-				const auto cooldown = std::chrono::duration<float>(cfg.cooldownSeconds);
-				if (now - m_lastKick < cooldown) {
-					debug("blocked by cooldown");
-					return;
-				}
-			}
-			m_lastKick = now;
 		}
 
-		debug("kick attempt started");
-
 		if (!cfg.enabled || IsGameplayBlocked()) {
-			if (!cfg.enabled) {
-				debug("blocked: mod disabled");
-			} else {
-				debug("blocked: gameplay/menu state");
-			}
 			return;
 		}
 
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player || player->IsDead()) {
-			debug("blocked: no player or player dead");
 			return;
 		}
 
-		const auto hit = AcquireKickTarget(player, cfg);
-		if (!hit.has_value() || !hit->hasHit) {
-			debug("no valid raycast hit target");
-			return;
+		const auto objectHit = AcquireKickTarget(player, cfg.objectRange, cfg.objectRaySpread, false);
+		const auto npcHit = AcquireKickTarget(player, cfg.npcRange, cfg.npcRaySpread, true);
+
+		std::optional<RaycastResult> hit{};
+		if (objectHit.has_value() && objectHit->hasHit) {
+			hit = objectHit;
+		}
+		if (npcHit.has_value() && npcHit->hasHit) {
+			if (!hit.has_value() || npcHit->distance < hit->distance) {
+				hit = npcHit;
+			}
 		}
 
-		LOG_INFO("Kick Debug: target candidate distance={:.2f} z={:.2f}", hit->distance, hit->hitPoint.z);
+		if (!hit.has_value()) {
+			return;
+		}
 
 		if (hit->reference) {
-			const bool applied = ApplyKickImpulse(hit->reference, hit->direction, cfg.force, cfg.upwardBias);
-			LOG_INFO("Kick Debug: impulse {} on ref {:08X}", applied ? "applied" : "failed", hit->reference->GetFormID());
-		} else {
-			debug("raycast hit had no resolved reference");
+			const bool isActor = (hit->reference->As<RE::Actor>() != nullptr);
+			const auto now = std::chrono::steady_clock::now();
+
+			{
+				std::scoped_lock lock(m_lock);
+				if (isActor) {
+					if (cfg.npcCooldownSeconds > 0.0f) {
+						const auto cooldown = std::chrono::duration<float>(cfg.npcCooldownSeconds);
+						if (now - m_lastNPCKick < cooldown) {
+							return;
+						}
+					}
+					m_lastNPCKick = now;
+				} else {
+					if (cfg.objectCooldownSeconds > 0.0f) {
+						const auto cooldown = std::chrono::duration<float>(cfg.objectCooldownSeconds);
+						if (now - m_lastObjectKick < cooldown) {
+							return;
+						}
+					}
+					m_lastObjectKick = now;
+				}
+			}
+
+			ApplyKickImpulse(hit->reference, player, hit->direction, cfg);
 		}
-
-		debug("kick completed");
-	}
-
-	void Manager::DebugForceKick()
-	{
-		auto cfg = GetConfig();
-		cfg.debugLogging = true;
-		SetConfig(cfg);
-		LOG_INFO("Kick Debug: force kick requested from console");
-		TryKick();
 	}
 
 	RE::NiPoint3 Manager::NormalizeOrZero(const RE::NiPoint3& a_vector)
@@ -309,7 +352,7 @@ namespace MITHRAS::KICK
 		return result;
 	}
 
-	std::optional<Manager::RaycastResult> Manager::AcquireKickTarget(RE::PlayerCharacter* a_player, const KickConfig& a_cfg)
+	std::optional<Manager::RaycastResult> Manager::AcquireKickTarget(RE::PlayerCharacter* a_player, float a_range, float a_raySpread, bool a_wantActor)
 	{
 		if (!a_player) {
 			return std::nullopt;
@@ -332,11 +375,11 @@ namespace MITHRAS::KICK
 			if (targetHandle) {
 				if (const auto targetPtr = targetHandle.get()) {
 					auto* target = targetPtr.get();
-					if (target && target != a_player && !target->IsDisabled()) {
+					if (target && target != a_player && !target->IsDisabled() && IsDesiredTargetType(target, a_wantActor)) {
 						const auto hitPoint = ResolveRefCenter(target);
 						const auto delta = hitPoint - origin;
 						const auto dist = delta.Length();
-						if (dist > kMinVectorLen && dist <= a_cfg.range) {
+						if (dist > kMinVectorLen && dist <= a_range) {
 							RaycastResult result{};
 							result.reference = target;
 							result.origin = origin;
@@ -372,13 +415,16 @@ namespace MITHRAS::KICK
 
 		std::optional<RaycastResult> best{};
 		for (const auto& offset : offsets) {
-			const auto dir = NormalizeOrZero(forward + right * (offset.x * a_cfg.raySpread) + up * (offset.y * a_cfg.raySpread));
+			const auto dir = NormalizeOrZero(forward + right * (offset.x * a_raySpread) + up * (offset.y * a_raySpread));
 			if (dir.SqrLength() <= kMinVectorLen) {
 				continue;
 			}
 
-			const auto hit = RaycastFrom(a_player, origin, dir, a_cfg.range);
+			const auto hit = RaycastFrom(a_player, origin, dir, a_range);
 			if (!hit.has_value()) {
+				continue;
+			}
+			if (!hit->reference || !IsDesiredTargetType(hit->reference, a_wantActor)) {
 				continue;
 			}
 
@@ -394,8 +440,11 @@ namespace MITHRAS::KICK
 		// Fallback: forward cone scan of references in range.
 		if (auto* tes = RE::TES::GetSingleton(); tes) {
 			float bestScore = std::numeric_limits<float>::max();
-			tes->ForEachReferenceInRange(a_player, a_cfg.range, [&](RE::TESObjectREFR* a_ref) {
+			tes->ForEachReferenceInRange(a_player, a_range, [&](RE::TESObjectREFR* a_ref) {
 				if (!a_ref || a_ref == a_player || a_ref->IsDisabled()) {
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+				if (!IsDesiredTargetType(a_ref, a_wantActor)) {
 					return RE::BSContainer::ForEachResult::kContinue;
 				}
 
@@ -406,7 +455,7 @@ namespace MITHRAS::KICK
 				const auto center = ResolveRefCenter(a_ref);
 				const auto delta = center - origin;
 				const auto dist = delta.Length();
-				if (dist <= kMinVectorLen || dist > a_cfg.range) {
+				if (dist <= kMinVectorLen || dist > a_range) {
 					return RE::BSContainer::ForEachResult::kContinue;
 				}
 
@@ -436,41 +485,42 @@ namespace MITHRAS::KICK
 		return best;
 	}
 
-	bool Manager::ApplyKickImpulse(RE::TESObjectREFR* a_ref, const RE::NiPoint3& a_dir, float a_force, float a_upwardBias)
+	bool Manager::ApplyKickImpulse(RE::TESObjectREFR* a_ref, RE::Actor* a_source, const RE::NiPoint3& a_dir, const KickConfig& a_cfg)
 	{
 		if (!a_ref || a_ref->IsDisabled()) {
 			return false;
 		}
 
-		auto impulseDir = NormalizeOrZero(a_dir + RE::NiPoint3(0.0f, 0.0f, a_upwardBias));
-		if (impulseDir.SqrLength() <= kMinVectorLen) {
-			return false;
-		}
-
 		if (auto* actor = a_ref->As<RE::Actor>(); actor && !actor->IsDead()) {
-			// Actor-specific path: use actor/current-process knockback so actors recover naturally.
-			const RE::hkVector4 impulse(impulseDir.x * a_force, impulseDir.y * a_force, impulseDir.z * a_force, 0.0f);
-			const bool hadCurrent = actor->ApplyCurrent(0.2f, impulse);
-
-			bool hadKnock = false;
-			auto* process = actor->GetActorRuntimeData().currentProcess;
-			if (process) {
-				process->KnockExplosion(actor, a_ref->GetPosition(), std::max(1.0f, a_force / 160.0f));
-				hadKnock = true;
+			auto impulseDir = NormalizeOrZero(a_dir + RE::NiPoint3(0.0f, 0.0f, a_cfg.npcUpwardBias));
+			if (impulseDir.SqrLength() <= kMinVectorLen) {
+				return false;
 			}
 
+			auto* source = a_source ? a_source : RE::PlayerCharacter::GetSingleton();
+			const bool hadKnock = ApplyActorKnockExplosion(actor, source, a_cfg.npcForce);
+
+			// Extra velocity helps when target is already ragdolled.
+			bool hadCurrent = false;
 			if (actor->IsInRagdollState()) {
+				const RE::hkVector4 impulse(impulseDir.x * a_cfg.npcForce, impulseDir.y * a_cfg.npcForce, impulseDir.z * a_cfg.npcForce, 0.0f);
+				hadCurrent = actor->ApplyCurrent(0.2f, impulse);
 				actor->PotentiallyFixRagdollState();
 			}
 
 			return hadCurrent || hadKnock;
 		}
 
+		auto impulseDir = NormalizeOrZero(a_dir + RE::NiPoint3(0.0f, 0.0f, a_cfg.objectUpwardBias));
+		if (impulseDir.SqrLength() <= kMinVectorLen) {
+			return false;
+		}
+
+		// Non-actors/regular objects: use rigid-body impulse.
 		auto* root = a_ref->Get3D();
 		if (!root) {
 			return false;
 		}
-
 		root->SetMotionType(RE::hkpMotion::MotionType::kDynamic, true, false, true);
 
 		auto* collision = root->GetCollisionObject();
@@ -488,7 +538,7 @@ namespace MITHRAS::KICK
 			return false;
 		}
 
-		const RE::hkVector4 impulse(impulseDir.x * a_force, impulseDir.y * a_force, impulseDir.z * a_force, 0.0f);
+		const RE::hkVector4 impulse(impulseDir.x * a_cfg.objectForce, impulseDir.y * a_cfg.objectForce, impulseDir.z * a_cfg.objectForce, 0.0f);
 		rigidBody->SetLinearImpulse(impulse);
 		return true;
 	}
@@ -546,11 +596,16 @@ namespace MITHRAS::KICK
 
 		std::scoped_lock lock(m_lock);
 		m_config = loaded;
-		m_config.range = std::clamp(m_config.range, kMinRange, kMaxRange);
-		m_config.force = std::clamp(m_config.force, kMinForce, kMaxForce);
-		m_config.upwardBias = std::clamp(m_config.upwardBias, 0.0f, 1.0f);
-		m_config.cooldownSeconds = std::clamp(m_config.cooldownSeconds, 0.0f, 5.0f);
-		m_config.raySpread = std::clamp(m_config.raySpread, 0.0f, 1.0f);
+		m_config.objectRange = std::clamp(m_config.objectRange, kMinRange, kMaxRange);
+		m_config.objectForce = std::clamp(m_config.objectForce, kMinForce, kMaxForce);
+		m_config.objectUpwardBias = std::clamp(m_config.objectUpwardBias, 0.0f, 1.0f);
+		m_config.objectCooldownSeconds = std::clamp(m_config.objectCooldownSeconds, 0.0f, 5.0f);
+		m_config.objectRaySpread = std::clamp(m_config.objectRaySpread, 0.0f, 1.0f);
+		m_config.npcRange = std::clamp(m_config.npcRange, kMinRange, kMaxRange);
+		m_config.npcForce = std::clamp(m_config.npcForce, kMinForce, kMaxForce);
+		m_config.npcUpwardBias = std::clamp(m_config.npcUpwardBias, 0.0f, 1.0f);
+		m_config.npcCooldownSeconds = std::clamp(m_config.npcCooldownSeconds, 0.0f, 5.0f);
+		m_config.npcRaySpread = std::clamp(m_config.npcRaySpread, 0.0f, 1.0f);
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const

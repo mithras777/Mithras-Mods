@@ -35,11 +35,34 @@ namespace UI
 		}
 
 		SKSEMenuFramework::SetSection("Shout Mastery");
-		SKSEMenuFramework::AddSectionItem("Overview", MasteryPanel::Render);
-		SKSEMenuFramework::AddSectionItem("Progression", ProgressionPanel::Render);
-		SKSEMenuFramework::AddSectionItem("Bonuses", BonusesPanel::Render);
-		SKSEMenuFramework::AddSectionItem("Debug", DebugPanel::Render);
+		SKSEMenuFramework::AddSectionItem("Settings", MainPanel::Render);
 		LOG_INFO("Registered SKSE Menu Framework section: Shout Mastery");
+	}
+
+	namespace MainPanel
+	{
+		void __stdcall Render()
+		{
+			if (ImGui::BeginTabBar("ShoutMasteryTabs")) {
+				if (ImGui::BeginTabItem("Overview")) {
+					MasteryPanel::Render();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem("Progression")) {
+					ProgressionPanel::Render();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem("Bonuses")) {
+					BonusesPanel::Render();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem("Debug")) {
+					DebugPanel::Render();
+					ImGui::EndTabItem();
+				}
+				ImGui::EndTabBar();
+			}
+		}
 	}
 
 	namespace MasteryPanel

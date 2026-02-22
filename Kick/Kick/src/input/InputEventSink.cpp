@@ -57,12 +57,7 @@ namespace KICK_INPUT
 
 			const auto cfg = manager->GetConfig();
 			if (cfg.enabled && keyCode == cfg.hotkey) {
-				if (cfg.debugLogging) {
-					LOG_INFO("Kick Debug: hotkey press detected key={} (match)", keyCode);
-				}
 				manager->TryKick();
-			} else if (cfg.debugLogging && input->GetDevice() == RE::INPUT_DEVICE::kKeyboard) {
-				LOG_INFO("Kick Debug: key={} pressed (hotkey={})", keyCode, cfg.hotkey);
 			}
 		}
 

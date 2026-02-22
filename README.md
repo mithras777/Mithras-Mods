@@ -167,6 +167,67 @@ This is standard SKSE behavior. Players can backup/modify individual save files 
 
 ---
 
+## 5. Unified Settings Pattern (SKSE Menu + JSON + Internal Tabs)
+
+Use this pattern for all Mithras mods (Kick, WeaponMastery, SpellMastery, ShoutMastery) to keep UX and config behavior consistent.
+
+### SKSE Menu layout
+
+Register a single page named `Settings`, then render internal tabs in one panel.
+
+```cpp
+void Register()
+{
+	SKSEMenuFramework::SetSection("Your Mod Name");
+	SKSEMenuFramework::AddSectionItem("Settings", MainPanel::Render);
+}
+
+void __stdcall MainPanel::Render()
+{
+	if (ImGui::BeginTabBar("YourModTabs")) {
+		if (ImGui::BeginTabItem("General")) { /* ... */ ImGui::EndTabItem(); }
+		if (ImGui::BeginTabItem("Progression")) { /* ... */ ImGui::EndTabItem(); }
+		if (ImGui::BeginTabItem("Bonuses")) { /* ... */ ImGui::EndTabItem(); }
+		if (ImGui::BeginTabItem("Debug")) { /* ... */ ImGui::EndTabItem(); }
+		ImGui::EndTabBar();
+	}
+}
+```
+
+### Recommended tab conventions
+
+- Keep global toggles in `General`.
+- Put tunables in collapsed `Settings` blocks inside feature tabs when appropriate.
+- Add `Defaults` buttons per feature tab (not required for global/general tab).
+- Keep `Debug` tools isolated in `Debug`.
+
+### JSON schema policy (important)
+
+For this repo, use a strict schema. Do not add legacy fallback key reads unless explicitly requested.
+
+- Good: `a_json.value("npcForce", a_config.npcForce)`
+- Avoid: nested fallback chains such as reading old keys first
+  - Example to avoid: `a_json.value("newKey", a_json.value("oldKey", ...))`
+
+### JSON save/load workflow
+
+1. Define `ToJson(const Config&)` and `FromJson(const json&, Config&)`.
+2. Clamp values in one place (`ClampConfig` or equivalent).
+3. On missing config file: write defaults.
+4. On parse error: reset to defaults and rewrite config.
+5. Save only the current schema keys.
+
+### Runtime update pattern
+
+- Read config once at panel start.
+- Edit a local copy in UI.
+- Compare `before` vs `after`.
+- Call `SetConfig(updated, true)` only if changed.
+
+This keeps JSON writes clean and avoids unnecessary file churn.
+
+---
+
 ## 6. Building Your Mods
 
 ### Prerequisites

@@ -10,6 +10,17 @@ namespace UI
 {
 	namespace
 	{
+		constexpr float kDefaultObjectForce = 450.0f;
+		constexpr float kDefaultObjectUpwardBias = 0.25f;
+		constexpr float kDefaultObjectRange = 220.0f;
+		constexpr float kDefaultObjectCooldown = 0.35f;
+		constexpr float kDefaultObjectRaySpread = 0.20f;
+		constexpr float kDefaultNPCForce = 1200.0f;
+		constexpr float kDefaultNPCUpwardBias = 0.0f;
+		constexpr float kDefaultNPCRange = 220.0f;
+		constexpr float kDefaultNPCCooldown = 0.35f;
+		constexpr float kDefaultNPCRaySpread = 0.20f;
+
 		struct KeyOption
 		{
 			std::uint32_t code{ 0 };
@@ -53,38 +64,79 @@ namespace UI
 			const auto hotkeyName = MITHRAS::KICK::Manager::GetKeyboardKeyName(cfg.hotkey);
 			const auto keyOptions = BuildKeyboardOptions();
 
-			ImGui::Checkbox("Enable Kick", &cfg.enabled);
-			ImGui::Checkbox("Debug logging", &cfg.debugLogging);
-			ImGui::Text("Hotkey: %s", hotkeyName.c_str());
+			if (ImGui::BeginTabBar("KickTabs")) {
+				if (ImGui::BeginTabItem("General")) {
+					ImGui::Checkbox("Enable Kick", &cfg.enabled);
 
-			if (ImGui::BeginCombo("Keyboard Key", hotkeyName.c_str())) {
-				for (const auto& option : keyOptions) {
-					const bool selected = (option.code == cfg.hotkey);
-					if (ImGui::Selectable(option.name.c_str(), selected)) {
-						cfg.hotkey = option.code;
+					if (ImGui::BeginCombo("Keyboard Key", hotkeyName.c_str())) {
+						for (const auto& option : keyOptions) {
+							const bool selected = (option.code == cfg.hotkey);
+							if (ImGui::Selectable(option.name.c_str(), selected)) {
+								cfg.hotkey = option.code;
+							}
+							if (selected) {
+								ImGui::SetItemDefaultFocus();
+							}
+						}
+						ImGui::EndCombo();
 					}
-					if (selected) {
-						ImGui::SetItemDefaultFocus();
-					}
+
+					ImGui::EndTabItem();
 				}
-				ImGui::EndCombo();
+
+				if (ImGui::BeginTabItem("Objects")) {
+					if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+						ImGui::SliderFloat("Object Range", &cfg.objectRange, 64.0f, 600.0f, "%.0f");
+						ImGui::SliderFloat("Object Force", &cfg.objectForce, 50.0f, 3000.0f, "%.0f");
+						ImGui::SliderFloat("Object Upward bias", &cfg.objectUpwardBias, 0.0f, 1.0f, "%.2f");
+						ImGui::SliderFloat("Object Cooldown (seconds)", &cfg.objectCooldownSeconds, 0.0f, 3.0f, "%.2f");
+						ImGui::SliderFloat("Object Ray spread", &cfg.objectRaySpread, 0.0f, 0.8f, "%.2f");
+
+						if (ImGui::Button("Defaults##Objects")) {
+							cfg.objectRange = kDefaultObjectRange;
+							cfg.objectForce = kDefaultObjectForce;
+							cfg.objectUpwardBias = kDefaultObjectUpwardBias;
+							cfg.objectCooldownSeconds = kDefaultObjectCooldown;
+							cfg.objectRaySpread = kDefaultObjectRaySpread;
+						}
+					}
+					ImGui::EndTabItem();
+				}
+
+				if (ImGui::BeginTabItem("NPCs")) {
+					if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+						ImGui::SliderFloat("NPC Range", &cfg.npcRange, 64.0f, 600.0f, "%.0f");
+						ImGui::SliderFloat("NPC Force", &cfg.npcForce, 50.0f, 3000.0f, "%.0f");
+						ImGui::SliderFloat("NPC Upward bias", &cfg.npcUpwardBias, 0.0f, 1.0f, "%.2f");
+						ImGui::SliderFloat("NPC Cooldown (seconds)", &cfg.npcCooldownSeconds, 0.0f, 3.0f, "%.2f");
+						ImGui::SliderFloat("NPC Ray spread", &cfg.npcRaySpread, 0.0f, 0.8f, "%.2f");
+
+						if (ImGui::Button("Defaults##NPCs")) {
+							cfg.npcRange = kDefaultNPCRange;
+							cfg.npcForce = kDefaultNPCForce;
+							cfg.npcUpwardBias = kDefaultNPCUpwardBias;
+							cfg.npcCooldownSeconds = kDefaultNPCCooldown;
+							cfg.npcRaySpread = kDefaultNPCRaySpread;
+						}
+					}
+					ImGui::EndTabItem();
+				}
+
+				ImGui::EndTabBar();
 			}
 
-			ImGui::Separator();
-			ImGui::SliderFloat("Range", &cfg.range, 64.0f, 600.0f, "%.0f");
-			ImGui::SliderFloat("Force", &cfg.force, 50.0f, 3000.0f, "%.0f");
-			ImGui::SliderFloat("Upward bias", &cfg.upwardBias, 0.0f, 1.0f, "%.2f");
-			ImGui::SliderFloat("Cooldown (seconds)", &cfg.cooldownSeconds, 0.0f, 3.0f, "%.2f");
-			ImGui::SliderFloat("Ray spread", &cfg.raySpread, 0.0f, 0.8f, "%.2f");
-
 			if (before.enabled != cfg.enabled ||
-				before.debugLogging != cfg.debugLogging ||
 				before.hotkey != cfg.hotkey ||
-				before.range != cfg.range ||
-				before.force != cfg.force ||
-				before.upwardBias != cfg.upwardBias ||
-				before.cooldownSeconds != cfg.cooldownSeconds ||
-				before.raySpread != cfg.raySpread) {
+				before.objectRange != cfg.objectRange ||
+				before.objectForce != cfg.objectForce ||
+				before.objectUpwardBias != cfg.objectUpwardBias ||
+				before.objectCooldownSeconds != cfg.objectCooldownSeconds ||
+				before.objectRaySpread != cfg.objectRaySpread ||
+				before.npcRange != cfg.npcRange ||
+				before.npcForce != cfg.npcForce ||
+				before.npcUpwardBias != cfg.npcUpwardBias ||
+				before.npcCooldownSeconds != cfg.npcCooldownSeconds ||
+				before.npcRaySpread != cfg.npcRaySpread) {
 				manager->SetConfig(cfg);
 			}
 		}
