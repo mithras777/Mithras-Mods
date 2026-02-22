@@ -23,6 +23,8 @@ namespace UI
 		constexpr float kDefaultNPCRaySpread = 0.20f;
 		constexpr float kDefaultNPCStaminaCost = 0.0f;
 		constexpr float kDefaultNPCStaminaDrain = 0.0f;
+		constexpr float kDefaultNPCDamageFlat = 10.0f;
+		constexpr float kDefaultNPCDamagePercent = 0.0f;
 		constexpr bool kDefaultGuardBreakKick = false;
 
 		struct KeyOption
@@ -123,6 +125,8 @@ namespace UI
 						ImGui::SliderFloat("NPC Ray spread", &cfg.npcRaySpread, 0.0f, 0.8f, "%.2f");
 						ImGui::SliderFloat("NPC Stamina Cost", &cfg.npcStaminaCost, 0.0f, 500.0f, "%.0f");
 						ImGui::SliderFloat("NPC Stamina Drain", &cfg.npcStaminaDrain, 0.0f, 500.0f, "%.0f");
+						ImGui::SliderFloat("NPC Damage (Flat)", &cfg.npcDamageFlat, 0.0f, 500.0f, "%.0f");
+						ImGui::SliderFloat("NPC Damage (%)", &cfg.npcDamagePercent, 0.0f, 100.0f, "%.1f%%");
 						ImGui::Checkbox("Guard Break Kick", &cfg.guardBreakKick);
 
 						if (ImGui::Button("Defaults##NPCs")) {
@@ -133,6 +137,8 @@ namespace UI
 							cfg.npcRaySpread = kDefaultNPCRaySpread;
 							cfg.npcStaminaCost = kDefaultNPCStaminaCost;
 							cfg.npcStaminaDrain = kDefaultNPCStaminaDrain;
+							cfg.npcDamageFlat = kDefaultNPCDamageFlat;
+							cfg.npcDamagePercent = kDefaultNPCDamagePercent;
 							cfg.guardBreakKick = kDefaultGuardBreakKick;
 						}
 					}
@@ -157,6 +163,8 @@ namespace UI
 				before.npcRaySpread != cfg.npcRaySpread ||
 				before.npcStaminaCost != cfg.npcStaminaCost ||
 				before.npcStaminaDrain != cfg.npcStaminaDrain ||
+				before.npcDamageFlat != cfg.npcDamageFlat ||
+				before.npcDamagePercent != cfg.npcDamagePercent ||
 				before.guardBreakKick != cfg.guardBreakKick) {
 				manager->SetConfig(cfg);
 			}

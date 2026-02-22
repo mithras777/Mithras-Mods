@@ -23,6 +23,8 @@ namespace MITHRAS::KICK
 		constexpr float kMinForce = 1.0f;
 		constexpr float kMaxForce = 4000.0f;
 		constexpr float kMinStamina = 0.0f;
+		constexpr float kMinDamage = 0.0f;
+		constexpr float kMaxDamagePercent = 100.0f;
 
 		bool ApplyActorKnockExplosion(RE::Actor* a_target, RE::Actor* a_source, float a_force)
 		{
@@ -115,6 +117,8 @@ namespace MITHRAS::KICK
 				{ "npcRaySpread", a_config.npcRaySpread },
 				{ "npcStaminaCost", a_config.npcStaminaCost },
 				{ "npcStaminaDrain", a_config.npcStaminaDrain },
+				{ "npcDamageFlat", a_config.npcDamageFlat },
+				{ "npcDamagePercent", a_config.npcDamagePercent },
 				{ "guardBreakKick", a_config.guardBreakKick }
 			};
 		}
@@ -136,6 +140,8 @@ namespace MITHRAS::KICK
 			a_config.npcRaySpread = a_json.value("npcRaySpread", a_config.npcRaySpread);
 			a_config.npcStaminaCost = a_json.value("npcStaminaCost", a_config.npcStaminaCost);
 			a_config.npcStaminaDrain = a_json.value("npcStaminaDrain", a_config.npcStaminaDrain);
+			a_config.npcDamageFlat = a_json.value("npcDamageFlat", a_config.npcDamageFlat);
+			a_config.npcDamagePercent = a_json.value("npcDamagePercent", a_config.npcDamagePercent);
 			a_config.guardBreakKick = a_json.value("guardBreakKick", a_config.guardBreakKick);
 		}
 	}
@@ -170,6 +176,8 @@ namespace MITHRAS::KICK
 			m_config.npcRaySpread = std::clamp(m_config.npcRaySpread, 0.0f, 1.0f);
 			m_config.npcStaminaCost = std::max(kMinStamina, m_config.npcStaminaCost);
 			m_config.npcStaminaDrain = std::max(kMinStamina, m_config.npcStaminaDrain);
+			m_config.npcDamageFlat = std::max(kMinDamage, m_config.npcDamageFlat);
+			m_config.npcDamagePercent = std::clamp(m_config.npcDamagePercent, kMinDamage, kMaxDamagePercent);
 		}
 		SaveConfigToJson();
 	}
@@ -526,6 +534,14 @@ namespace MITHRAS::KICK
 				actor->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kStamina, a_cfg.npcStaminaDrain);
 			}
 
+			const float healthBeforeDamage = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+			const float percentDamage = std::max(0.0f, healthBeforeDamage * (a_cfg.npcDamagePercent / 100.0f));
+			const float totalDamage = std::max(0.0f, a_cfg.npcDamageFlat) + percentDamage;
+			const bool didDamageHealth = totalDamage > 0.0f;
+			if (didDamageHealth) {
+				actor->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kHealth, totalDamage);
+			}
+
 			// With guardBreakKick: ragdoll only when target stamina is 0 *after* drain (so a kick that drains them to 0 also ragdolls).
 			const float staminaAfterDrain = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina);
 			const bool allowRagdoll = !a_cfg.guardBreakKick || staminaAfterDrain <= 0.0f;
@@ -544,7 +560,7 @@ namespace MITHRAS::KICK
 				actor->PotentiallyFixRagdollState();
 			}
 
-			return hadCurrent || hadKnock || (a_cfg.npcStaminaDrain > 0.0f);
+			return hadCurrent || hadKnock || (a_cfg.npcStaminaDrain > 0.0f) || didDamageHealth;
 		}
 
 		auto impulseDir = NormalizeOrZero(a_dir + RE::NiPoint3(0.0f, 0.0f, a_cfg.objectUpwardBias));
@@ -645,12 +661,14 @@ namespace MITHRAS::KICK
 		m_config.npcRaySpread = std::clamp(m_config.npcRaySpread, 0.0f, 1.0f);
 		m_config.npcStaminaCost = std::max(kMinStamina, m_config.npcStaminaCost);
 		m_config.npcStaminaDrain = std::max(kMinStamina, m_config.npcStaminaDrain);
+		m_config.npcDamageFlat = std::max(kMinDamage, m_config.npcDamageFlat);
+		m_config.npcDamagePercent = std::clamp(m_config.npcDamagePercent, kMinDamage, kMaxDamagePercent);
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const
 	{
 		wchar_t dllPath[MAX_PATH]{};
 		GetModuleFileNameW(GetModuleHandleW(L"Kick.dll"), dllPath, MAX_PATH);
-		return std::filesystem::path(dllPath).parent_path() / "Kick.json";
+		return std::filesystem::path(dllPath).parent_path() / "Kick_v2.json";
 	}
 }
