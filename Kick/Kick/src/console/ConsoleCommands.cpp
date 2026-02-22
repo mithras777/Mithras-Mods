@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include "hook/FunctionHook.h"
 #include "game/GameHelper.h"
+#include "kick/KickManager.h"
 
 namespace CONSOLE::COMMANDS {
 
@@ -69,6 +70,11 @@ namespace CONSOLE::COMMANDS {
 		// Display current delta time
 		else if (command.compare("delta") == 0) {
 			consoleLog->Print("Current delta time is >> %f", GAME::HELPER::Get_DeltaWorldTime());
+		}
+		// Force kick for debug testing
+		else if (command.compare("kick") == 0) {
+			MITHRAS::KICK::Manager::GetSingleton()->DebugForceKick();
+			consoleLog->Print("%s: requested debug kick", pluginInfo->name.c_str());
 		}
 #if defined(_DEBUG)
 		// Display current stack trace
