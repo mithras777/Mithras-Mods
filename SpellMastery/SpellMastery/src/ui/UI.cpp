@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <format>
-#include <functional>
 
 namespace UI
 {
@@ -15,20 +14,6 @@ namespace UI
 		using Config = MITHRAS::SPELL_MASTERY::MasteryConfig;
 		using BonusTuning = Config::BonusTuning;
 		using SpellSchool = MITHRAS::SPELL_MASTERY::SpellSchool;
-
-		void DrawResetButton(const char* a_id, const char* a_message, const std::function<void()>& a_action)
-		{
-			const float buttonWidth = 140.0f;
-			auto avail = ImGui::ImVec2Manager::Create();
-			ImGui::GetContentRegionAvail(avail);
-			const float offset = std::max(0.0f, avail->x - buttonWidth);
-			ImGui::ImVec2Manager::Destroy(avail);
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
-			if (ImGui::Button(a_id, ImVec2(buttonWidth, 0.0f))) {
-				a_action();
-				RE::DebugNotification(a_message);
-			}
-		}
 
 		void DrawBonusTuningEditor(BonusTuning& a_tuning, const std::string& a_prefix)
 		{
@@ -171,8 +156,6 @@ namespace UI
 			auto config = manager->GetConfig();
 			const auto before = config;
 
-			DrawResetButton("Defaults##spell_overview", "Mithras: Reset spell mastery defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
-
 			if (ImGui::CollapsingHeader("Core", ImGuiTreeNodeFlags_DefaultOpen)) {
 				ImGui::Checkbox("Enable Spell Mastery", &config.enabled);
 				ImGui::SliderFloat("Global gain multiplier", &config.gainMultiplier, 0.1f, 10.0f, "%.2f");
@@ -188,6 +171,11 @@ namespace UI
 					ImGui::BulletText("%s (%s)", key.name.c_str(), MITHRAS::SPELL_MASTERY::SchoolName(key.school).data());
 				}
 			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##spell_overview")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset spell mastery defaults");
+			}
 
 			ApplyIfChanged(before, config);
 		}
@@ -200,8 +188,6 @@ namespace UI
 			auto* manager = MITHRAS::SPELL_MASTERY::Manager::GetSingleton();
 			auto config = manager->GetConfig();
 			const auto before = config;
-
-			DrawResetButton("Defaults##spell_progression", "Mithras: Reset spell progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			if (ImGui::CollapsingHeader("Level Thresholds", ImGuiTreeNodeFlags_DefaultOpen)) {
 				if (config.thresholds.size() < 5) {
@@ -218,6 +204,11 @@ namespace UI
 			for (std::size_t i = 0; i < MITHRAS::SPELL_MASTERY::kSchoolCount; ++i) {
 				DrawSchoolProgressionEditor(static_cast<SpellSchool>(i), config.schools[i], i);
 			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##spell_progression")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset spell progression defaults");
+			}
 
 			ApplyIfChanged(before, config);
 		}
@@ -230,8 +221,6 @@ namespace UI
 			auto* manager = MITHRAS::SPELL_MASTERY::Manager::GetSingleton();
 			auto config = manager->GetConfig();
 			const auto before = config;
-
-			DrawResetButton("Defaults##spell_bonuses", "Mithras: Reset spell bonus defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			if (ImGui::CollapsingHeader("General Bonuses", ImGuiTreeNodeFlags_DefaultOpen)) {
 				DrawBonusTuningEditor(config.generalBonuses, "spell_general");
@@ -249,6 +238,11 @@ namespace UI
 						ImGui::TextDisabled("Using General Bonuses");
 					}
 				}
+			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##spell_bonuses")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset spell bonus defaults");
 			}
 
 			ApplyIfChanged(before, config);

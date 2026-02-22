@@ -6,27 +6,9 @@
 
 #include <algorithm>
 #include <format>
-#include <functional>
 
 namespace UI
 {
-	namespace
-	{
-		void DrawResetButton(const char* a_id, const char* a_message, const std::function<void()>& a_action)
-		{
-			const float buttonWidth = 140.0f;
-			auto avail = ImGui::ImVec2Manager::Create();
-			ImGui::GetContentRegionAvail(avail);
-			const float offset = std::max(0.0f, avail->x - buttonWidth);
-			ImGui::ImVec2Manager::Destroy(avail);
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
-			if (ImGui::Button(a_id, ImVec2(buttonWidth, 0.0f))) {
-				a_action();
-				RE::DebugNotification(a_message);
-			}
-		}
-	}
-
 	void Register()
 	{
 		if (!SKSEMenuFramework::IsInstalled()) {
@@ -73,7 +55,6 @@ namespace UI
 			auto cfg = manager->GetConfig();
 			const auto before = cfg;
 
-			DrawResetButton("Defaults##shout_overview", "Mithras: Reset shout mastery defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 			ImGui::Checkbox("Enable Shout Mastery", &cfg.enabled);
 			ImGui::SliderFloat("Global gain multiplier", &cfg.gainMultiplier, 0.1f, 10.0f, "%.2f");
 
@@ -84,6 +65,11 @@ namespace UI
 				ImGui::Text("Uses: %u", stats.uses);
 			} else {
 				ImGui::TextDisabled("No shout equipped");
+			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##shout_overview")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset shout mastery defaults");
 			}
 
 			if (before.enabled != cfg.enabled ||
@@ -101,7 +87,6 @@ namespace UI
 			auto cfg = manager->GetConfig();
 			const auto before = cfg;
 
-			DrawResetButton("Defaults##shout_progression", "Mithras: Reset shout progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 			ImGui::Checkbox("Gain from uses", &cfg.gainFromUses);
 
 			if (cfg.thresholds.size() < 5) {
@@ -112,6 +97,11 @@ namespace UI
 				if (ImGui::InputInt(std::format("Level {} requirement", i + 1).c_str(), &value)) {
 					cfg.thresholds[i] = static_cast<std::uint32_t>(std::max(1, value));
 				}
+			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##shout_progression")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset shout progression defaults");
 			}
 
 			if (before.gainFromUses != cfg.gainFromUses ||
@@ -130,8 +120,6 @@ namespace UI
 			const auto before = cfg;
 			auto& b = cfg.bonuses;
 
-			DrawResetButton("Defaults##shout_bonuses", "Mithras: Reset shout bonus defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
-
 			ImGui::SliderFloat("Cooldown reduction / level", &b.shoutRecoveryPerLevel, -10.0f, 0.0f, "%.2f");
 			ImGui::SliderFloat("Cooldown reduction cap", &b.shoutRecoveryCap, -100.0f, 0.0f, "%.1f");
 			ImGui::SliderFloat("Shout damage / level", &b.shoutPowerPerLevel, 0.0f, 10.0f, "%.2f");
@@ -142,6 +130,11 @@ namespace UI
 			ImGui::SliderFloat("Voice points cap", &b.voicePointsCap, 0.0f, 250.0f, "%.1f");
 			ImGui::SliderFloat("Stamina regen / level", &b.staminaRatePerLevel, 0.0f, 10.0f, "%.2f");
 			ImGui::SliderFloat("Stamina regen cap", &b.staminaRateCap, 0.0f, 150.0f, "%.1f");
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##shout_bonuses")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset shout bonus defaults");
+			}
 
 			if (before.bonuses.shoutRecoveryPerLevel != b.shoutRecoveryPerLevel ||
 				before.bonuses.shoutRecoveryCap != b.shoutRecoveryCap ||

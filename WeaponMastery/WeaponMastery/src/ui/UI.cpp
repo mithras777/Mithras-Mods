@@ -6,27 +6,12 @@
 
 #include <algorithm>
 #include <format>
-#include <functional>
 
 namespace UI
 {
 	namespace
 	{
 		using BonusTuning = MITHRAS::MASTERY::MasteryConfig::BonusTuning;
-
-		void DrawResetButton(const char* a_id, const char* a_message, const std::function<void()>& a_action)
-		{
-			const float buttonWidth = 140.0f;
-			auto avail = ImGui::ImVec2Manager::Create();
-			ImGui::GetContentRegionAvail(avail);
-			const float offset = std::max(0.0f, avail->x - buttonWidth);
-			ImGui::ImVec2Manager::Destroy(avail);
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
-			if (ImGui::Button(a_id, ImVec2(buttonWidth, 0.0f))) {
-				a_action();
-				RE::DebugNotification(a_message);
-			}
-		}
 
 		void DrawBonusTuningEditor(BonusTuning& a_tuning, const std::string& a_prefix)
 		{
@@ -129,8 +114,6 @@ namespace UI
 			auto config = manager->GetConfig();
 			const auto before = config;
 
-			DrawResetButton("Defaults##overview", "Mithras: Reset overview defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
-
 			if (ImGui::CollapsingHeader("Core", ImGuiTreeNodeFlags_DefaultOpen)) {
 				ImGui::Checkbox("Enable Weapon Mastery", &config.enabled);
 				ImGui::SliderFloat("Global gain multiplier", &config.gainMultiplier, 0.1f, 10.0f, "%.2f");
@@ -151,6 +134,11 @@ namespace UI
 				manager->ResetEquippedItemMastery();
 				RE::DebugNotification("Mithras: Equipped item mastery reset");
 			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##overview")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset overview defaults");
+			}
 
 			ApplyIfChanged(before, config);
 		}
@@ -163,8 +151,6 @@ namespace UI
 			auto* manager = MITHRAS::MASTERY::Manager::GetSingleton();
 			auto config = manager->GetConfig();
 			const auto before = config;
-
-			DrawResetButton("Defaults##progression", "Mithras: Reset progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			if (ImGui::CollapsingHeader("Experience Sources", ImGuiTreeNodeFlags_DefaultOpen)) {
 				if (ImGui::BeginTable("gainSources", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV)) {
@@ -188,6 +174,11 @@ namespace UI
 					}
 				}
 			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##progression")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset progression defaults");
+			}
 
 			ApplyIfChanged(before, config);
 		}
@@ -200,8 +191,6 @@ namespace UI
 			auto* manager = MITHRAS::MASTERY::Manager::GetSingleton();
 			auto config = manager->GetConfig();
 			const auto before = config;
-
-			DrawResetButton("Defaults##bonuses", "Mithras: Reset bonus defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
 			if (ImGui::CollapsingHeader("General Bonuses", ImGuiTreeNodeFlags_DefaultOpen)) {
 				DrawBonusTuningEditor(config.generalBonuses, "general");
@@ -219,6 +208,11 @@ namespace UI
 						ImGui::TextDisabled("Using General Bonuses");
 					}
 				}
+			}
+			ImGui::Separator();
+			if (ImGui::Button("Defaults##bonuses")) {
+				manager->ResetAllConfigToDefault(true);
+				RE::DebugNotification("Mithras: Reset bonus defaults");
 			}
 
 			ApplyIfChanged(before, config);
