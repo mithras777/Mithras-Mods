@@ -25,9 +25,13 @@ namespace MITHRAS::SPELL_MASTERY
 
 		for (std::size_t i = 0; i < kSchoolCount; ++i) {
 			const auto school = static_cast<SpellSchool>(i);
-			ModAV(a_player, SchoolToActorValue(school), m_applied.schoolSkillBonus[i]);
+			ModAV(a_player, SchoolToSkillAV(school), m_applied.schoolSkillBonus[i]);
+			ModAV(a_player, SchoolToSkillAdvanceAV(school), m_applied.schoolSkillAdvanceBonus[i]);
+			ModAV(a_player, SchoolToPowerAV(school), m_applied.schoolPowerBonus[i]);
+			ModAV(a_player, SchoolToCostAV(school), m_applied.schoolCostReduction[i]);
 		}
 		ModAV(a_player, RE::ActorValue::kMagickaRateMult, m_applied.magickaRateMult);
+		ModAV(a_player, RE::ActorValue::kMagicka, m_applied.magickaFlat);
 	}
 
 	void BonusApplier::Clear(RE::PlayerCharacter* a_player)
@@ -38,9 +42,13 @@ namespace MITHRAS::SPELL_MASTERY
 
 		for (std::size_t i = 0; i < kSchoolCount; ++i) {
 			const auto school = static_cast<SpellSchool>(i);
-			ModAV(a_player, SchoolToActorValue(school), -m_applied.schoolSkillBonus[i]);
+			ModAV(a_player, SchoolToSkillAV(school), -m_applied.schoolSkillBonus[i]);
+			ModAV(a_player, SchoolToSkillAdvanceAV(school), -m_applied.schoolSkillAdvanceBonus[i]);
+			ModAV(a_player, SchoolToPowerAV(school), -m_applied.schoolPowerBonus[i]);
+			ModAV(a_player, SchoolToCostAV(school), -m_applied.schoolCostReduction[i]);
 		}
 		ModAV(a_player, RE::ActorValue::kMagickaRateMult, -m_applied.magickaRateMult);
+		ModAV(a_player, RE::ActorValue::kMagicka, -m_applied.magickaFlat);
 
 		m_applied = {};
 		m_active = false;

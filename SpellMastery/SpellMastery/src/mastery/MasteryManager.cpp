@@ -14,18 +14,32 @@ namespace MITHRAS::SPELL_MASTERY
 		constexpr std::uint32_t kSerializationVersion = 1;
 		constexpr std::uint32_t kConfigRecord = 'SMCF';
 		constexpr std::uint32_t kMasteryRecord = 'SMMR';
+		constexpr auto kKillCreditWindow = std::chrono::seconds(10);
 
-		void ClampTuning(MasteryConfig::BonusTuning& a_tuning)
+		void ClampProgression(MasteryConfig::ProgressionTuning& a_tuning)
 		{
-			a_tuning.skillBonusPerLevel = std::clamp(a_tuning.skillBonusPerLevel, 0.0f, 100.0f);
-			a_tuning.skillBonusCap = std::clamp(a_tuning.skillBonusCap, 0.0f, 100.0f);
-			a_tuning.magickaRatePerLevel = std::clamp(a_tuning.magickaRatePerLevel, 0.0f, 100.0f);
+			a_tuning.equipSecondsPerPoint = std::clamp(a_tuning.equipSecondsPerPoint, 0.1f, 600.0f);
+		}
+
+		void ClampBonuses(MasteryConfig::BonusTuning& a_tuning)
+		{
+			a_tuning.skillBonusPerLevel = std::clamp(a_tuning.skillBonusPerLevel, 0.0f, 20.0f);
+			a_tuning.skillBonusCap = std::clamp(a_tuning.skillBonusCap, 0.0f, 200.0f);
+			a_tuning.skillAdvancePerLevel = std::clamp(a_tuning.skillAdvancePerLevel, 0.0f, 30.0f);
+			a_tuning.skillAdvanceCap = std::clamp(a_tuning.skillAdvanceCap, 0.0f, 300.0f);
+			a_tuning.powerBonusPerLevel = std::clamp(a_tuning.powerBonusPerLevel, 0.0f, 20.0f);
+			a_tuning.powerBonusCap = std::clamp(a_tuning.powerBonusCap, 0.0f, 200.0f);
+			a_tuning.costReductionPerLevel = std::clamp(a_tuning.costReductionPerLevel, 0.0f, 20.0f);
+			a_tuning.costReductionCap = std::clamp(a_tuning.costReductionCap, 0.0f, 100.0f);
+			a_tuning.magickaRatePerLevel = std::clamp(a_tuning.magickaRatePerLevel, 0.0f, 20.0f);
 			a_tuning.magickaRateCap = std::clamp(a_tuning.magickaRateCap, 0.0f, 100.0f);
+			a_tuning.magickaFlatPerLevel = std::clamp(a_tuning.magickaFlatPerLevel, 0.0f, 50.0f);
+			a_tuning.magickaFlatCap = std::clamp(a_tuning.magickaFlatCap, 0.0f, 1000.0f);
 		}
 
 		void ClampConfig(MasteryConfig& a_config)
 		{
-			a_config.gainMultiplier = std::max(0.1f, a_config.gainMultiplier);
+			a_config.gainMultiplier = std::clamp(a_config.gainMultiplier, 0.1f, 20.0f);
 			if (a_config.thresholds.empty()) {
 				a_config.thresholds = { 10, 25, 50, 100, 200 };
 			}
@@ -34,18 +48,31 @@ namespace MITHRAS::SPELL_MASTERY
 			}
 			std::sort(a_config.thresholds.begin(), a_config.thresholds.end());
 			a_config.thresholds.erase(std::unique(a_config.thresholds.begin(), a_config.thresholds.end()), a_config.thresholds.end());
-			ClampTuning(a_config.generalBonuses);
-			for (auto& schoolCfg : a_config.schoolBonuses) {
-				ClampTuning(schoolCfg.tuning);
+
+			ClampBonuses(a_config.generalBonuses);
+			for (auto& schoolCfg : a_config.schools) {
+				ClampProgression(schoolCfg.progression);
+				ClampBonuses(schoolCfg.bonus);
 			}
 		}
 	}
 
 	MasteryConfig Manager::DefaultConfig()
 	{
-		MasteryConfig config{};
-		ClampConfig(config);
-		return config;
+		MasteryConfig cfg{};
+
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kDestruction)].progression.gainFromKills = true;
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kConjuration)].progression.gainFromSummons = true;
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kAlteration)].progression.gainFromUses = true;
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kIllusion)].progression.gainFromUses = true;
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kRestoration)].progression.gainFromEquipTime = true;
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kRestoration)].progression.equipSecondsPerPoint = 3.0f;
+
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kDestruction)].bonus.powerBonusPerLevel = 1.5f;
+		cfg.schools[static_cast<std::size_t>(SpellSchool::kDestruction)].bonus.powerBonusCap = 40.0f;
+
+		ClampConfig(cfg);
+		return cfg;
 	}
 
 	void Manager::Initialize()
@@ -53,13 +80,16 @@ namespace MITHRAS::SPELL_MASTERY
 		{
 			std::scoped_lock lock(m_lock);
 			m_config = DefaultConfig();
-			m_mastery = {};
-			m_activeSchools = {};
+			m_mastery.clear();
+			m_leftSpell = {};
+			m_rightSpell = {};
+			m_lastCast = {};
 		}
+
 		LoadConfigFromJson();
 
 		std::scoped_lock lock(m_lock);
-		RefreshActiveSchoolsLocked();
+		RefreshEquippedFromPlayerLocked();
 		ReapplyBonusesLocked();
 	}
 
@@ -68,8 +98,10 @@ namespace MITHRAS::SPELL_MASTERY
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		std::scoped_lock lock(m_lock);
 		m_bonusApplier.Clear(player);
-		m_mastery = {};
-		m_activeSchools = {};
+		m_mastery.clear();
+		m_leftSpell = {};
+		m_rightSpell = {};
+		m_lastCast = {};
 	}
 
 	void Manager::OnEquipEvent(const RE::TESEquipEvent& a_event)
@@ -79,14 +111,54 @@ namespace MITHRAS::SPELL_MASTERY
 			return;
 		}
 
-		const auto* form = RE::TESForm::LookupByID(a_event.baseObject);
-		if (form && !IsTrackedSpellForm(form)) {
+		std::scoped_lock lock(m_lock);
+		RefreshEquippedFromPlayerLocked();
+		ReapplyBonusesLocked();
+	}
+
+	void Manager::OnSpellCastEvent(const RE::TESSpellCastEvent& a_event)
+	{
+		const auto* caster = a_event.object.get();
+		if (!caster || !caster->IsPlayerRef()) {
 			return;
 		}
 
-		std::scoped_lock lock(m_lock);
-		RefreshActiveSchoolsLocked();
-		ReapplyBonusesLocked();
+		const auto* form = RE::TESForm::LookupByID(a_event.spell);
+		const auto* spell = GetSpellFromForm(form);
+		const auto keyOpt = BuildSpellKey(spell);
+		if (!keyOpt.has_value()) {
+			return;
+		}
+
+		bool leveledUp = false;
+		std::uint32_t level = 0;
+		SpellKey key = *keyOpt;
+		{
+			std::scoped_lock lock(m_lock);
+			RefreshEquippedFromPlayerLocked();
+			auto& stats = m_mastery[key];
+			const auto before = stats.level;
+
+			const std::uint32_t gain = std::max(1u, static_cast<std::uint32_t>(std::round(m_config.gainMultiplier)));
+			stats.uses += gain;
+			if (IsSummonLikeSpell(spell)) {
+				stats.summons += gain;
+			}
+
+			RefreshLevelLocked(key, stats);
+			leveledUp = stats.level > before;
+			level = stats.level;
+
+			m_lastCast[static_cast<std::size_t>(key.school)].key = key;
+			m_lastCast[static_cast<std::size_t>(key.school)].castAt = Clock::now();
+			ReapplyBonusesLocked();
+		}
+
+		if (leveledUp) {
+			const std::string message = std::format("Mithras: {} ({}) Mastery Level {}", key.name, SchoolName(key.school), level);
+			RE::DebugNotification(message.c_str());
+			LOG_INFO("{}", message);
+		}
 	}
 
 	void Manager::OnDeathEvent(const RE::TESDeathEvent& a_event)
@@ -100,35 +172,86 @@ namespace MITHRAS::SPELL_MASTERY
 			return;
 		}
 
-		std::vector<std::pair<SpellSchool, std::uint32_t>> levelUps;
+		bool leveledUp = false;
+		std::uint32_t level = 0;
+		SpellKey leveledKey{};
+
 		{
 			std::scoped_lock lock(m_lock);
-			if (!m_config.enabled || !m_config.gainFromKills) {
+			RefreshEquippedFromPlayerLocked();
+
+			const auto now = Clock::now();
+			std::optional<SpellKey> creditKey;
+			const auto destructionIndex = static_cast<std::size_t>(SpellSchool::kDestruction);
+			if (m_config.schools[destructionIndex].progression.gainFromKills &&
+				m_lastCast[destructionIndex].key.has_value() &&
+				now - m_lastCast[destructionIndex].castAt <= kKillCreditWindow) {
+				creditKey = m_lastCast[destructionIndex].key;
+			}
+
+			if (!creditKey.has_value()) {
+				for (const auto& state : { m_rightSpell, m_leftSpell }) {
+					if (!state.key.has_value() || state.key->school != SpellSchool::kDestruction) {
+						continue;
+					}
+					creditKey = state.key;
+					break;
+				}
+			}
+
+			if (!creditKey.has_value()) {
 				return;
 			}
 
-			const std::uint32_t gain = std::max(1u, static_cast<std::uint32_t>(std::round(std::max(0.1f, m_config.gainMultiplier))));
-			for (std::size_t i = 0; i < kSchoolCount; ++i) {
-				if (!m_activeSchools[i]) {
-					continue;
-				}
-
-				auto& stats = m_mastery[i];
-				const auto before = stats.level;
-				stats.kills += gain;
-				RefreshLevelLocked(stats);
-				if (stats.level > before) {
-					levelUps.emplace_back(static_cast<SpellSchool>(i), stats.level);
-				}
-			}
-
-			if (!levelUps.empty()) {
-				ReapplyBonusesLocked();
-			}
+			auto& stats = m_mastery[*creditKey];
+			const auto before = stats.level;
+			const std::uint32_t gain = std::max(1u, static_cast<std::uint32_t>(std::round(m_config.gainMultiplier)));
+			stats.kills += gain;
+			RefreshLevelLocked(*creditKey, stats);
+			leveledUp = stats.level > before;
+			level = stats.level;
+			leveledKey = *creditKey;
+			ReapplyBonusesLocked();
 		}
 
-		for (const auto& [school, level] : levelUps) {
-			const std::string message = std::format("Mithras: {} Spell Mastery Level {}", SchoolName(school), level);
+		if (leveledUp) {
+			const std::string message = std::format("Mithras: {} ({}) Mastery Level {}", leveledKey.name, SchoolName(leveledKey.school), level);
+			RE::DebugNotification(message.c_str());
+			LOG_INFO("{}", message);
+		}
+	}
+
+	void Manager::OnHitEvent(const RE::TESHitEvent& a_event)
+	{
+		const auto* aggressor = a_event.cause.get();
+		if (!aggressor || !aggressor->IsPlayerRef()) {
+			return;
+		}
+
+		const auto* sourceForm = RE::TESForm::LookupByID(a_event.source);
+		const auto* spell = GetSpellFromForm(sourceForm);
+		const auto keyOpt = BuildSpellKey(spell);
+		if (!keyOpt.has_value()) {
+			return;
+		}
+
+		bool leveledUp = false;
+		std::uint32_t level = 0;
+		SpellKey key = *keyOpt;
+		{
+			std::scoped_lock lock(m_lock);
+			auto& stats = m_mastery[key];
+			const auto before = stats.level;
+			const std::uint32_t gain = std::max(1u, static_cast<std::uint32_t>(std::round(m_config.gainMultiplier)));
+			stats.hits += gain;
+			RefreshLevelLocked(key, stats);
+			leveledUp = stats.level > before;
+			level = stats.level;
+			ReapplyBonusesLocked();
+		}
+
+		if (leveledUp) {
+			const std::string message = std::format("Mithras: {} ({}) Mastery Level {}", key.name, SchoolName(key.school), level);
 			RE::DebugNotification(message.c_str());
 			LOG_INFO("{}", message);
 		}
@@ -145,24 +268,38 @@ namespace MITHRAS::SPELL_MASTERY
 		if (a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
 			a_intfc->WriteRecordData(m_config.enabled);
 			a_intfc->WriteRecordData(m_config.gainMultiplier);
+
 			std::uint32_t thresholdCount = static_cast<std::uint32_t>(m_config.thresholds.size());
 			a_intfc->WriteRecordData(thresholdCount);
 			for (const auto threshold : m_config.thresholds) {
 				a_intfc->WriteRecordData(threshold);
 			}
-			a_intfc->WriteRecordData(m_config.gainFromKills);
 
-			a_intfc->WriteRecordData(m_config.generalBonuses.skillBonusPerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.skillBonusCap);
-			a_intfc->WriteRecordData(m_config.generalBonuses.magickaRatePerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.magickaRateCap);
+			auto writeBonus = [&](const MasteryConfig::BonusTuning& a_bonus) {
+				a_intfc->WriteRecordData(a_bonus.skillBonusPerLevel);
+				a_intfc->WriteRecordData(a_bonus.skillBonusCap);
+				a_intfc->WriteRecordData(a_bonus.skillAdvancePerLevel);
+				a_intfc->WriteRecordData(a_bonus.skillAdvanceCap);
+				a_intfc->WriteRecordData(a_bonus.powerBonusPerLevel);
+				a_intfc->WriteRecordData(a_bonus.powerBonusCap);
+				a_intfc->WriteRecordData(a_bonus.costReductionPerLevel);
+				a_intfc->WriteRecordData(a_bonus.costReductionCap);
+				a_intfc->WriteRecordData(a_bonus.magickaRatePerLevel);
+				a_intfc->WriteRecordData(a_bonus.magickaRateCap);
+				a_intfc->WriteRecordData(a_bonus.magickaFlatPerLevel);
+				a_intfc->WriteRecordData(a_bonus.magickaFlatCap);
+			};
 
-			for (const auto& schoolCfg : m_config.schoolBonuses) {
-				a_intfc->WriteRecordData(schoolCfg.enabled);
-				a_intfc->WriteRecordData(schoolCfg.tuning.skillBonusPerLevel);
-				a_intfc->WriteRecordData(schoolCfg.tuning.skillBonusCap);
-				a_intfc->WriteRecordData(schoolCfg.tuning.magickaRatePerLevel);
-				a_intfc->WriteRecordData(schoolCfg.tuning.magickaRateCap);
+			writeBonus(m_config.generalBonuses);
+			for (const auto& schoolCfg : m_config.schools) {
+				a_intfc->WriteRecordData(schoolCfg.progression.gainFromKills);
+				a_intfc->WriteRecordData(schoolCfg.progression.gainFromUses);
+				a_intfc->WriteRecordData(schoolCfg.progression.gainFromSummons);
+				a_intfc->WriteRecordData(schoolCfg.progression.gainFromHits);
+				a_intfc->WriteRecordData(schoolCfg.progression.gainFromEquipTime);
+				a_intfc->WriteRecordData(schoolCfg.progression.equipSecondsPerPoint);
+				a_intfc->WriteRecordData(schoolCfg.useBonusOverride);
+				writeBonus(schoolCfg.bonus);
 			}
 		}
 
@@ -170,8 +307,22 @@ namespace MITHRAS::SPELL_MASTERY
 			return;
 		}
 
-		for (const auto& stats : m_mastery) {
+		std::uint32_t count = static_cast<std::uint32_t>(m_mastery.size());
+		a_intfc->WriteRecordData(count);
+		for (const auto& [key, stats] : m_mastery) {
+			a_intfc->WriteRecordData(key.formID);
+			a_intfc->WriteRecordData(key.school);
+			std::uint32_t nameLen = static_cast<std::uint32_t>(key.name.size());
+			a_intfc->WriteRecordData(nameLen);
+			for (char c : key.name) {
+				a_intfc->WriteRecordData(c);
+			}
+
 			a_intfc->WriteRecordData(stats.kills);
+			a_intfc->WriteRecordData(stats.uses);
+			a_intfc->WriteRecordData(stats.summons);
+			a_intfc->WriteRecordData(stats.hits);
+			a_intfc->WriteRecordData(stats.equippedSeconds);
 			a_intfc->WriteRecordData(stats.level);
 		}
 	}
@@ -182,57 +333,92 @@ namespace MITHRAS::SPELL_MASTERY
 			return;
 		}
 
-		MasteryConfig loadedConfig = DefaultConfig();
-		std::array<MasteryStats, kSchoolCount> loadedStats{};
+		MasteryConfig loadedCfg = DefaultConfig();
+		std::unordered_map<SpellKey, MasteryStats, SpellKeyHash> loadedMastery{};
 
 		std::uint32_t type = 0;
 		std::uint32_t version = 0;
 		std::uint32_t length = 0;
-
 		while (a_intfc->GetNextRecordInfo(type, version, length)) {
 			if (version != kSerializationVersion) {
 				continue;
 			}
 
 			if (type == kConfigRecord) {
-				a_intfc->ReadRecordData(loadedConfig.enabled);
-				a_intfc->ReadRecordData(loadedConfig.gainMultiplier);
+				a_intfc->ReadRecordData(loadedCfg.enabled);
+				a_intfc->ReadRecordData(loadedCfg.gainMultiplier);
+
 				std::uint32_t thresholdCount = 0;
 				a_intfc->ReadRecordData(thresholdCount);
-				loadedConfig.thresholds.clear();
-				loadedConfig.thresholds.reserve(thresholdCount);
+				loadedCfg.thresholds.clear();
+				loadedCfg.thresholds.reserve(thresholdCount);
 				for (std::uint32_t i = 0; i < thresholdCount; ++i) {
-					std::uint32_t threshold = 0;
-					a_intfc->ReadRecordData(threshold);
-					loadedConfig.thresholds.push_back(threshold);
+					std::uint32_t value = 0;
+					a_intfc->ReadRecordData(value);
+					loadedCfg.thresholds.push_back(value);
 				}
-				a_intfc->ReadRecordData(loadedConfig.gainFromKills);
 
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.skillBonusPerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.skillBonusCap);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.magickaRatePerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.magickaRateCap);
+				auto readBonus = [&](MasteryConfig::BonusTuning& a_bonus) {
+					a_intfc->ReadRecordData(a_bonus.skillBonusPerLevel);
+					a_intfc->ReadRecordData(a_bonus.skillBonusCap);
+					a_intfc->ReadRecordData(a_bonus.skillAdvancePerLevel);
+					a_intfc->ReadRecordData(a_bonus.skillAdvanceCap);
+					a_intfc->ReadRecordData(a_bonus.powerBonusPerLevel);
+					a_intfc->ReadRecordData(a_bonus.powerBonusCap);
+					a_intfc->ReadRecordData(a_bonus.costReductionPerLevel);
+					a_intfc->ReadRecordData(a_bonus.costReductionCap);
+					a_intfc->ReadRecordData(a_bonus.magickaRatePerLevel);
+					a_intfc->ReadRecordData(a_bonus.magickaRateCap);
+					a_intfc->ReadRecordData(a_bonus.magickaFlatPerLevel);
+					a_intfc->ReadRecordData(a_bonus.magickaFlatCap);
+				};
 
-				for (auto& schoolCfg : loadedConfig.schoolBonuses) {
-					a_intfc->ReadRecordData(schoolCfg.enabled);
-					a_intfc->ReadRecordData(schoolCfg.tuning.skillBonusPerLevel);
-					a_intfc->ReadRecordData(schoolCfg.tuning.skillBonusCap);
-					a_intfc->ReadRecordData(schoolCfg.tuning.magickaRatePerLevel);
-					a_intfc->ReadRecordData(schoolCfg.tuning.magickaRateCap);
+				readBonus(loadedCfg.generalBonuses);
+				for (auto& schoolCfg : loadedCfg.schools) {
+					a_intfc->ReadRecordData(schoolCfg.progression.gainFromKills);
+					a_intfc->ReadRecordData(schoolCfg.progression.gainFromUses);
+					a_intfc->ReadRecordData(schoolCfg.progression.gainFromSummons);
+					a_intfc->ReadRecordData(schoolCfg.progression.gainFromHits);
+					a_intfc->ReadRecordData(schoolCfg.progression.gainFromEquipTime);
+					a_intfc->ReadRecordData(schoolCfg.progression.equipSecondsPerPoint);
+					a_intfc->ReadRecordData(schoolCfg.useBonusOverride);
+					readBonus(schoolCfg.bonus);
 				}
 			} else if (type == kMasteryRecord) {
-				for (auto& stats : loadedStats) {
+				std::uint32_t count = 0;
+				a_intfc->ReadRecordData(count);
+				for (std::uint32_t i = 0; i < count; ++i) {
+					SpellKey key{};
+					MasteryStats stats{};
+					a_intfc->ReadRecordData(key.formID);
+					a_intfc->ReadRecordData(key.school);
+
+					std::uint32_t nameLen = 0;
+					a_intfc->ReadRecordData(nameLen);
+					key.name.resize(nameLen);
+					for (std::uint32_t j = 0; j < nameLen; ++j) {
+						char c = '\0';
+						a_intfc->ReadRecordData(c);
+						key.name[j] = c;
+					}
+
 					a_intfc->ReadRecordData(stats.kills);
+					a_intfc->ReadRecordData(stats.uses);
+					a_intfc->ReadRecordData(stats.summons);
+					a_intfc->ReadRecordData(stats.hits);
+					a_intfc->ReadRecordData(stats.equippedSeconds);
 					a_intfc->ReadRecordData(stats.level);
+					loadedMastery[key] = stats;
 				}
 			}
 		}
 
-		ClampConfig(loadedConfig);
+		ClampConfig(loadedCfg);
 		std::scoped_lock lock(m_lock);
-		m_config = loadedConfig;
-		m_mastery = loadedStats;
-		RefreshActiveSchoolsLocked();
+		m_config = loadedCfg;
+		m_mastery = std::move(loadedMastery);
+		m_lastCast = {};
+		RefreshEquippedFromPlayerLocked();
 		ReapplyBonusesLocked();
 	}
 
@@ -250,22 +436,57 @@ namespace MITHRAS::SPELL_MASTERY
 			ClampConfig(m_config);
 			ReapplyBonusesLocked();
 		}
-
 		if (a_writeJson) {
 			SaveConfigToJson();
 		}
 	}
 
-	MasteryStats Manager::GetStats(SpellSchool a_school) const
+	MasteryStats Manager::GetStats(const SpellKey& a_key) const
 	{
 		std::scoped_lock lock(m_lock);
-		return m_mastery[static_cast<std::size_t>(a_school)];
+		auto it = m_mastery.find(a_key);
+		if (it == m_mastery.end()) {
+			return {};
+		}
+
+		MasteryStats stats = it->second;
+		const auto now = Clock::now();
+		auto appendEquipped = [&](const EquippedState& a_slot) {
+			if (!a_slot.key.has_value() || *a_slot.key != a_key) {
+				return;
+			}
+			if (a_slot.equippedAt.time_since_epoch().count() == 0) {
+				return;
+			}
+			stats.equippedSeconds += std::chrono::duration<float>(now - a_slot.equippedAt).count();
+		};
+		appendEquipped(m_leftSpell);
+		appendEquipped(m_rightSpell);
+		return stats;
 	}
 
-	bool Manager::IsSchoolActive(SpellSchool a_school) const
+	std::uint32_t Manager::GetProgressCount(const SpellKey& a_key) const
 	{
 		std::scoped_lock lock(m_lock);
-		return m_activeSchools[static_cast<std::size_t>(a_school)];
+		auto it = m_mastery.find(a_key);
+		if (it == m_mastery.end()) {
+			return 0;
+		}
+		return ComputeProgressCountLocked(a_key, it->second);
+	}
+
+	std::vector<SpellKey> Manager::GetEquippedSpellKeys() const
+	{
+		std::scoped_lock lock(m_lock);
+		std::vector<SpellKey> result;
+		if (m_leftSpell.key.has_value()) {
+			result.push_back(*m_leftSpell.key);
+		}
+		if (m_rightSpell.key.has_value() &&
+			(!m_leftSpell.key.has_value() || *m_rightSpell.key != *m_leftSpell.key)) {
+			result.push_back(*m_rightSpell.key);
+		}
+		return result;
 	}
 
 	void Manager::ResetAllConfigToDefault(bool a_writeJson)
@@ -276,19 +497,13 @@ namespace MITHRAS::SPELL_MASTERY
 	void Manager::ClearDatabase()
 	{
 		std::scoped_lock lock(m_lock);
-		m_mastery = {};
+		m_mastery.clear();
+		m_lastCast = {};
 		ReapplyBonusesLocked();
 	}
 
-	void Manager::SaveConfigToJson() const
-	{
-		// Config is currently persisted through SKSE serialization records.
-	}
-
-	void Manager::LoadConfigFromJson()
-	{
-		// Reserved for future external config support.
-	}
+	void Manager::SaveConfigToJson() const {}
+	void Manager::LoadConfigFromJson() {}
 
 	std::filesystem::path Manager::GetConfigPath() const
 	{
@@ -297,23 +512,20 @@ namespace MITHRAS::SPELL_MASTERY
 		return std::filesystem::path(dllPath).parent_path() / "SpellMastery.json";
 	}
 
-	void Manager::RefreshActiveSchoolsLocked()
+	void Manager::RefreshEquippedFromPlayerLocked()
 	{
-		m_activeSchools = {};
-
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player) {
+			SetEquippedKeyLocked(m_leftSpell, std::nullopt);
+			SetEquippedKeyLocked(m_rightSpell, std::nullopt);
 			return;
 		}
 
-		for (const bool leftHand : { false, true }) {
-			const auto* equipped = player->GetEquippedObject(leftHand);
-			const auto school = GetSpellSchoolFromForm(equipped);
-			if (!school.has_value()) {
-				continue;
-			}
-			m_activeSchools[static_cast<std::size_t>(*school)] = true;
-		}
+		const auto* leftSpell = GetSpellFromForm(player->GetEquippedObject(true));
+		const auto* rightSpell = GetSpellFromForm(player->GetEquippedObject(false));
+
+		SetEquippedKeyLocked(m_leftSpell, BuildSpellKey(leftSpell));
+		SetEquippedKeyLocked(m_rightSpell, BuildSpellKey(rightSpell));
 	}
 
 	void Manager::ReapplyBonusesLocked()
@@ -331,39 +543,131 @@ namespace MITHRAS::SPELL_MASTERY
 		m_bonusApplier.Apply(player, ComputeBonusesLocked());
 	}
 
-	void Manager::RefreshLevelLocked(MasteryStats& a_stats) const
+	void Manager::UpdateEquippedTimeLocked(EquippedState& a_slot)
 	{
+		if (!a_slot.key.has_value()) {
+			return;
+		}
+
+		auto it = m_mastery.find(*a_slot.key);
+		if (it == m_mastery.end()) {
+			return;
+		}
+
+		const auto now = Clock::now();
+		if (a_slot.equippedAt.time_since_epoch().count() != 0) {
+			it->second.equippedSeconds += std::chrono::duration<float>(now - a_slot.equippedAt).count();
+			RefreshLevelLocked(*a_slot.key, it->second);
+		}
+		a_slot.equippedAt = now;
+	}
+
+	void Manager::SetEquippedKeyLocked(EquippedState& a_slot, std::optional<SpellKey> a_key)
+	{
+		UpdateEquippedTimeLocked(a_slot);
+		a_slot.key = std::move(a_key);
+		a_slot.equippedAt = Clock::now();
+		if (a_slot.key.has_value()) {
+			m_mastery.try_emplace(*a_slot.key, MasteryStats{});
+		}
+	}
+
+	void Manager::RefreshLevelLocked(const SpellKey& a_key, MasteryStats& a_stats) const
+	{
+		const auto progress = ComputeProgressCountLocked(a_key, a_stats);
 		std::uint32_t level = 0;
 		for (const auto threshold : m_config.thresholds) {
-			if (a_stats.kills >= threshold) {
+			if (progress >= threshold) {
 				++level;
 			}
 		}
 		a_stats.level = level;
 	}
 
+	std::uint32_t Manager::ComputeProgressCountLocked(const SpellKey& a_key, const MasteryStats& a_stats) const
+	{
+		const auto& progression = m_config.schools[static_cast<std::size_t>(a_key.school)].progression;
+		float points = 0.0f;
+		if (progression.gainFromKills) {
+			points += static_cast<float>(a_stats.kills);
+		}
+		if (progression.gainFromUses) {
+			points += static_cast<float>(a_stats.uses);
+		}
+		if (progression.gainFromSummons) {
+			points += static_cast<float>(a_stats.summons);
+		}
+		if (progression.gainFromHits) {
+			points += static_cast<float>(a_stats.hits);
+		}
+		if (progression.gainFromEquipTime) {
+			points += a_stats.equippedSeconds / std::max(0.1f, progression.equipSecondsPerPoint);
+		}
+
+		points *= std::max(0.1f, m_config.gainMultiplier);
+		return static_cast<std::uint32_t>(std::max(0.0f, std::floor(points)));
+	}
+
 	MasteryBonuses Manager::ComputeBonusesLocked() const
 	{
 		MasteryBonuses bonuses{};
-		for (std::size_t i = 0; i < kSchoolCount; ++i) {
-			if (!m_activeSchools[i]) {
+
+		std::vector<SpellKey> equipped;
+		if (m_leftSpell.key.has_value()) {
+			equipped.push_back(*m_leftSpell.key);
+		}
+		if (m_rightSpell.key.has_value() &&
+			(!m_leftSpell.key.has_value() || *m_rightSpell.key != *m_leftSpell.key)) {
+			equipped.push_back(*m_rightSpell.key);
+		}
+
+		for (const auto& key : equipped) {
+			auto it = m_mastery.find(key);
+			if (it == m_mastery.end()) {
 				continue;
 			}
 
-			const auto level = static_cast<float>(m_mastery[i].level);
-			const auto& schoolCfg = m_config.schoolBonuses[i];
-			const auto& tuning = schoolCfg.enabled ? schoolCfg.tuning : m_config.generalBonuses;
+			const float level = static_cast<float>(it->second.level);
+			const auto schoolIdx = static_cast<std::size_t>(key.school);
+			const auto& schoolCfg = m_config.schools[schoolIdx];
+			const auto& tuning = schoolCfg.useBonusOverride ? schoolCfg.bonus : m_config.generalBonuses;
 
-			bonuses.schoolSkillBonus[i] = std::min(tuning.skillBonusCap, tuning.skillBonusPerLevel * level);
+			bonuses.schoolSkillBonus[schoolIdx] += std::min(tuning.skillBonusCap, tuning.skillBonusPerLevel * level);
+			bonuses.schoolSkillAdvanceBonus[schoolIdx] += std::min(tuning.skillAdvanceCap, tuning.skillAdvancePerLevel * level);
+			bonuses.schoolPowerBonus[schoolIdx] += std::min(tuning.powerBonusCap, tuning.powerBonusPerLevel * level);
+			bonuses.schoolCostReduction[schoolIdx] += std::min(tuning.costReductionCap, tuning.costReductionPerLevel * level);
 			bonuses.magickaRateMult += std::min(tuning.magickaRateCap, tuning.magickaRatePerLevel * level);
+			bonuses.magickaFlat += std::min(tuning.magickaFlatCap, tuning.magickaFlatPerLevel * level);
 		}
 
-		bonuses.magickaRateMult = std::min(100.0f, bonuses.magickaRateMult);
+		bonuses.magickaRateMult = std::clamp(bonuses.magickaRateMult, 0.0f, 100.0f);
 		return bonuses;
+	}
+
+	std::optional<SpellKey> Manager::BuildSpellKey(const RE::SpellItem* a_spell)
+	{
+		if (!a_spell) {
+			return std::nullopt;
+		}
+
+		const auto school = ActorValueToSchool(a_spell->GetAssociatedSkill());
+		if (!school.has_value()) {
+			return std::nullopt;
+		}
+
+		SpellKey key{};
+		key.formID = a_spell->GetFormID();
+		key.school = *school;
+		if (const auto* name = a_spell->GetName(); name && name[0] != '\0') {
+			key.name = name;
+		} else {
+			key.name = std::format("Spell {:08X}", key.formID);
+		}
+		return key;
 	}
 
 	bool Manager::IsTrackedSpellForm(const RE::TESForm* a_form)
 	{
-		return GetSpellSchoolFromForm(a_form).has_value();
+		return BuildSpellKey(GetSpellFromForm(a_form)).has_value();
 	}
 }

@@ -12,7 +12,8 @@ namespace UI
 {
 	namespace
 	{
-		using BonusTuning = MITHRAS::SPELL_MASTERY::MasteryConfig::BonusTuning;
+		using Config = MITHRAS::SPELL_MASTERY::MasteryConfig;
+		using BonusTuning = Config::BonusTuning;
 		using SpellSchool = MITHRAS::SPELL_MASTERY::SpellSchool;
 
 		void DrawResetButton(const char* a_id, const char* a_message, const std::function<void()>& a_action)
@@ -32,26 +33,83 @@ namespace UI
 		void DrawBonusTuningEditor(BonusTuning& a_tuning, const std::string& a_prefix)
 		{
 			ImGui::SliderFloat(("Skill bonus / level##" + a_prefix).c_str(), &a_tuning.skillBonusPerLevel, 0.0f, 10.0f, "%.2f");
-			ImGui::SliderFloat(("Skill bonus cap##" + a_prefix).c_str(), &a_tuning.skillBonusCap, 0.0f, 100.0f, "%.1f");
+			ImGui::SliderFloat(("Skill bonus cap##" + a_prefix).c_str(), &a_tuning.skillBonusCap, 0.0f, 200.0f, "%.1f");
+			ImGui::SliderFloat(("Skill XP / level##" + a_prefix).c_str(), &a_tuning.skillAdvancePerLevel, 0.0f, 20.0f, "%.2f");
+			ImGui::SliderFloat(("Skill XP cap##" + a_prefix).c_str(), &a_tuning.skillAdvanceCap, 0.0f, 300.0f, "%.1f");
+			ImGui::SliderFloat(("Power bonus / level##" + a_prefix).c_str(), &a_tuning.powerBonusPerLevel, 0.0f, 10.0f, "%.2f");
+			ImGui::SliderFloat(("Power bonus cap##" + a_prefix).c_str(), &a_tuning.powerBonusCap, 0.0f, 200.0f, "%.1f");
+			ImGui::SliderFloat(("Cost reduction / level##" + a_prefix).c_str(), &a_tuning.costReductionPerLevel, 0.0f, 10.0f, "%.2f");
+			ImGui::SliderFloat(("Cost reduction cap##" + a_prefix).c_str(), &a_tuning.costReductionCap, 0.0f, 100.0f, "%.1f");
 			ImGui::SliderFloat(("Magicka rate / level##" + a_prefix).c_str(), &a_tuning.magickaRatePerLevel, 0.0f, 10.0f, "%.2f");
 			ImGui::SliderFloat(("Magicka rate cap##" + a_prefix).c_str(), &a_tuning.magickaRateCap, 0.0f, 100.0f, "%.1f");
+			ImGui::SliderFloat(("Max magicka / level##" + a_prefix).c_str(), &a_tuning.magickaFlatPerLevel, 0.0f, 30.0f, "%.2f");
+			ImGui::SliderFloat(("Max magicka cap##" + a_prefix).c_str(), &a_tuning.magickaFlatCap, 0.0f, 500.0f, "%.1f");
 		}
 
-		void ApplyIfChanged(
-			const MITHRAS::SPELL_MASTERY::MasteryConfig& a_before,
-			const MITHRAS::SPELL_MASTERY::MasteryConfig& a_after)
+		void DrawSchoolProgressionEditor(SpellSchool a_school, Config::SchoolConfig& a_cfg, std::size_t a_index)
 		{
-			auto tuningEqual = [](const BonusTuning& a_lhs, const BonusTuning& a_rhs) {
+			auto& p = a_cfg.progression;
+			const auto header = std::format("{} Progression", MITHRAS::SPELL_MASTERY::SchoolName(a_school));
+			if (!ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+				return;
+			}
+
+			switch (a_school) {
+				case SpellSchool::kDestruction:
+					ImGui::Checkbox(std::format("Gain from kills##{}", a_index).c_str(), &p.gainFromKills);
+					ImGui::Checkbox(std::format("Gain from hits##{}", a_index).c_str(), &p.gainFromHits);
+					ImGui::Checkbox(std::format("Gain from uses##{}", a_index).c_str(), &p.gainFromUses);
+					break;
+				case SpellSchool::kConjuration:
+					ImGui::Checkbox(std::format("Gain from summons##{}", a_index).c_str(), &p.gainFromSummons);
+					ImGui::Checkbox(std::format("Gain from uses##{}", a_index).c_str(), &p.gainFromUses);
+					break;
+				case SpellSchool::kAlteration:
+					ImGui::Checkbox(std::format("Gain from hits##{}", a_index).c_str(), &p.gainFromHits);
+					ImGui::Checkbox(std::format("Gain from uses##{}", a_index).c_str(), &p.gainFromUses);
+					break;
+				case SpellSchool::kIllusion:
+					ImGui::Checkbox(std::format("Gain from hits##{}", a_index).c_str(), &p.gainFromHits);
+					ImGui::Checkbox(std::format("Gain from uses##{}", a_index).c_str(), &p.gainFromUses);
+					break;
+				case SpellSchool::kRestoration:
+					ImGui::Checkbox(std::format("Gain from equip time##{}", a_index).c_str(), &p.gainFromEquipTime);
+					ImGui::SliderFloat(std::format("Seconds per point##{}", a_index).c_str(), &p.equipSecondsPerPoint, 0.5f, 30.0f, "%.1f");
+					break;
+				default:
+					break;
+			}
+		}
+
+		void ApplyIfChanged(const Config& a_before, const Config& a_after)
+		{
+			auto bonusEqual = [](const BonusTuning& a_lhs, const BonusTuning& a_rhs) {
 				return a_lhs.skillBonusPerLevel == a_rhs.skillBonusPerLevel &&
 				       a_lhs.skillBonusCap == a_rhs.skillBonusCap &&
+				       a_lhs.skillAdvancePerLevel == a_rhs.skillAdvancePerLevel &&
+				       a_lhs.skillAdvanceCap == a_rhs.skillAdvanceCap &&
+				       a_lhs.powerBonusPerLevel == a_rhs.powerBonusPerLevel &&
+				       a_lhs.powerBonusCap == a_rhs.powerBonusCap &&
+				       a_lhs.costReductionPerLevel == a_rhs.costReductionPerLevel &&
+				       a_lhs.costReductionCap == a_rhs.costReductionCap &&
 				       a_lhs.magickaRatePerLevel == a_rhs.magickaRatePerLevel &&
-				       a_lhs.magickaRateCap == a_rhs.magickaRateCap;
+				       a_lhs.magickaRateCap == a_rhs.magickaRateCap &&
+				       a_lhs.magickaFlatPerLevel == a_rhs.magickaFlatPerLevel &&
+				       a_lhs.magickaFlatCap == a_rhs.magickaFlatCap;
 			};
 
 			bool schoolEqual = true;
-			for (std::size_t i = 0; i < a_after.schoolBonuses.size(); ++i) {
-				if (a_before.schoolBonuses[i].enabled != a_after.schoolBonuses[i].enabled ||
-				    !tuningEqual(a_before.schoolBonuses[i].tuning, a_after.schoolBonuses[i].tuning)) {
+			for (std::size_t i = 0; i < a_after.schools.size(); ++i) {
+				const auto& b = a_before.schools[i];
+				const auto& a = a_after.schools[i];
+				if (b.useBonusOverride != a.useBonusOverride ||
+					b.progression.gainFromKills != a.progression.gainFromKills ||
+					b.progression.gainFromUses != a.progression.gainFromUses ||
+					b.progression.gainFromSummons != a.progression.gainFromSummons ||
+					b.progression.gainFromHits != a.progression.gainFromHits ||
+					b.progression.gainFromEquipTime != a.progression.gainFromEquipTime ||
+					b.progression.equipSecondsPerPoint != a.progression.equipSecondsPerPoint ||
+					!bonusEqual(b.bonus, a.bonus)) {
 					schoolEqual = false;
 					break;
 				}
@@ -60,8 +118,7 @@ namespace UI
 			if (a_before.enabled != a_after.enabled ||
 				a_before.gainMultiplier != a_after.gainMultiplier ||
 				a_before.thresholds != a_after.thresholds ||
-				a_before.gainFromKills != a_after.gainFromKills ||
-				!tuningEqual(a_before.generalBonuses, a_after.generalBonuses) ||
+				!bonusEqual(a_before.generalBonuses, a_after.generalBonuses) ||
 				!schoolEqual) {
 				MITHRAS::SPELL_MASTERY::Manager::GetSingleton()->SetConfig(a_after, true);
 			}
@@ -99,18 +156,14 @@ namespace UI
 			}
 
 			ImGui::Separator();
-			ImGui::Text("Active schools:");
-			bool hasActive = false;
-			for (std::size_t i = 0; i < MITHRAS::SPELL_MASTERY::kSchoolCount; ++i) {
-				const auto school = static_cast<SpellSchool>(i);
-				if (!manager->IsSchoolActive(school)) {
-					continue;
-				}
-				hasActive = true;
-				ImGui::BulletText("%s", MITHRAS::SPELL_MASTERY::SchoolName(school).data());
-			}
-			if (!hasActive) {
+			ImGui::Text("Equipped spells:");
+			const auto equipped = manager->GetEquippedSpellKeys();
+			if (equipped.empty()) {
 				ImGui::TextDisabled("None");
+			} else {
+				for (const auto& key : equipped) {
+					ImGui::BulletText("%s (%s)", key.name.c_str(), MITHRAS::SPELL_MASTERY::SchoolName(key.school).data());
+				}
 			}
 
 			ApplyIfChanged(before, config);
@@ -127,11 +180,7 @@ namespace UI
 
 			DrawResetButton("Defaults##spell_progression", "Mithras: Reset spell progression defaults", [manager]() { manager->ResetAllConfigToDefault(true); });
 
-			if (ImGui::CollapsingHeader("Experience Sources", ImGuiTreeNodeFlags_DefaultOpen)) {
-				ImGui::Checkbox("Gain from kills", &config.gainFromKills);
-			}
-
-			if (ImGui::CollapsingHeader("Kill Thresholds", ImGuiTreeNodeFlags_DefaultOpen)) {
+			if (ImGui::CollapsingHeader("Level Thresholds", ImGuiTreeNodeFlags_DefaultOpen)) {
 				if (config.thresholds.size() < 5) {
 					config.thresholds.resize(5, 200);
 				}
@@ -141,6 +190,10 @@ namespace UI
 						config.thresholds[i] = static_cast<std::uint32_t>(std::max(1, value));
 					}
 				}
+			}
+
+			for (std::size_t i = 0; i < MITHRAS::SPELL_MASTERY::kSchoolCount; ++i) {
+				DrawSchoolProgressionEditor(static_cast<SpellSchool>(i), config.schools[i], i);
 			}
 
 			ApplyIfChanged(before, config);
@@ -162,13 +215,13 @@ namespace UI
 			}
 
 			for (std::size_t i = 0; i < MITHRAS::SPELL_MASTERY::kSchoolCount; ++i) {
-				auto& schoolCfg = config.schoolBonuses[i];
+				auto& schoolCfg = config.schools[i];
 				const auto school = static_cast<SpellSchool>(i);
 				const auto title = std::format("{} Bonuses", MITHRAS::SPELL_MASTERY::SchoolName(school));
 				if (ImGui::CollapsingHeader(title.c_str())) {
-					ImGui::Checkbox(std::format("Enable override##spell_{}", i).c_str(), &schoolCfg.enabled);
-					if (schoolCfg.enabled) {
-						DrawBonusTuningEditor(schoolCfg.tuning, std::format("spell_school_{}", i));
+					ImGui::Checkbox(std::format("Use school override##spell_{}", i).c_str(), &schoolCfg.useBonusOverride);
+					if (schoolCfg.useBonusOverride) {
+						DrawBonusTuningEditor(schoolCfg.bonus, std::format("spell_school_{}", i));
 					} else {
 						ImGui::TextDisabled("Using General Bonuses");
 					}
@@ -186,7 +239,7 @@ namespace UI
 			auto* manager = MITHRAS::SPELL_MASTERY::Manager::GetSingleton();
 			const auto& masteryData = manager->GetMasteryData();
 
-			ImGui::Text("Tracked schools: %u", static_cast<unsigned>(MITHRAS::SPELL_MASTERY::kSchoolCount));
+			ImGui::Text("Tracked spells: %u", static_cast<unsigned>(masteryData.size()));
 			ImGui::SameLine(ImGui::GetWindowWidth() - 150.0f);
 			if (ImGui::Button("Reset")) {
 				manager->ClearDatabase();
@@ -195,29 +248,54 @@ namespace UI
 
 			ImGui::Separator();
 
-			if (ImGui::BeginTable("SpellMasteryTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-				ImGui::TableSetupColumn("School", ImGuiTableColumnFlags_WidthStretch);
-				ImGui::TableSetupColumn("Active", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-				ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-				ImGui::TableSetupColumn("Kills", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+			if (masteryData.empty()) {
+				ImGui::TextDisabled("No spells tracked yet.");
+				return;
+			}
+
+			if (ImGui::BeginTable("SpellMasteryTable", 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+				ImGui::TableSetupColumn("Spell", ImGuiTableColumnFlags_WidthStretch);
+				ImGui::TableSetupColumn("School", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+				ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+				ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+				ImGui::TableSetupColumn("Kills", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+				ImGui::TableSetupColumn("Hits", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+				ImGui::TableSetupColumn("Uses", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+				ImGui::TableSetupColumn("Summons", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+				ImGui::TableSetupColumn("Equip(s)", ImGuiTableColumnFlags_WidthFixed, 60.0f);
 				ImGui::TableHeadersRow();
 
-				for (std::size_t i = 0; i < masteryData.size(); ++i) {
-					const auto school = static_cast<SpellSchool>(i);
-					const auto& stats = masteryData[i];
+				for (const auto& [key, _] : masteryData) {
+					const auto stats = manager->GetStats(key);
+					const auto count = manager->GetProgressCount(key);
 
 					ImGui::TableNextRow();
 					ImGui::TableSetColumnIndex(0);
-					ImGui::TextUnformatted(MITHRAS::SPELL_MASTERY::SchoolName(school).data());
+					ImGui::TextUnformatted(key.name.c_str());
 
 					ImGui::TableSetColumnIndex(1);
-					ImGui::TextUnformatted(manager->IsSchoolActive(school) ? "Yes" : "No");
+					ImGui::TextUnformatted(MITHRAS::SPELL_MASTERY::SchoolName(key.school).data());
 
 					ImGui::TableSetColumnIndex(2);
 					ImGui::Text("%u", stats.level);
 
 					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%u", count);
+
+					ImGui::TableSetColumnIndex(4);
 					ImGui::Text("%u", stats.kills);
+
+					ImGui::TableSetColumnIndex(5);
+					ImGui::Text("%u", stats.hits);
+
+					ImGui::TableSetColumnIndex(6);
+					ImGui::Text("%u", stats.uses);
+
+					ImGui::TableSetColumnIndex(7);
+					ImGui::Text("%u", stats.summons);
+
+					ImGui::TableSetColumnIndex(8);
+					ImGui::Text("%.0f", stats.equippedSeconds);
 				}
 
 				ImGui::EndTable();

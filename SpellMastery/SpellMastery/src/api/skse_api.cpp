@@ -5,6 +5,8 @@
 #include "event/DeathEventSink.h"
 #include "event/EquipEventSink.h"
 #include "event/GameEventManager.h"
+#include "event/HitEventSink.h"
+#include "event/SpellCastEventSink.h"
 #include "mastery/MasteryManager.h"
 #include "serialization/Serialization.h"
 #include "ui/UI.h"
@@ -53,6 +55,8 @@ namespace SKSE {
 				GAME_EVENT::Manager::Register();
 				GAME_EVENT::EquipEventSink::Register();
 				GAME_EVENT::DeathEventSink::Register();
+				GAME_EVENT::HitEventSink::Register();
+				GAME_EVENT::SpellCastEventSink::Register();
 				UI::Register();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
