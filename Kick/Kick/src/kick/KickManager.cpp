@@ -22,6 +22,7 @@ namespace MITHRAS::KICK
 		constexpr float kMaxRange = 700.0f;
 		constexpr float kMinForce = 1.0f;
 		constexpr float kMaxForce = 4000.0f;
+		constexpr float kMinStamina = 0.0f;
 
 		bool ApplyActorKnockExplosion(RE::Actor* a_target, RE::Actor* a_source, float a_force)
 		{
@@ -106,11 +107,15 @@ namespace MITHRAS::KICK
 				{ "objectUpwardBias", a_config.objectUpwardBias },
 				{ "objectCooldownSeconds", a_config.objectCooldownSeconds },
 				{ "objectRaySpread", a_config.objectRaySpread },
+				{ "objectStaminaCost", a_config.objectStaminaCost },
 				{ "npcRange", a_config.npcRange },
 				{ "npcForce", a_config.npcForce },
 				{ "npcUpwardBias", a_config.npcUpwardBias },
 				{ "npcCooldownSeconds", a_config.npcCooldownSeconds },
-				{ "npcRaySpread", a_config.npcRaySpread }
+				{ "npcRaySpread", a_config.npcRaySpread },
+				{ "npcStaminaCost", a_config.npcStaminaCost },
+				{ "npcStaminaDrain", a_config.npcStaminaDrain },
+				{ "guardBreakKick", a_config.guardBreakKick }
 			};
 		}
 
@@ -123,11 +128,15 @@ namespace MITHRAS::KICK
 			a_config.objectUpwardBias = a_json.value("objectUpwardBias", a_config.objectUpwardBias);
 			a_config.objectCooldownSeconds = a_json.value("objectCooldownSeconds", a_config.objectCooldownSeconds);
 			a_config.objectRaySpread = a_json.value("objectRaySpread", a_config.objectRaySpread);
+			a_config.objectStaminaCost = a_json.value("objectStaminaCost", a_config.objectStaminaCost);
 			a_config.npcRange = a_json.value("npcRange", a_config.npcRange);
 			a_config.npcForce = a_json.value("npcForce", a_config.npcForce);
 			a_config.npcUpwardBias = a_json.value("npcUpwardBias", a_config.npcUpwardBias);
 			a_config.npcCooldownSeconds = a_json.value("npcCooldownSeconds", a_config.npcCooldownSeconds);
 			a_config.npcRaySpread = a_json.value("npcRaySpread", a_config.npcRaySpread);
+			a_config.npcStaminaCost = a_json.value("npcStaminaCost", a_config.npcStaminaCost);
+			a_config.npcStaminaDrain = a_json.value("npcStaminaDrain", a_config.npcStaminaDrain);
+			a_config.guardBreakKick = a_json.value("guardBreakKick", a_config.guardBreakKick);
 		}
 	}
 
@@ -153,11 +162,14 @@ namespace MITHRAS::KICK
 			m_config.objectUpwardBias = std::clamp(m_config.objectUpwardBias, 0.0f, 1.0f);
 			m_config.objectCooldownSeconds = std::clamp(m_config.objectCooldownSeconds, 0.0f, 5.0f);
 			m_config.objectRaySpread = std::clamp(m_config.objectRaySpread, 0.0f, 1.0f);
+			m_config.objectStaminaCost = std::max(kMinStamina, m_config.objectStaminaCost);
 			m_config.npcRange = std::clamp(m_config.npcRange, kMinRange, kMaxRange);
 			m_config.npcForce = std::clamp(m_config.npcForce, kMinForce, kMaxForce);
 			m_config.npcUpwardBias = std::clamp(m_config.npcUpwardBias, 0.0f, 1.0f);
 			m_config.npcCooldownSeconds = std::clamp(m_config.npcCooldownSeconds, 0.0f, 5.0f);
 			m_config.npcRaySpread = std::clamp(m_config.npcRaySpread, 0.0f, 1.0f);
+			m_config.npcStaminaCost = std::max(kMinStamina, m_config.npcStaminaCost);
+			m_config.npcStaminaDrain = std::max(kMinStamina, m_config.npcStaminaDrain);
 		}
 		SaveConfigToJson();
 	}
@@ -257,6 +269,15 @@ namespace MITHRAS::KICK
 
 		if (hit->reference) {
 			const bool isActor = (hit->reference->As<RE::Actor>() != nullptr);
+			const float requiredCost = isActor ? cfg.npcStaminaCost : cfg.objectStaminaCost;
+
+			if (requiredCost > 0.0f) {
+				const float currentStamina = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina);
+				if (currentStamina < requiredCost) {
+					return;
+				}
+			}
+
 			const auto now = std::chrono::steady_clock::now();
 
 			{
@@ -278,6 +299,10 @@ namespace MITHRAS::KICK
 					}
 					m_lastObjectKick = now;
 				}
+			}
+
+			if (requiredCost > 0.0f) {
+				player->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kStamina, requiredCost);
 			}
 
 			ApplyKickImpulse(hit->reference, player, hit->direction, cfg);
@@ -497,18 +522,29 @@ namespace MITHRAS::KICK
 				return false;
 			}
 
+			if (a_cfg.npcStaminaDrain > 0.0f) {
+				actor->AsActorValueOwner()->DamageActorValue(RE::ActorValue::kStamina, a_cfg.npcStaminaDrain);
+			}
+
+			// With guardBreakKick: ragdoll only when target stamina is 0 *after* drain (so a kick that drains them to 0 also ragdolls).
+			const float staminaAfterDrain = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina);
+			const bool allowRagdoll = !a_cfg.guardBreakKick || staminaAfterDrain <= 0.0f;
+
 			auto* source = a_source ? a_source : RE::PlayerCharacter::GetSingleton();
-			const bool hadKnock = ApplyActorKnockExplosion(actor, source, a_cfg.npcForce);
+			bool hadKnock = false;
+			if (allowRagdoll) {
+				hadKnock = ApplyActorKnockExplosion(actor, source, a_cfg.npcForce);
+			}
 
 			// Extra velocity helps when target is already ragdolled.
 			bool hadCurrent = false;
-			if (actor->IsInRagdollState()) {
+			if (allowRagdoll && actor->IsInRagdollState()) {
 				const RE::hkVector4 impulse(impulseDir.x * a_cfg.npcForce, impulseDir.y * a_cfg.npcForce, impulseDir.z * a_cfg.npcForce, 0.0f);
 				hadCurrent = actor->ApplyCurrent(0.2f, impulse);
 				actor->PotentiallyFixRagdollState();
 			}
 
-			return hadCurrent || hadKnock;
+			return hadCurrent || hadKnock || (a_cfg.npcStaminaDrain > 0.0f);
 		}
 
 		auto impulseDir = NormalizeOrZero(a_dir + RE::NiPoint3(0.0f, 0.0f, a_cfg.objectUpwardBias));
@@ -601,11 +637,14 @@ namespace MITHRAS::KICK
 		m_config.objectUpwardBias = std::clamp(m_config.objectUpwardBias, 0.0f, 1.0f);
 		m_config.objectCooldownSeconds = std::clamp(m_config.objectCooldownSeconds, 0.0f, 5.0f);
 		m_config.objectRaySpread = std::clamp(m_config.objectRaySpread, 0.0f, 1.0f);
+		m_config.objectStaminaCost = std::max(kMinStamina, m_config.objectStaminaCost);
 		m_config.npcRange = std::clamp(m_config.npcRange, kMinRange, kMaxRange);
 		m_config.npcForce = std::clamp(m_config.npcForce, kMinForce, kMaxForce);
 		m_config.npcUpwardBias = std::clamp(m_config.npcUpwardBias, 0.0f, 1.0f);
 		m_config.npcCooldownSeconds = std::clamp(m_config.npcCooldownSeconds, 0.0f, 5.0f);
 		m_config.npcRaySpread = std::clamp(m_config.npcRaySpread, 0.0f, 1.0f);
+		m_config.npcStaminaCost = std::max(kMinStamina, m_config.npcStaminaCost);
+		m_config.npcStaminaDrain = std::max(kMinStamina, m_config.npcStaminaDrain);
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const

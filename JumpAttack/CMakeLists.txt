@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.24.0)
 project(
     # Must match folder name
     JumpAttack
-    DESCRIPTION "JumpAttack"
+    DESCRIPTION "JumpAttacksNoBehaviors"
     VERSION     1.0
     LANGUAGES   CXX
 )

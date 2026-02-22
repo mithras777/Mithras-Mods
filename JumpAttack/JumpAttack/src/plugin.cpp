@@ -1,7 +1,7 @@
 #include "plugin.h"
 
 #include "version.h"
-#include "hook/MainHook.h"
+#include "jumpattack/Settings.h"
 #include "util/LogUtil.h"
 #include "util/StringUtil.h"
 
@@ -53,8 +53,8 @@ namespace DLLMAIN {
 #endif
 		// Register logger
 		auto logger = std::make_shared<spdlog::logger>(UTIL::LOGGER_NAME, sinks.begin(), sinks.end());
-		logger->set_level(spdlog::level::trace);
-		logger->flush_on(spdlog::level::trace);
+		logger->set_level(spdlog::level::warn);
+		logger->flush_on(spdlog::level::warn);
 		spdlog::register_logger(logger);
 
 		// Set logging pattern
@@ -63,8 +63,8 @@ namespace DLLMAIN {
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	Plugin::Plugin()
 	{
-		m_info.name = VERSION_PRODUCTNAME_STR;
-		m_info.description = VERSION_PRODUCTNAME_DESCRIPTION_STR;
+		m_info.name = "JumpAttacksNoBehaviors";
+		m_info.description = "Jump attacks without behavior edits";
 		m_info.version = { VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION, VERSION_BUILD };
 		m_info.directory = get_game_directory(true) + m_info.name + "\\";
 		m_info.gameDirectory = get_game_directory();
@@ -110,8 +110,15 @@ namespace DLLMAIN {
 
 		LOG_INFO("  SkyrimSE\tv{}", m_info.gameVersion.string("."));
 		LOG_INFO("  SKSE\tv{}", m_info.skseVersion.string("."));
-		// Install hooks
-		HOOK::MAIN::Install();
+		JA::Settings::GetSingleton()->Load();
+		if (JA::Settings::GetSingleton()->IsDebugEnabled()) {
+			if (auto logger = spdlog::get(UTIL::LOGGER_NAME)) {
+				logger->set_level(spdlog::level::info);
+				logger->flush_on(spdlog::level::info);
+			}
+			LOG_INFO("[JA] Debug logging enabled");
+		}
+		LOG_INFO("[JA] Waiting for DataLoaded to register input sink");
 
 		return true;
 	}

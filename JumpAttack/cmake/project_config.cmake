@@ -114,6 +114,7 @@ endif()
 # Define unified output directory for all configurations
 set_target_properties(
 	${PROJECT_NAME} PROPERTIES
+		OUTPUT_NAME "JumpAttacksNoBehaviors"
 		RUNTIME_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug,${PROJECT_SOURCE_DIR}/.bin/x64-release>"
 		LIBRARY_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug,${PROJECT_SOURCE_DIR}/.bin/x64-release>"
 		ARCHIVE_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.lib/x64-debug,${PROJECT_SOURCE_DIR}/.lib/x64-release>"

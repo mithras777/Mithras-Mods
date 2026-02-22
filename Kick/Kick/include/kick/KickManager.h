@@ -18,11 +18,15 @@ namespace MITHRAS::KICK
 		float objectUpwardBias{ 0.25f };
 		float objectCooldownSeconds{ 0.35f };
 		float objectRaySpread{ 0.20f };
+		float objectStaminaCost{ 0.0f };
 		float npcRange{ 220.0f };
 		float npcForce{ 1200.0f };
 		float npcUpwardBias{ 0.0f };
 		float npcCooldownSeconds{ 0.35f };
 		float npcRaySpread{ 0.20f };
+		float npcStaminaCost{ 0.0f };
+		float npcStaminaDrain{ 0.0f };
+		bool guardBreakKick{ false };
 	};
 
 	class Manager final : public REX::Singleton<Manager>

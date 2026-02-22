@@ -2,7 +2,7 @@
 
 #include "plugin.h"
 #include "version.h"
-#include "event/GameEventManager.h"
+#include "hook/MainHook.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -28,6 +28,8 @@ static void DumpOffsets(REL::Version a_gameVersion)
 
 namespace SKSE {
 
+	static constexpr auto PLUGIN_RUNTIME_NAME = "JumpAttacksNoBehaviors";
+
 	static void SKSEPlugin_Message(SKSE::MessagingInterface::Message* a_message)
 	{
 		switch (a_message->type) {
@@ -43,10 +45,8 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
-				// Register game events
-				GAME_EVENT::Manager::Register();
-				// Log plugin loaded
-				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
+				HOOK::MAIN::Install();
+				LOG_INFO("[JA] {} loaded", PLUGIN_RUNTIME_NAME);
 				break;
 			}
 		}
@@ -56,10 +56,10 @@ namespace SKSE {
 	SKSE_API constinit auto SKSEPlugin_Version = []() noexcept {
 		SKSE::PluginVersionData pluginData{};
 
-		pluginData.PluginName(VERSION_PRODUCTNAME_STR);
+		pluginData.PluginName(PLUGIN_RUNTIME_NAME);
 		pluginData.PluginVersion(REL::Version(VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION, VERSION_BUILD));
 		pluginData.AuthorName(VERSION_AUTHOR_STR);
-		pluginData.AuthorEmail("https://github.com/ArranzCNL/SkyrimSE-Plugin-Template");
+		pluginData.AuthorEmail("https://github.com");
 		pluginData.UsesAddressLibrary();
 		pluginData.UsesNoStructs();
 
@@ -71,7 +71,7 @@ namespace SKSE {
 	SKSE_API bool SKSEPlugin_Query(const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_pluginInfo)
 	{
 		a_pluginInfo->infoVersion = SKSE::PluginInfo::kVersion;
-		a_pluginInfo->name = VERSION_PRODUCTNAME_STR;
+		a_pluginInfo->name = PLUGIN_RUNTIME_NAME;
 		a_pluginInfo->version = REL::Version(VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION, VERSION_BUILD).pack();
 
 		if (a_skse->IsEditor()) {

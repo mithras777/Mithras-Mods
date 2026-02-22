@@ -134,3 +134,29 @@ Rationale: no behavior change unless explicitly configured.
 5. Add guard break logic around ragdoll path.
 6. Add SKSE UI controls + defaults integration.
 7. Build/test and tune defaults/ranges.
+
+---
+
+## RE Functions / Hooks Used
+
+All behavior uses existing **CommonLibSSE (RE)** and **PROXY** APIs; no new hooks or custom RE code were added.
+
+### RE (CommonLibSSE) – Actor / ActorValues
+
+- **`RE::ActorValue::kStamina`** – Actor value ID for stamina (read cost gate, guard-break check, drain).
+- **`RE::Actor::AsActorValueOwner()`** – Returns the actor’s `ActorValueOwner` interface.
+- **`RE::ActorValueOwner::GetActorValue(RE::ActorValue a_av)`** – Used to read player current stamina before allowing a kick, and target stamina before applying drain for the guard-break check (via `player->AsActorValueOwner()->GetActorValue(...)` and same for target actor).
+- **`RE::ActorValueOwner::DamageActorValue(RE::ActorValue a_av, float a_damage)`** – Used to: (1) deduct kick cost from the player’s stamina after a successful kick attempt, (2) apply configurable stamina drain to the kicked NPC. No custom damage or hooks; engine handles clamping.
+
+### RE (CommonLibSSE) – Ragdoll / Knock (unchanged from pre‑plan)
+
+- **`PROXY::Actor::Data(RE::Actor*)`** – Existing proxy used to get `currentProcess` for the knock explosion (NG vs non‑NG).
+- **`RE::ActorProcessManager::KnockExplosion(RE::Actor* a_target, RE::NiPoint3 a_sourcePos, float a_force)`** – Existing call used to trigger knock/ragdoll when `allowRagdoll` is true.
+- **`RE::Actor::IsInRagdollState()`** – Used to decide whether to apply extra impulse via `ApplyCurrent`.
+- **`RE::Actor::ApplyCurrent(float a_delta, const RE::hkVector4& a_impulse)`** – Existing; applies impulse when target is already ragdolled.
+- **`RE::Actor::PotentiallyFixRagdollState()`** – Existing; called after applying impulse.
+
+### Summary
+
+- **No new hooks.** All logic uses the above RE/PROXY types and methods.
+- **No RE APIs were added or invented.** If a future RE version renames or removes any of these, the implementation would need to follow the updated CommonLibSSE API.

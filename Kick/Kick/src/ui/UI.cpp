@@ -15,11 +15,15 @@ namespace UI
 		constexpr float kDefaultObjectRange = 220.0f;
 		constexpr float kDefaultObjectCooldown = 0.35f;
 		constexpr float kDefaultObjectRaySpread = 0.20f;
+		constexpr float kDefaultObjectStaminaCost = 0.0f;
 		constexpr float kDefaultNPCForce = 1200.0f;
 		constexpr float kDefaultNPCUpwardBias = 0.0f;
 		constexpr float kDefaultNPCRange = 220.0f;
 		constexpr float kDefaultNPCCooldown = 0.35f;
 		constexpr float kDefaultNPCRaySpread = 0.20f;
+		constexpr float kDefaultNPCStaminaCost = 0.0f;
+		constexpr float kDefaultNPCStaminaDrain = 0.0f;
+		constexpr bool kDefaultGuardBreakKick = false;
 
 		struct KeyOption
 		{
@@ -91,6 +95,7 @@ namespace UI
 						ImGui::SliderFloat("Object Upward bias", &cfg.objectUpwardBias, 0.0f, 1.0f, "%.2f");
 						ImGui::SliderFloat("Object Cooldown (seconds)", &cfg.objectCooldownSeconds, 0.0f, 3.0f, "%.2f");
 						ImGui::SliderFloat("Object Ray spread", &cfg.objectRaySpread, 0.0f, 0.8f, "%.2f");
+						ImGui::SliderFloat("Object Stamina Cost", &cfg.objectStaminaCost, 0.0f, 500.0f, "%.0f");
 
 						if (ImGui::Button("Defaults##Objects")) {
 							cfg.objectRange = kDefaultObjectRange;
@@ -98,6 +103,7 @@ namespace UI
 							cfg.objectUpwardBias = kDefaultObjectUpwardBias;
 							cfg.objectCooldownSeconds = kDefaultObjectCooldown;
 							cfg.objectRaySpread = kDefaultObjectRaySpread;
+							cfg.objectStaminaCost = kDefaultObjectStaminaCost;
 						}
 					}
 					ImGui::EndTabItem();
@@ -110,6 +116,9 @@ namespace UI
 						ImGui::SliderFloat("NPC Upward bias", &cfg.npcUpwardBias, 0.0f, 1.0f, "%.2f");
 						ImGui::SliderFloat("NPC Cooldown (seconds)", &cfg.npcCooldownSeconds, 0.0f, 3.0f, "%.2f");
 						ImGui::SliderFloat("NPC Ray spread", &cfg.npcRaySpread, 0.0f, 0.8f, "%.2f");
+						ImGui::SliderFloat("NPC Stamina Cost", &cfg.npcStaminaCost, 0.0f, 500.0f, "%.0f");
+						ImGui::SliderFloat("NPC Stamina Drain", &cfg.npcStaminaDrain, 0.0f, 500.0f, "%.0f");
+						ImGui::Checkbox("Guard Break Kick", &cfg.guardBreakKick);
 
 						if (ImGui::Button("Defaults##NPCs")) {
 							cfg.npcRange = kDefaultNPCRange;
@@ -117,6 +126,9 @@ namespace UI
 							cfg.npcUpwardBias = kDefaultNPCUpwardBias;
 							cfg.npcCooldownSeconds = kDefaultNPCCooldown;
 							cfg.npcRaySpread = kDefaultNPCRaySpread;
+							cfg.npcStaminaCost = kDefaultNPCStaminaCost;
+							cfg.npcStaminaDrain = kDefaultNPCStaminaDrain;
+							cfg.guardBreakKick = kDefaultGuardBreakKick;
 						}
 					}
 					ImGui::EndTabItem();
@@ -132,11 +144,15 @@ namespace UI
 				before.objectUpwardBias != cfg.objectUpwardBias ||
 				before.objectCooldownSeconds != cfg.objectCooldownSeconds ||
 				before.objectRaySpread != cfg.objectRaySpread ||
+				before.objectStaminaCost != cfg.objectStaminaCost ||
 				before.npcRange != cfg.npcRange ||
 				before.npcForce != cfg.npcForce ||
 				before.npcUpwardBias != cfg.npcUpwardBias ||
 				before.npcCooldownSeconds != cfg.npcCooldownSeconds ||
-				before.npcRaySpread != cfg.npcRaySpread) {
+				before.npcRaySpread != cfg.npcRaySpread ||
+				before.npcStaminaCost != cfg.npcStaminaCost ||
+				before.npcStaminaDrain != cfg.npcStaminaDrain ||
+				before.guardBreakKick != cfg.guardBreakKick) {
 				manager->SetConfig(cfg);
 			}
 		}
