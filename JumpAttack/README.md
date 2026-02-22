@@ -18,9 +18,21 @@ Output DLL:
    - `Data/SKSE/Plugins/JumpAttacksNoBehaviors.dll`
 2. Copy INI to:
    - `Data/SKSE/Plugins/JumpAttacks.ini`
+3. (Optional, auto-created) JSON settings:
+   - `Data/SKSE/Plugins/JumpAttacksNoBehaviors.json`
 
 Sample INI is included at:
 - `JumpAttack/JumpAttacks.ini`
+
+## SKSE Menu + JSON
+
+- If `SKSEMenuFramework` is installed, the mod registers a `Jump Attacks` section.
+- In-game changes are saved to:
+  - `Data/SKSE/Plugins/JumpAttacksNoBehaviors.json`
+- Load order for settings:
+  1. Built-in defaults
+  2. INI defaults (`JumpAttacks.ini`)
+  3. JSON overrides (`JumpAttacksNoBehaviors.json`)
 
 ## INI keys
 

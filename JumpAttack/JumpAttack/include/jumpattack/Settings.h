@@ -2,6 +2,7 @@
 
 #include <shared_mutex>
 #include <format>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -31,10 +32,16 @@ namespace JA
     {
     public:
         void Load();
+        void Set(const SettingsData& a_data, bool a_saveJson = true);
         [[nodiscard]] SettingsData Get() const;
         [[nodiscard]] bool IsDebugEnabled() const;
 
     private:
+        static void LoadFromIni(SettingsData& a_data);
+        static void LoadFromJson(SettingsData& a_data);
+        static void SaveToJson(const SettingsData& a_data);
+        static std::filesystem::path GetJsonPath();
+        static void ApplyLoggingLevel(bool a_debugEnabled);
         static void Clamp(SettingsData& a_data);
         static bool ParseBool(std::string a_value, bool a_fallback);
 

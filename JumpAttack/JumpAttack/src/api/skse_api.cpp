@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include "version.h"
 #include "hook/MainHook.h"
+#include "ui/UI.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -45,6 +46,7 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
+				UI::Register();
 				HOOK::MAIN::Install();
 				LOG_INFO("[JA] {} loaded", PLUGIN_RUNTIME_NAME);
 				break;

@@ -71,6 +71,7 @@ namespace UI
 			if (ImGui::BeginTabBar("KickTabs")) {
 				if (ImGui::BeginTabItem("General")) {
 					ImGui::Checkbox("Enable Kick", &cfg.enabled);
+					ImGui::Checkbox("Guard Break Kick", &cfg.guardBreakKick);
 
 					if (ImGui::BeginCombo("Keyboard Key", hotkeyName.c_str())) {
 						for (const auto& option : keyOptions) {
@@ -83,6 +84,10 @@ namespace UI
 							}
 						}
 						ImGui::EndCombo();
+					}
+
+					if (ImGui::Button("Defaults##General")) {
+						cfg.guardBreakKick = kDefaultGuardBreakKick;
 					}
 
 					ImGui::EndTabItem();

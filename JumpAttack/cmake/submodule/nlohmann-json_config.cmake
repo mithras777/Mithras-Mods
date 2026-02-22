@@ -12,12 +12,14 @@ include(FetchContent)
 
 set(FETCHCONTENT_QUIET FALSE)
 
-FetchContent_Populate(
-	${JSON_NAME}
-	GIT_REPOSITORY  ${JSON_REPO_URL}
-	GIT_TAG         ${JSON_REPO_TAG}
-	SOURCE_DIR      ${JSON_ROOT_DIR}
-)
+if(NOT EXISTS "${JSON_ROOT_DIR}/single_include/nlohmann/json.hpp")
+	FetchContent_Populate(
+		${JSON_NAME}
+		GIT_REPOSITORY  ${JSON_REPO_URL}
+		GIT_TAG         ${JSON_REPO_TAG}
+		SOURCE_DIR      ${JSON_ROOT_DIR}
+	)
+endif()
 
 # Tie this to CommonLibSSE for REX::JSON
 target_include_directories(
