@@ -21,9 +21,9 @@ namespace UI
 		constexpr float kDefaultNPCRange = 220.0f;
 		constexpr float kDefaultNPCCooldown = 0.35f;
 		constexpr float kDefaultNPCRaySpread = 0.20f;
-		constexpr float kDefaultNPCStaminaCost = 0.0f;
+		constexpr float kDefaultNPCStaminaCost = 10.0f;
 		constexpr float kDefaultNPCStaminaDrain = 0.0f;
-		constexpr float kDefaultNPCDamageFlat = 10.0f;
+		constexpr float kDefaultNPCDamageFlat = 0.0f;
 		constexpr float kDefaultNPCDamagePercent = 0.0f;
 		constexpr bool kDefaultGuardBreakKick = false;
 

@@ -24,9 +24,9 @@ namespace MITHRAS::KICK
 		float npcUpwardBias{ 0.0f };
 		float npcCooldownSeconds{ 0.35f };
 		float npcRaySpread{ 0.20f };
-		float npcStaminaCost{ 0.0f };
+		float npcStaminaCost{ 10.0f };
 		float npcStaminaDrain{ 0.0f };
-		float npcDamageFlat{ 10.0f };
+		float npcDamageFlat{ 0.0f };
 		float npcDamagePercent{ 0.0f };
 		bool guardBreakKick{ false };
 	};
