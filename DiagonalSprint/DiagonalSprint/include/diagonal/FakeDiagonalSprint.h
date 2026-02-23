@@ -19,8 +19,8 @@ namespace DIAGONAL
 		bool firstPersonOnly{ true };
 		bool requireOnGround{ true };
 		bool requireForwardInput{ true };
-		float baseDriftSpeed{ 80.0f };
-		float maxLateralSpeed{ 140.0f };
+		float baseDriftSpeed{ 36.0f };
+		float maxLateralSpeed{ 70.0f };
 		float inputTau{ 0.08f };
 		float dirTau{ 0.12f };
 		SpeedScalingConfig speedScaling{};
@@ -49,9 +49,10 @@ namespace DIAGONAL
 	private:
 		bool IsFeatureActive(RE::PlayerCharacter* a_player, bool a_requireForward, const char** a_reason = nullptr) const;
 		bool IsForwardActive(RE::PlayerCharacter* a_player) const;
+		bool IsGroundedReliable(RE::PlayerCharacter* a_player) const;
 		RE::NiPoint3 ComputeCameraRightFlat() const;
-		float GetDriftSpeed(const RE::NiPoint2& a_horizontalVelocity) const;
-		void ApplyDriftVelocity(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_rightFlat, float a_targetLateral);
+		float GetDriftSpeed(RE::PlayerCharacter* a_player, const RE::NiPoint2& a_horizontalVelocity) const;
+		void ApplyDriftVelocity(RE::PlayerCharacter* a_player, float a_dt, const RE::NiPoint3& a_rightFlat, float a_targetLateral);
 		void ClearDriftVelocityMod(RE::PlayerCharacter* a_player) const;
 		void LoadFromDisk();
 		std::filesystem::path GetConfigPath() const;

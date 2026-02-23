@@ -34,10 +34,10 @@ namespace HOOK::INPUT {
 	struct PlayerUpdate {
 		static void thunk(RE::PlayerCharacter* a_this, float a_delta)
 		{
-			func(a_this, a_delta);
 			if (a_this && a_this->IsPlayerRef()) {
 				DIAGONAL::FakeDiagonalSprint::GetSingleton()->OnPlayerUpdate(a_delta);
 			}
+			func(a_this, a_delta);
 		}
 		static inline REL::Relocation<decltype(thunk)> func;
 	};

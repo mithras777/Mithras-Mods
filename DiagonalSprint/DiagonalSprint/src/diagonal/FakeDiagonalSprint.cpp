@@ -294,7 +294,7 @@ namespace DIAGONAL
 
 		if (!active) {
 			ClearDriftVelocityMod(player);
-			if (m_config.debug && (!m_lastDebugActive || reason != m_lastDebugReason || m_debugLogCooldown <= 0.0f)) {
+			if (m_config.debug && (reason != m_lastDebugReason || m_debugLogCooldown <= 0.0f)) {
 				LOG_DEBUG("DiagonalSprint: inactive reason={}", reason);
 				m_lastDebugReason = reason;
 				m_debugLogCooldown = kDebugLogPeriod;
@@ -329,9 +329,9 @@ namespace DIAGONAL
 		controller->GetLinearVelocityImpl(currentVelocity);
 		const RE::NiPoint2 horizontalCurrent{ currentVelocity.quad.m128_f32[0], currentVelocity.quad.m128_f32[1] };
 
-		const float driftSpeed = GetDriftSpeed(horizontalCurrent);
+		const float driftSpeed = GetDriftSpeed(player, horizontalCurrent);
 		const float targetLateral = ClampFloat(m_smoothedInput * driftSpeed, -m_config.maxLateralSpeed, m_config.maxLateralSpeed);
-		ApplyDriftVelocity(player, m_smoothedRight, targetLateral);
+		ApplyDriftVelocity(player, a_dt, m_smoothedRight, targetLateral);
 
 		if (m_config.debug && (targetInput != 0.0f || !m_lastDebugActive || m_debugLogCooldown <= 0.0f)) {
 			LOG_DEBUG(
@@ -407,7 +407,7 @@ namespace DIAGONAL
 			return false;
 		}
 
-		if (m_config.requireOnGround && a_player->IsInMidair()) {
+		if (m_config.requireOnGround && !IsGroundedReliable(a_player)) {
 			setReason("midair");
 			return false;
 		}
@@ -467,6 +467,9 @@ namespace DIAGONAL
 			controller->GetLinearVelocityImpl(velocity);
 			const RE::NiPoint3 horizontal{ velocity.quad.m128_f32[0], velocity.quad.m128_f32[1], 0.0f };
 			const float speedSq = horizontal.SqrLength();
+			if (state && state->IsSprinting() && speedSq > 400.0f) {
+				return true;
+			}
 			if (speedSq > 25.0f) {
 				const float yaw = a_player->GetAngleZ();
 				const RE::NiPoint3 actorForward{ std::sin(yaw), std::cos(yaw), 0.0f };
@@ -476,6 +479,25 @@ namespace DIAGONAL
 		}
 
 		return false;
+	}
+
+	bool FakeDiagonalSprint::IsGroundedReliable(RE::PlayerCharacter* a_player) const
+	{
+		if (!a_player) {
+			return false;
+		}
+
+		auto* controller = a_player->GetCharController();
+		if (controller) {
+			if (controller->flags.all(RE::CHARACTER_FLAGS::kSupport) ||
+				controller->flags.all(RE::CHARACTER_FLAGS::kHasPotentialSupportManifold) ||
+				controller->flags.all(RE::CHARACTER_FLAGS::kOnStairs)) {
+				return true;
+			}
+		}
+
+		// Fallback for runtimes where support flags are noisy.
+		return !a_player->IsInMidair();
 	}
 
 	RE::NiPoint3 FakeDiagonalSprint::ComputeCameraRightFlat() const
@@ -501,21 +523,28 @@ namespace DIAGONAL
 		return Normalize2D(rightFlat, m_smoothedRight);
 	}
 
-	float FakeDiagonalSprint::GetDriftSpeed(const RE::NiPoint2& a_horizontalVelocity) const
+	float FakeDiagonalSprint::GetDriftSpeed(RE::PlayerCharacter* a_player, const RE::NiPoint2& a_horizontalVelocity) const
 	{
 		float driftSpeed = m_config.baseDriftSpeed;
 		if (!m_config.speedScaling.enabled) {
 			return driftSpeed;
 		}
 
-		const float speed = std::sqrt((a_horizontalVelocity.x * a_horizontalVelocity.x) + (a_horizontalVelocity.y * a_horizontalVelocity.y));
+		float speed = std::sqrt((a_horizontalVelocity.x * a_horizontalVelocity.x) + (a_horizontalVelocity.y * a_horizontalVelocity.y));
+		if (a_player) {
+			const float yaw = a_player->GetAngleZ();
+			const RE::NiPoint2 actorForward{ std::sin(yaw), std::cos(yaw) };
+			const float forwardProjected = (a_horizontalVelocity.x * actorForward.x) + (a_horizontalVelocity.y * actorForward.y);
+			speed = std::max(0.0f, forwardProjected);
+		}
+
 		const float ref = std::max(1.0f, m_config.speedScaling.sprintSpeedRef);
 		const float ratio = speed / ref;
 		const float scale = ClampFloat(ratio, m_config.speedScaling.minScale, m_config.speedScaling.maxScale);
 		return driftSpeed * scale;
 	}
 
-	void FakeDiagonalSprint::ApplyDriftVelocity(RE::PlayerCharacter* a_player, const RE::NiPoint3& a_rightFlat, float a_targetLateral)
+	void FakeDiagonalSprint::ApplyDriftVelocity(RE::PlayerCharacter* a_player, float a_dt, const RE::NiPoint3& a_rightFlat, float a_targetLateral)
 	{
 		auto* controller = a_player ? a_player->GetCharController() : nullptr;
 		if (!controller) {
@@ -535,14 +564,24 @@ namespace DIAGONAL
 		const float clampedTarget = ClampFloat(a_targetLateral, -m_config.maxLateralSpeed, m_config.maxLateralSpeed);
 		const RE::NiPoint3 driftHorizontal = rightNorm * clampedTarget;
 
-		// Drive controller-intended side movement (preferred path for sprint state compatibility).
+		// Drive controller-intended side movement (preferred path).
 		controller->velocityMod.quad.m128_f32[0] = driftHorizontal.x;
 		controller->velocityMod.quad.m128_f32[1] = driftHorizontal.y;
 		controller->velocityMod.quad.m128_f32[2] = 0.0f;
 		controller->velocityMod.quad.m128_f32[3] = 0.0f;
 
-		// Fallback for runtimes where velocityMod is ignored.
-		const RE::NiPoint3 newHorizontal = horizontal + driftHorizontal;
+		// Grounded sprint can clamp side velocity; inject only a lateral controller step.
+		if (IsGroundedReliable(a_player)) {
+			RE::hkVector4 pos{};
+			controller->GetPositionImpl(pos, false);
+			pos.quad.m128_f32[0] += driftHorizontal.x * a_dt;
+			pos.quad.m128_f32[1] += driftHorizontal.y * a_dt;
+			controller->SetPositionImpl(pos, false, false);
+			return;
+		}
+
+		// In-air fallback: add only lateral drift and preserve vertical velocity.
+		const RE::NiPoint3 newHorizontal = horizontal + (driftHorizontal * 0.35f);
 		const RE::hkVector4 patchedVelocity{ newHorizontal.x, newHorizontal.y, vz, vw };
 		controller->SetLinearVelocityImpl(patchedVelocity);
 	}
