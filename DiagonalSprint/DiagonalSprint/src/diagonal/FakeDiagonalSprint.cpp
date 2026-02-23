@@ -18,6 +18,7 @@ namespace DIAGONAL
 		constexpr auto kConfigFileName = L"DiagonalSprint.json";
 		constexpr float kEpsilon = 1e-4f;
 		constexpr float kSprintAssistDuration = 0.10f;
+		constexpr float kJumpSuppressDuration = 0.20f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -190,6 +191,10 @@ namespace DIAGONAL
 				m_forwardDown = button->IsPressed();
 			} else if (userEvent == userEvents->sprint) {
 				m_sprintDown = button->IsPressed();
+			} else if (userEvent == userEvents->jump) {
+				if (button->IsPressed()) {
+					m_jumpSuppressTimer = kJumpSuppressDuration;
+				}
 			}
 		}
 
@@ -235,6 +240,8 @@ namespace DIAGONAL
 		std::scoped_lock lock(m_lock);
 		const bool sprintActive = IsFeatureActive(player);
 		const bool assistContextValid = IsAssistContextValid(player);
+		const bool onGroundState = IsGroundedReliable(player);
+		m_jumpSuppressTimer = std::max(0.0f, m_jumpSuppressTimer - a_dt);
 		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
 		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
 
@@ -257,7 +264,7 @@ namespace DIAGONAL
 			}
 		}
 
-		const bool shouldDrive = sprintActive || m_sprintAssistActive;
+		const bool shouldDrive = (sprintActive || m_sprintAssistActive) && onGroundState;
 		m_blockStrafeNow = shouldDrive;
 		if (!shouldDrive) {
 			ClearDriftVelocityMod(player);
@@ -288,6 +295,7 @@ namespace DIAGONAL
 		m_strafeRightDown = false;
 		m_forwardDown = false;
 		m_sprintDown = false;
+		m_jumpSuppressTimer = 0.0f;
 		m_sprintAssistActive = false;
 		m_sprintAssistTimer = 0.0f;
 		m_sprintAssistSide = 0.0f;
@@ -409,14 +417,10 @@ namespace DIAGONAL
 
 		auto* controller = a_player->GetCharController();
 		if (controller) {
-			if (controller->flags.all(RE::CHARACTER_FLAGS::kSupport) ||
-				controller->flags.all(RE::CHARACTER_FLAGS::kHasPotentialSupportManifold) ||
-				controller->flags.all(RE::CHARACTER_FLAGS::kOnStairs)) {
-				return true;
-			}
+			return controller->context.currentState == RE::hkpCharacterStateType::kOnGround && !a_player->IsInMidair();
 		}
 
-		// Fallback for runtimes where support flags are noisy.
+		// Fallback when the character controller is unavailable.
 		return !a_player->IsInMidair();
 	}
 
@@ -473,7 +477,8 @@ namespace DIAGONAL
 		controller->velocityMod.quad.m128_f32[3] = 0.0f;
 
 		// Grounded sprint can clamp side velocity; inject only a lateral controller step.
-		if (IsGroundedReliable(a_player)) {
+		// Skip shortly after jump press to avoid jump/liftoff distortion.
+		if (IsGroundedReliable(a_player) && m_jumpSuppressTimer <= 0.0f) {
 			RE::hkVector4 pos{};
 			controller->GetPositionImpl(pos, false);
 			pos.quad.m128_f32[0] += driftHorizontal.x * a_dt;

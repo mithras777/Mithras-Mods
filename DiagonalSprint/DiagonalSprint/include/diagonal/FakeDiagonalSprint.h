@@ -49,6 +49,7 @@ namespace DIAGONAL
 		bool m_strafeRightDown{ false };
 		bool m_forwardDown{ false };
 		bool m_sprintDown{ false };
+		float m_jumpSuppressTimer{ 0.0f };
 		bool m_sprintAssistActive{ false };
 		float m_sprintAssistTimer{ 0.0f };
 		float m_sprintAssistSide{ 0.0f };
