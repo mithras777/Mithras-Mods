@@ -193,7 +193,7 @@ namespace DIAGONAL
 			std::scoped_lock lock(m_lock);
 			m_config = a_config;
 			m_config.baseDriftSpeed = std::max(0.0f, m_config.baseDriftSpeed);
-			m_config.maxLateralSpeed = std::max(1.0f, m_config.maxLateralSpeed);
+			m_config.maxLateralSpeed = ClampFloat(m_config.maxLateralSpeed, 10.0f, 40.0f);
 			m_config.inputTau = ClampFloat(m_config.inputTau, 0.01f, 0.30f);
 			m_config.dirTau = ClampFloat(m_config.dirTau, 0.01f, 0.30f);
 			m_config.speedScaling.sprintSpeedRef = std::max(1.0f, m_config.speedScaling.sprintSpeedRef);
@@ -313,8 +313,13 @@ namespace DIAGONAL
 			targetInput = m_strafeRightDown ? 1.0f : -1.0f;
 		}
 
-		const float inputAlpha = ComputeExpSmoothingAlpha(a_dt, m_config.inputTau);
-		m_smoothedInput += (targetInput - m_smoothedInput) * inputAlpha;
+		// Immediate held drift (constant speed while held), smooth only on release to avoid abrupt stop.
+		if (targetInput != 0.0f) {
+			m_smoothedInput = targetInput;
+		} else {
+			const float inputAlpha = ComputeExpSmoothingAlpha(a_dt, m_config.inputTau);
+			m_smoothedInput += (targetInput - m_smoothedInput) * inputAlpha;
+		}
 
 		const RE::NiPoint3 rightFlatTarget = ComputeCameraRightFlat();
 		const float dirAlpha = ComputeExpSmoothingAlpha(a_dt, m_config.dirTau);
@@ -331,7 +336,12 @@ namespace DIAGONAL
 
 		const float driftSpeed = GetDriftSpeed(player, horizontalCurrent);
 		const float targetLateral = ClampFloat(m_smoothedInput * driftSpeed, -m_config.maxLateralSpeed, m_config.maxLateralSpeed);
-		ApplyDriftVelocity(player, a_dt, m_smoothedRight, targetLateral);
+
+		if (std::abs(targetLateral) <= kEpsilon) {
+			ClearDriftVelocityMod(player);
+		} else {
+			ApplyDriftVelocity(player, a_dt, m_smoothedRight, targetLateral);
+		}
 
 		if (m_config.debug && (targetInput != 0.0f || !m_lastDebugActive || m_debugLogCooldown <= 0.0f)) {
 			LOG_DEBUG(
@@ -562,6 +572,9 @@ namespace DIAGONAL
 		const RE::NiPoint3 rightNorm = Normalize2D(a_rightFlat, m_smoothedRight);
 
 		const float clampedTarget = ClampFloat(a_targetLateral, -m_config.maxLateralSpeed, m_config.maxLateralSpeed);
+		if (std::abs(clampedTarget) <= kEpsilon) {
+			return;
+		}
 		const RE::NiPoint3 driftHorizontal = rightNorm * clampedTarget;
 
 		// Drive controller-intended side movement (preferred path).
@@ -638,7 +651,7 @@ namespace DIAGONAL
 		std::scoped_lock lock(m_lock);
 		m_config = loaded;
 		m_config.baseDriftSpeed = std::max(0.0f, m_config.baseDriftSpeed);
-		m_config.maxLateralSpeed = std::max(1.0f, m_config.maxLateralSpeed);
+		m_config.maxLateralSpeed = ClampFloat(m_config.maxLateralSpeed, 10.0f, 40.0f);
 		m_config.inputTau = ClampFloat(m_config.inputTau, 0.01f, 0.30f);
 		m_config.dirTau = ClampFloat(m_config.dirTau, 0.01f, 0.30f);
 		m_config.speedScaling.sprintSpeedRef = std::max(1.0f, m_config.speedScaling.sprintSpeedRef);

@@ -7,7 +7,7 @@ namespace DIAGONAL
 {
 	struct SpeedScalingConfig
 	{
-		bool enabled{ true };
+		bool enabled{ false };
 		float sprintSpeedRef{ 360.0f };
 		float minScale{ 0.7f };
 		float maxScale{ 1.2f };
@@ -19,9 +19,9 @@ namespace DIAGONAL
 		bool firstPersonOnly{ true };
 		bool requireOnGround{ true };
 		bool requireForwardInput{ true };
-		float baseDriftSpeed{ 36.0f };
-		float maxLateralSpeed{ 70.0f };
-		float inputTau{ 0.08f };
+		float baseDriftSpeed{ 10.0f };
+		float maxLateralSpeed{ 28.0f };
+		float inputTau{ 0.04f };
 		float dirTau{ 0.12f };
 		SpeedScalingConfig speedScaling{};
 		bool disableWhenAttacking{ true };

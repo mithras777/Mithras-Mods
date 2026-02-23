@@ -100,7 +100,6 @@ namespace UI
 				if (ImGui::BeginTabItem("Controls")) {
 					if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
 						ImGui::SliderFloat("Base Drift Speed", &cfg.baseDriftSpeed, 0.0f, 250.0f, "%.1f");
-						ImGui::SliderFloat("Max Lateral Speed", &cfg.maxLateralSpeed, 10.0f, 300.0f, "%.1f");
 						ImGui::SliderFloat("Input Tau", &cfg.inputTau, kMinInputTau, kMaxInputTau, "%.3f");
 						ImGui::SliderFloat("Direction Tau", &cfg.dirTau, kMinDirTau, kMaxDirTau, "%.3f");
 						ImGui::Spacing();
