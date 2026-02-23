@@ -475,9 +475,48 @@ namespace DIAGONAL
 		}
 		const RE::NiPoint3 driftHorizontal = rightNorm * clampedTarget;
 
+		// Project lateral drift onto the support plane so uphill/downhill strafe follows terrain.
+		RE::NiPoint3 supportNormal{
+			controller->supportNorm.quad.m128_f32[0],
+			controller->supportNorm.quad.m128_f32[1],
+			controller->supportNorm.quad.m128_f32[2]
+		};
+		const float supportLen = std::sqrt(
+			(supportNormal.x * supportNormal.x) +
+			(supportNormal.y * supportNormal.y) +
+			(supportNormal.z * supportNormal.z));
+		if (supportLen <= kEpsilon) {
+			supportNormal = { 0.0f, 0.0f, 1.0f };
+		} else {
+			supportNormal.x /= supportLen;
+			supportNormal.y /= supportLen;
+			supportNormal.z /= supportLen;
+		}
+		const float intoNormal =
+			(driftHorizontal.x * supportNormal.x) +
+			(driftHorizontal.y * supportNormal.y) +
+			(driftHorizontal.z * supportNormal.z);
+		RE::NiPoint3 driftOnSupportPlane = {
+			driftHorizontal.x - (supportNormal.x * intoNormal),
+			driftHorizontal.y - (supportNormal.y * intoNormal),
+			driftHorizontal.z - (supportNormal.z * intoNormal)
+		};
+		const float driftPlaneLen = std::sqrt(
+			(driftOnSupportPlane.x * driftOnSupportPlane.x) +
+			(driftOnSupportPlane.y * driftOnSupportPlane.y) +
+			(driftOnSupportPlane.z * driftOnSupportPlane.z));
+		if (driftPlaneLen > kEpsilon) {
+			const float scale = std::abs(clampedTarget) / driftPlaneLen;
+			driftOnSupportPlane.x *= scale;
+			driftOnSupportPlane.y *= scale;
+			driftOnSupportPlane.z *= scale;
+		} else {
+			driftOnSupportPlane = driftHorizontal;
+		}
+
 		// Drive controller-intended side movement (preferred path).
-		controller->velocityMod.quad.m128_f32[0] = driftHorizontal.x;
-		controller->velocityMod.quad.m128_f32[1] = driftHorizontal.y;
+		controller->velocityMod.quad.m128_f32[0] = driftOnSupportPlane.x;
+		controller->velocityMod.quad.m128_f32[1] = driftOnSupportPlane.y;
 		controller->velocityMod.quad.m128_f32[2] = 0.0f;
 		controller->velocityMod.quad.m128_f32[3] = 0.0f;
 
@@ -490,8 +529,9 @@ namespace DIAGONAL
 		if (onGroundState && m_jumpSuppressTimer <= 0.0f) {
 			RE::hkVector4 pos{};
 			controller->GetPositionImpl(pos, false);
-			pos.quad.m128_f32[0] += driftHorizontal.x * a_dt;
-			pos.quad.m128_f32[1] += driftHorizontal.y * a_dt;
+			pos.quad.m128_f32[0] += driftOnSupportPlane.x * a_dt;
+			pos.quad.m128_f32[1] += driftOnSupportPlane.y * a_dt;
+			pos.quad.m128_f32[2] += driftOnSupportPlane.z * a_dt;
 			controller->SetPositionImpl(pos, false, false);
 			return;
 		}
