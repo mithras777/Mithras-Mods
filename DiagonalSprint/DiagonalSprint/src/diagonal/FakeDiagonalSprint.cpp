@@ -19,6 +19,7 @@ namespace DIAGONAL
 		constexpr float kEpsilon = 1e-4f;
 		constexpr float kSprintAssistDuration = 0.10f;
 		constexpr float kJumpSuppressDuration = 0.20f;
+		constexpr float kJumpLateralAccel = 120.0f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -240,10 +241,14 @@ namespace DIAGONAL
 		std::scoped_lock lock(m_lock);
 		const bool sprintActive = IsFeatureActive(player);
 		const bool assistContextValid = IsAssistContextValid(player);
+		auto* controller = player->GetCharController();
+		const auto currentState = controller ? controller->context.currentState : RE::hkpCharacterStateType::kOnGround;
 		const bool onGroundState = IsGroundedReliable(player);
+		const bool jumpingState = currentState == RE::hkpCharacterStateType::kJumping;
 		m_jumpSuppressTimer = std::max(0.0f, m_jumpSuppressTimer - a_dt);
 		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
 		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
+		const bool jumpDiagonalIntent = jumpingState && m_jumpSuppressTimer > 0.0f && std::abs(heldStrafeInput) > kEpsilon;
 
 		if (sprintActive) {
 			m_sprintAssistActive = false;
@@ -264,7 +269,7 @@ namespace DIAGONAL
 			}
 		}
 
-		const bool shouldDrive = (sprintActive || m_sprintAssistActive) && onGroundState;
+		const bool shouldDrive = ((sprintActive || m_sprintAssistActive) && onGroundState) || jumpDiagonalIntent;
 		m_blockStrafeNow = shouldDrive;
 		if (!shouldDrive) {
 			ClearDriftVelocityMod(player);
@@ -278,7 +283,7 @@ namespace DIAGONAL
 			}
 		}
 
-		const float targetInput = sprintActive ? heldStrafeInput : m_sprintAssistSide;
+		const float targetInput = (sprintActive || jumpDiagonalIntent) ? heldStrafeInput : m_sprintAssistSide;
 		const RE::NiPoint3 rightFlat = ComputeCameraRightFlat();
 		const float targetLateral = targetInput * m_config.lateralSpeed;
 
@@ -476,9 +481,13 @@ namespace DIAGONAL
 		controller->velocityMod.quad.m128_f32[2] = 0.0f;
 		controller->velocityMod.quad.m128_f32[3] = 0.0f;
 
+		const auto currentState = controller->context.currentState;
+		const bool onGroundState = currentState == RE::hkpCharacterStateType::kOnGround && !a_player->IsInMidair();
+		const bool jumpingState = currentState == RE::hkpCharacterStateType::kJumping;
+
 		// Grounded sprint can clamp side velocity; inject only a lateral controller step.
 		// Skip shortly after jump press to avoid jump/liftoff distortion.
-		if (IsGroundedReliable(a_player) && m_jumpSuppressTimer <= 0.0f) {
+		if (onGroundState && m_jumpSuppressTimer <= 0.0f) {
 			RE::hkVector4 pos{};
 			controller->GetPositionImpl(pos, false);
 			pos.quad.m128_f32[0] += driftHorizontal.x * a_dt;
@@ -487,10 +496,17 @@ namespace DIAGONAL
 			return;
 		}
 
-		// In-air fallback: add only lateral drift and preserve vertical velocity.
-		const RE::NiPoint3 newHorizontal = horizontal + (driftHorizontal * 0.35f);
-		const RE::hkVector4 patchedVelocity{ newHorizontal.x, newHorizontal.y, vz, vw };
-		controller->SetLinearVelocityImpl(patchedVelocity);
+		// Brief jump-takeoff window: apply capped lateral velocity adjustment for diagonal jump feel.
+		if (jumpingState && m_jumpSuppressTimer > 0.0f) {
+			const float lateralCurrent = (horizontal.x * rightNorm.x) + (horizontal.y * rightNorm.y);
+			const float lateralDelta = ClampFloat(
+				clampedTarget - lateralCurrent,
+				-kJumpLateralAccel * a_dt,
+				kJumpLateralAccel * a_dt);
+			const RE::NiPoint3 newHorizontal = horizontal + (rightNorm * lateralDelta);
+			const RE::hkVector4 patchedVelocity{ newHorizontal.x, newHorizontal.y, vz, vw };
+			controller->SetLinearVelocityImpl(patchedVelocity);
+		}
 	}
 
 	void FakeDiagonalSprint::ClearDriftVelocityMod(RE::PlayerCharacter* a_player) const
