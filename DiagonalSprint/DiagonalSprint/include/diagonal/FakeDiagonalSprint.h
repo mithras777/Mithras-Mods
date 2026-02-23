@@ -31,6 +31,7 @@ namespace DIAGONAL
 
 	private:
 		bool IsFeatureActive(RE::PlayerCharacter* a_player, const char** a_reason = nullptr) const;
+		bool IsAssistContextValid(RE::PlayerCharacter* a_player, const char** a_reason = nullptr) const;
 		bool IsGroundedReliable(RE::PlayerCharacter* a_player) const;
 		RE::NiPoint3 ComputeCameraRightFlat() const;
 		void ApplyLateralVelocity(RE::PlayerCharacter* a_player, float a_dt, const RE::NiPoint3& a_rightFlat, float a_targetLateral);
@@ -46,6 +47,11 @@ namespace DIAGONAL
 
 		bool m_strafeLeftDown{ false };
 		bool m_strafeRightDown{ false };
+		bool m_forwardDown{ false };
+		bool m_sprintDown{ false };
+		bool m_sprintAssistActive{ false };
+		float m_sprintAssistTimer{ 0.0f };
+		float m_sprintAssistSide{ 0.0f };
 		bool m_blockStrafeNow{ false };
 	};
 }

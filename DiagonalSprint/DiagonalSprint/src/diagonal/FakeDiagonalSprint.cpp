@@ -17,6 +17,7 @@ namespace DIAGONAL
 	{
 		constexpr auto kConfigFileName = L"DiagonalSprint.json";
 		constexpr float kEpsilon = 1e-4f;
+		constexpr float kSprintAssistDuration = 0.10f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -185,11 +186,22 @@ namespace DIAGONAL
 				m_strafeLeftDown = button->IsPressed();
 			} else if (userEvent == userEvents->strafeRight) {
 				m_strafeRightDown = button->IsPressed();
+			} else if (userEvent == userEvents->forward) {
+				m_forwardDown = button->IsPressed();
+			} else if (userEvent == userEvents->sprint) {
+				m_sprintDown = button->IsPressed();
 			}
 		}
 
-		const char* reason = "unknown";
-		m_blockStrafeNow = IsFeatureActive(player, &reason);
+		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
+		if (!m_sprintAssistActive && hasSprintIntent && IsAssistContextValid(player)) {
+			m_sprintAssistActive = true;
+			m_sprintAssistTimer = kSprintAssistDuration;
+			m_sprintAssistSide = heldStrafeInput;
+		}
+
+		m_blockStrafeNow = IsFeatureActive(player) || m_sprintAssistActive;
 		if (!m_blockStrafeNow) {
 			return;
 		}
@@ -221,24 +233,45 @@ namespace DIAGONAL
 		}
 
 		std::scoped_lock lock(m_lock);
-		const char* reason = "unknown";
-		const bool active = IsFeatureActive(player, &reason);
-		m_blockStrafeNow = active;
+		const bool sprintActive = IsFeatureActive(player);
+		const bool assistContextValid = IsAssistContextValid(player);
+		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
 
-		if (!active) {
+		if (sprintActive) {
+			m_sprintAssistActive = false;
+			m_sprintAssistTimer = 0.0f;
+			m_sprintAssistSide = 0.0f;
+		} else if (hasSprintIntent && assistContextValid) {
+			m_sprintAssistActive = true;
+			m_sprintAssistTimer = kSprintAssistDuration;
+			m_sprintAssistSide = heldStrafeInput;
+		} else if (m_sprintAssistActive) {
+			m_sprintAssistTimer -= a_dt;
+			if (m_sprintAssistTimer <= 0.0f || !assistContextValid || !m_sprintDown || !m_forwardDown) {
+				m_sprintAssistActive = false;
+				m_sprintAssistTimer = 0.0f;
+				m_sprintAssistSide = 0.0f;
+			} else if (std::abs(heldStrafeInput) > kEpsilon) {
+				m_sprintAssistSide = heldStrafeInput;
+			}
+		}
+
+		const bool shouldDrive = sprintActive || m_sprintAssistActive;
+		m_blockStrafeNow = shouldDrive;
+		if (!shouldDrive) {
 			ClearDriftVelocityMod(player);
-			ResetRuntimeState();
 			return;
 		}
 
 		if (auto* controls = RE::PlayerControls::GetSingleton()) {
 			controls->data.moveInputVec.x = 0.0f;
+			if (!sprintActive && m_sprintAssistActive) {
+				controls->data.moveInputVec.y = 1.0f;
+			}
 		}
 
-		float targetInput = 0.0f;
-		if (m_strafeLeftDown != m_strafeRightDown) {
-			targetInput = m_strafeRightDown ? 1.0f : -1.0f;
-		}
+		const float targetInput = sprintActive ? heldStrafeInput : m_sprintAssistSide;
 		const RE::NiPoint3 rightFlat = ComputeCameraRightFlat();
 		const float targetLateral = targetInput * m_config.lateralSpeed;
 
@@ -251,6 +284,13 @@ namespace DIAGONAL
 
 	void FakeDiagonalSprint::ResetRuntimeState()
 	{
+		m_strafeLeftDown = false;
+		m_strafeRightDown = false;
+		m_forwardDown = false;
+		m_sprintDown = false;
+		m_sprintAssistActive = false;
+		m_sprintAssistTimer = 0.0f;
+		m_sprintAssistSide = 0.0f;
 		m_blockStrafeNow = false;
 	}
 
@@ -261,6 +301,30 @@ namespace DIAGONAL
 	}
 
 	bool FakeDiagonalSprint::IsFeatureActive(RE::PlayerCharacter* a_player, const char** a_reason) const
+	{
+		const char* assistReason = "unknown";
+		if (!IsAssistContextValid(a_player, &assistReason)) {
+			if (a_reason) {
+				*a_reason = assistReason;
+			}
+			return false;
+		}
+
+		const auto* state = a_player->AsActorState();
+		if (!state || !state->IsSprinting()) {
+			if (a_reason) {
+				*a_reason = "not-sprinting";
+			}
+			return false;
+		}
+
+		if (a_reason) {
+			*a_reason = "active";
+		}
+		return true;
+	}
+
+	bool FakeDiagonalSprint::IsAssistContextValid(RE::PlayerCharacter* a_player, const char** a_reason) const
 	{
 		auto setReason = [a_reason](const char* a_value) {
 			if (a_reason) {
@@ -291,8 +355,8 @@ namespace DIAGONAL
 		}
 
 		const auto* state = a_player->AsActorState();
-		if (!state || !state->IsSprinting()) {
-			setReason("not-sprinting");
+		if (!state) {
+			setReason("state-missing");
 			return false;
 		}
 
