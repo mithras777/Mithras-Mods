@@ -11,7 +11,6 @@ namespace UI
 		{
 			const DIAGONAL::FakeDiagonalConfig defaults{};
 			a_cfg.enabled = defaults.enabled;
-			a_cfg.requireOnGround = defaults.requireOnGround;
 		}
 
 		void ResetControlsDefaults(DIAGONAL::FakeDiagonalConfig& a_cfg)
@@ -23,7 +22,6 @@ namespace UI
 		bool ConfigChanged(const DIAGONAL::FakeDiagonalConfig& a_lhs, const DIAGONAL::FakeDiagonalConfig& a_rhs)
 		{
 			return a_lhs.enabled != a_rhs.enabled ||
-			       a_lhs.requireOnGround != a_rhs.requireOnGround ||
 			       a_lhs.lateralSpeed != a_rhs.lateralSpeed;
 		}
 	}
@@ -52,7 +50,6 @@ namespace UI
 				if (ImGui::BeginTabItem("General")) {
 					if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
 						ImGui::Checkbox("Enabled", &cfg.enabled);
-						ImGui::Checkbox("Require On Ground", &cfg.requireOnGround);
 						ImGui::Spacing();
 						if (ImGui::Button("Defaults##General")) {
 							ResetGeneralDefaults(cfg);

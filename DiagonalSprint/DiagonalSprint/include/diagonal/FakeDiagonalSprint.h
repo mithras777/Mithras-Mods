@@ -8,7 +8,6 @@ namespace DIAGONAL
 	struct FakeDiagonalConfig
 	{
 		bool enabled{ true };
-		bool requireOnGround{ true };
 		float lateralSpeed{ 4.1f };
 	};
 

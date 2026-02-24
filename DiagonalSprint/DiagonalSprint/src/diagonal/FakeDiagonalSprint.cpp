@@ -87,7 +87,6 @@ namespace DIAGONAL
 		{
 			a_os << "{\n";
 			a_os << "  \"enabled\": " << (a_cfg.enabled ? "true" : "false") << ",\n";
-			a_os << "  \"requireOnGround\": " << (a_cfg.requireOnGround ? "true" : "false") << ",\n";
 			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << "\n";
 			a_os << "}\n";
 		}
@@ -383,7 +382,7 @@ namespace DIAGONAL
 			return false;
 		}
 
-		if (m_config.requireOnGround && !IsGroundedReliable(a_player)) {
+		if (!IsGroundedReliable(a_player)) {
 			setReason("midair");
 			return false;
 		}
@@ -579,7 +578,6 @@ namespace DIAGONAL
 
 		FakeDiagonalConfig loaded = {};
 		ReadBool(text, "enabled", loaded.enabled);
-		ReadBool(text, "requireOnGround", loaded.requireOnGround);
 		ReadFloat(text, "lateralSpeed", loaded.lateralSpeed);
 
 		std::scoped_lock lock(m_lock);
