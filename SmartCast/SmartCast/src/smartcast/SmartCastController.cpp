@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <format>
-#include <nlohmann/json.hpp>
+#include "json/single_include/nlohmann/json.hpp"
 
 namespace SMART_CAST
 {
@@ -341,3 +341,310 @@ namespace SMART_CAST
 			m_runtime.releasePaddingRemaining = 0.0f;
 		}
 	}
+
+	bool Controller::IsRecording() const { return m_runtime.mode == Mode::kRecording; }
+	bool Controller::IsPlaying() const { return m_runtime.mode == Mode::kPlaying; }
+	std::int32_t Controller::GetActiveChainIndex1Based() const { return m_runtime.activeChainIndex + 1; }
+	float Controller::Clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
+	float Controller::Quantize(float v, float step) { return step <= 0.0f ? v : (std::round(v / step) * step); }
+
+	bool Controller::ShouldBlockGlobal(RE::PlayerCharacter* player) const
+	{
+		if (!player) return true;
+		if (m_runtime.timeSinceLoad < m_config.global.minTimeAfterLoadSeconds) return true;
+		if (m_config.global.firstPersonOnly) {
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			if (!camera || !camera->IsInFirstPerson()) return true;
+		}
+		if (m_config.global.preventInMenus && GAME_EVENT::Manager::GetSingleton()->IsBlockingMenuOpen()) return true;
+		if (m_config.global.preventWhileStaggered && player->IsStaggering()) return true;
+		if (m_config.global.preventWhileRagdoll && player->IsInRagdollState()) return true;
+		return false;
+	}
+
+	bool Controller::IsKeyDown(const std::string& key) const
+	{
+		if (key.empty() || key == "None") return false;
+		if (key.size() == 1) {
+			char c = static_cast<char>(std::toupper(static_cast<unsigned char>(key[0])));
+			if (c >= 'A' && c <= 'Z') {
+				return (::GetAsyncKeyState(static_cast<int>(c)) & 0x8000) != 0;
+			}
+		}
+		if (key.rfind("F", 0) == 0 && key.size() <= 3) {
+			int fn = 0;
+			const auto [ptr, ec] = std::from_chars(key.data() + 1, key.data() + key.size(), fn);
+			if (ec == std::errc{} && ptr == key.data() + key.size() && fn >= 1 && fn <= 12) {
+				return (::GetAsyncKeyState(VK_F1 + fn - 1) & 0x8000) != 0;
+			}
+		}
+		if (key == "Mouse4") return (::GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0;
+		if (key == "Mouse5") return (::GetAsyncKeyState(VK_XBUTTON2) & 0x8000) != 0;
+		return false;
+	}
+
+	bool Controller::IsHotkeyPressed(HotkeySlot slot, const std::string& key)
+	{
+		const auto idx = static_cast<std::size_t>(slot);
+		const bool now = IsKeyDown(key);
+		const bool pressed = now && !m_runtime.keyWasDown[idx];
+		m_runtime.keyWasDown[idx] = now;
+		return pressed;
+	}
+
+	void Controller::UpdateHotkeys(RE::PlayerCharacter*)
+	{
+		if (IsHotkeyPressed(HotkeySlot::kRecordToggle, m_config.global.record.toggleKey)) {
+			if (m_runtime.mode == Mode::kRecording) StopRecording(); else StartRecording(m_config.global.playback.defaultChainIndex);
+		}
+		if (m_config.global.record.cancelKey != "None" && IsHotkeyPressed(HotkeySlot::kRecordCancel, m_config.global.record.cancelKey) && m_runtime.mode == Mode::kRecording) {
+			StopRecording();
+		}
+		if (IsHotkeyPressed(HotkeySlot::kPlay, m_config.global.playback.playKey)) {
+			if (m_runtime.mode == Mode::kPlaying) StopPlayback(true); else StartPlayback(m_config.global.playback.defaultChainIndex);
+		}
+		if (m_config.global.playback.cancelKey != "None" && IsHotkeyPressed(HotkeySlot::kPlayCancel, m_config.global.playback.cancelKey) && m_runtime.mode == Mode::kPlaying) {
+			StopPlayback(true);
+		}
+	}
+
+	void Controller::ProcessCastCapture(RE::PlayerCharacter* player, CastCapture& cap, bool castingNow, RE::TESForm* equipped)
+	{
+		auto* spell = equipped ? equipped->As<RE::SpellItem>() : nullptr;
+		if (!spell) {
+			cap = CastCapture{};
+			return;
+		}
+		if (!cap.started && castingNow) {
+			cap.started = true;
+			cap.spell = spell;
+			cap.startTime = m_runtime.timeSinceLoad;
+			RecordStepOnCastStart(player, spell);
+			return;
+		}
+		if (cap.started && !castingNow) {
+			if (cap.spell && cap.spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+				RecordConcentrationDuration(cap.spell, m_runtime.timeSinceLoad - cap.startTime);
+			}
+			cap = CastCapture{};
+		}
+	}
+
+	void Controller::RecordStepOnCastStart(RE::PlayerCharacter*, RE::SpellItem* spell)
+	{
+		if (!spell || m_runtime.mode != Mode::kRecording) return;
+		const auto idx = static_cast<std::size_t>(m_runtime.activeChainIndex);
+		if (idx >= m_config.chains.size()) return;
+		auto& chain = m_config.chains[idx];
+		if (chain.steps.size() >= static_cast<std::size_t>(m_config.global.maxStepsPerChain)) { StopRecording(); return; }
+		const auto spellType = spell->GetSpellType();
+		if (m_config.global.record.ignorePowers && (spellType == RE::MagicSystem::SpellType::kPower || spellType == RE::MagicSystem::SpellType::kLesserPower)) return;
+		if (m_config.global.record.ignoreShouts && spellType == RE::MagicSystem::SpellType::kVoicePower) return;
+		if (m_config.global.record.ignoreScrolls && spellType == RE::MagicSystem::SpellType::kScroll) return;
+
+		ChainStep step{};
+		step.spellFormID = BuildFormKey(spell);
+		step.type = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration ? StepType::kConcentration : StepType::kFireAndForget;
+		step.holdSec = step.type == StepType::kConcentration ? m_config.global.concentration.minHoldSec : 0.0f;
+		if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf) step.castOn = CastOn::kSelf;
+		else step.castOn = GetCrosshairTarget(m_config.global.targeting.preferCrosshairActor) ? CastOn::kCrosshair : CastOn::kAimed;
+		chain.steps.push_back(std::move(step));
+		m_runtime.recordIdleTimer = 0.0f;
+	}
+
+	void Controller::RecordConcentrationDuration(RE::SpellItem* spell, float duration)
+	{
+		if (!spell || m_runtime.mode != Mode::kRecording) return;
+		const auto idx = static_cast<std::size_t>(m_runtime.activeChainIndex);
+		if (idx >= m_config.chains.size() || m_config.chains[idx].steps.empty()) return;
+		const auto key = BuildFormKey(spell);
+		for (auto it = m_config.chains[idx].steps.rbegin(); it != m_config.chains[idx].steps.rend(); ++it) {
+			if (it->spellFormID == key && it->type == StepType::kConcentration) {
+				float h = std::clamp(duration, m_config.global.concentration.minHoldSec, m_config.global.concentration.maxHoldSec);
+				it->holdSec = Quantize(h, m_config.global.concentration.sampleGranularitySec);
+				break;
+			}
+		}
+	}
+
+	bool Controller::ExecuteStep(RE::PlayerCharacter* player, const ChainStep& step)
+	{
+		auto* spell = ResolveSpell(step.spellFormID);
+		if (!spell || !player->HasSpell(spell)) return false;
+		RE::ObjectRefHandle handle{};
+		bool castOnSelf = true;
+		const bool ok = CastSpellForStep(player, spell, step.castOn, step.type == StepType::kConcentration, &handle, &castOnSelf);
+		if (!ok) return false;
+		if (step.type == StepType::kConcentration) {
+			m_runtime.concentrationHoldRemaining = std::clamp(step.holdSec, m_config.global.concentration.minHoldSec, m_config.global.concentration.maxHoldSec);
+			m_runtime.releasePaddingRemaining = m_config.global.concentration.releasePaddingSec;
+		}
+		return true;
+	}
+
+	bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* spell, CastOn castOn, bool, RE::ObjectRefHandle* targetOut, bool* castOnSelfOut)
+	{
+		auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+		if (!caster) caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
+		if (!caster) return false;
+
+		RE::TESObjectREFR* target = player;
+		bool castOnSelf = true;
+		auto useCrosshair = [&]() {
+			auto* ref = GetCrosshairTarget(m_config.global.targeting.preferCrosshairActor);
+			if (ref) { target = ref; castOnSelf = false; return true; }
+			if (m_config.global.targeting.fallbackToSelfIfNoTarget) { target = player; castOnSelf = true; return true; }
+			return false;
+		};
+
+		if (m_config.global.targeting.mode == "selfOnly") {
+			target = player;
+			castOnSelf = true;
+		} else if (m_config.global.targeting.mode == "crosshairOnly") {
+			if (!useCrosshair()) return false;
+		} else {
+			if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf || castOn == CastOn::kSelf) {
+				target = player; castOnSelf = true;
+			} else if (!useCrosshair()) {
+				return false;
+			}
+		}
+
+		caster->CastSpellImmediate(spell, castOnSelf, target, 1.0f, false, 0.0f, player);
+		if (targetOut) *targetOut = castOnSelf ? RE::ObjectRefHandle{} : target->CreateRefHandle();
+		if (castOnSelfOut) *castOnSelfOut = castOnSelf;
+		return true;
+	}
+
+	void Controller::UpdateRecording(RE::PlayerCharacter* player, float delta)
+	{
+		if (m_runtime.mode != Mode::kRecording) return;
+		if (ShouldBlockGlobal(player)) { StopRecording(); return; }
+		m_runtime.recordIdleTimer += delta;
+		if (m_runtime.recordIdleTimer >= m_config.global.record.maxIdleSec) { StopRecording(); return; }
+		auto* leftForm = player->GetEquippedObject(true);
+		auto* rightForm = player->GetEquippedObject(false);
+		auto* leftSpell = leftForm ? leftForm->As<RE::SpellItem>() : nullptr;
+		auto* rightSpell = rightForm ? rightForm->As<RE::SpellItem>() : nullptr;
+		ProcessCastCapture(player, m_leftCapture, leftSpell && player->IsCasting(leftSpell), leftForm);
+		ProcessCastCapture(player, m_rightCapture, rightSpell && player->IsCasting(rightSpell), rightForm);
+	}
+
+	void Controller::UpdatePlayback(RE::PlayerCharacter* player, float delta)
+	{
+		if (m_runtime.mode != Mode::kPlaying) return;
+		if (ShouldBlockGlobal(player)) { StopPlayback(true); return; }
+		if (m_config.global.playback.stopIfPlayerHit && player->IsStaggering()) { StopPlayback(true); return; }
+		if (m_runtime.stepDelayTimer > 0.0f) { m_runtime.stepDelayTimer = std::max(0.0f, m_runtime.stepDelayTimer - delta); return; }
+		if (m_runtime.concentrationHoldRemaining > 0.0f) { m_runtime.concentrationHoldRemaining = std::max(0.0f, m_runtime.concentrationHoldRemaining - delta); return; }
+		if (m_runtime.releasePaddingRemaining > 0.0f) { m_runtime.releasePaddingRemaining = std::max(0.0f, m_runtime.releasePaddingRemaining - delta); return; }
+		const auto chainIdx = static_cast<std::size_t>(m_runtime.activeChainIndex);
+		if (chainIdx >= m_config.chains.size()) { StopPlayback(true); return; }
+		const auto& chain = m_config.chains[chainIdx];
+		if (m_runtime.playbackStepIndex >= chain.steps.size()) { StopPlayback(true); return; }
+		const bool ok = ExecuteStep(player, chain.steps[m_runtime.playbackStepIndex]);
+		if (!ok && m_config.global.playback.abortOnFail) { StopPlayback(true); return; }
+		++m_runtime.playbackStepIndex;
+		m_runtime.stepDelayTimer = m_config.global.playback.stepDelaySec;
+	}
+
+	void Controller::Update(RE::PlayerCharacter* player, float delta)
+	{
+		if (!player || delta <= 0.0f) return;
+		m_runtime.timeSinceLoad += delta;
+		UpdateHotkeys(player);
+		if (!m_config.global.enabled || player->IsDead()) {
+			if (m_runtime.mode != Mode::kIdle) { StopRecording(); StopPlayback(true); }
+			return;
+		}
+		UpdateRecording(player, delta);
+		UpdatePlayback(player, delta);
+	}
+
+	RE::SpellItem* Controller::ResolveSpell(std::string_view key)
+	{
+		std::string pluginName{};
+		RE::FormID localFormID = 0;
+		if (!ParseFormKey(key, pluginName, localFormID)) return nullptr;
+		auto* dh = RE::TESDataHandler::GetSingleton();
+		if (!dh) return nullptr;
+		auto* form = dh->LookupForm(localFormID, pluginName);
+		return form ? form->As<RE::SpellItem>() : nullptr;
+	}
+
+	bool Controller::ParseFormKey(std::string_view key, std::string& pluginName, RE::FormID& local)
+	{
+		const auto split = key.find('|');
+		if (split == std::string_view::npos) return false;
+		pluginName = Trim(key.substr(0, split));
+		auto idText = Trim(key.substr(split + 1));
+		if (pluginName.empty() || idText.empty()) return false;
+		if (idText.rfind("0x", 0) == 0 || idText.rfind("0X", 0) == 0) idText = idText.substr(2);
+		std::uint32_t parsed = 0;
+		const auto [ptr, ec] = std::from_chars(idText.data(), idText.data() + idText.size(), parsed, 16);
+		if (ec != std::errc{} || ptr != idText.data() + idText.size()) return false;
+		local = parsed;
+		return true;
+	}
+
+	std::string Controller::BuildFormKey(const RE::TESForm* form)
+	{
+		if (!form) return {};
+		const auto* file = form->GetFile(0);
+		if (!file) return {};
+		const auto filename = file->GetFilename();
+		if (filename.empty()) return {};
+		return std::format("{}|0x{:08X}", filename, form->GetLocalFormID());
+	}
+
+	RE::TESObjectREFR* Controller::GetCrosshairTarget(bool preferActor)
+	{
+		auto* pick = RE::CrosshairPickData::GetSingleton();
+		if (!pick) return nullptr;
+		if (preferActor) {
+			auto actor = pick->targetActor.get();
+			if (actor) return actor.get();
+		}
+		auto target = pick->target.get();
+		if (target) return target.get();
+		if (!preferActor) {
+			auto actor = pick->targetActor.get();
+			if (actor) return actor.get();
+		}
+		return nullptr;
+	}
+
+	bool Controller::IsSpellConcentration(std::string_view key) const
+	{
+		auto* spell = ResolveSpell(key);
+		return spell && spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+	}
+
+	std::vector<KnownSpellOption> Controller::GetKnownSpells() const
+	{
+		std::vector<KnownSpellOption> out;
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) return out;
+		struct Visitor final : RE::Actor::ForEachSpellVisitor {
+			explicit Visitor(std::vector<KnownSpellOption>& o) : out(o) {}
+			RE::BSContainer::ForEachResult Visit(RE::SpellItem* spell) override {
+				if (!spell) return RE::BSContainer::ForEachResult::kContinue;
+				const auto st = spell->GetSpellType();
+				if (st != RE::MagicSystem::SpellType::kSpell && st != RE::MagicSystem::SpellType::kLesserPower && st != RE::MagicSystem::SpellType::kPower) return RE::BSContainer::ForEachResult::kContinue;
+				KnownSpellOption s{};
+				s.name = spell->GetName();
+				s.formKey = Controller::BuildFormKey(spell);
+				s.formID = spell->GetFormID();
+				if (!s.formKey.empty()) out.push_back(std::move(s));
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+			std::vector<KnownSpellOption>& out;
+		} visitor(out);
+		player->VisitSpells(visitor);
+		std::sort(out.begin(), out.end(), [](const KnownSpellOption& a, const KnownSpellOption& b) {
+			if (a.name == b.name) return a.formID < b.formID;
+			return a.name < b.name;
+		});
+		return out;
+	}
+}
