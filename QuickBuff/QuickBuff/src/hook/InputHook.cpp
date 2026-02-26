@@ -1,5 +1,6 @@
 #include "hook/InputHook.h"
 
+#include "buff/QuickBuffManager.h"
 #include "console/ConsoleCommands.h"
 
 namespace HOOK::INPUT {
@@ -22,9 +23,20 @@ namespace HOOK::INPUT {
 		static inline REL::Relocation<decltype(thunk)> func;
 	};
 
+	struct PlayerUpdate {
+		static void thunk(RE::PlayerCharacter* a_this, float a_delta)
+		{
+			QUICK_BUFF::Manager::GetSingleton()->Update(a_this, a_delta);
+			func(a_this, a_delta);
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
 	void Install()
 	{
 		// Called when ProcessConsole is updated
 		stl::Hook::call<ProcessConsole>(RELOCATION_ID(52065, 52952).address() + RELOCATION_OFFSET(0xE2, 0x52));
+		stl::Hook::virtual_function<RE::PlayerCharacter, PlayerUpdate>(0, 0xAD);
 	}
 }

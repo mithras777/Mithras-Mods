@@ -2,7 +2,9 @@
 
 #include "plugin.h"
 #include "version.h"
+#include "buff/QuickBuffManager.h"
 #include "event/GameEventManager.h"
+#include "ui/UI.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -43,8 +45,10 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
+				QUICK_BUFF::Manager::GetSingleton()->Initialize();
 				// Register game events
 				GAME_EVENT::Manager::Register();
+				UI::Register();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;
