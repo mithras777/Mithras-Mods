@@ -63,19 +63,14 @@ namespace UI
 			auto cfg = controller->GetConfig();
 			const auto spells = controller->GetKnownSpells();
 			bool changed = false;
-			static int selectedChain = 0;
-			selectedChain = std::clamp(selectedChain, 0, std::max(0, static_cast<int>(cfg.chains.size()) - 1));
 
 			if (ImGui::BeginTabBar("SmartCastTabs")) {
 				if (ImGui::BeginTabItem("General")) {
 					changed |= ImGui::Checkbox("Enabled", &cfg.global.enabled);
 					changed |= ImGui::Checkbox("First person only", &cfg.global.firstPersonOnly);
-					changed |= ImGui::Checkbox("Prevent in menus", &cfg.global.preventInMenus);
 					changed |= ImGui::Checkbox("Prevent while staggered", &cfg.global.preventWhileStaggered);
 					changed |= ImGui::Checkbox("Prevent while ragdoll", &cfg.global.preventWhileRagdoll);
 					changed |= ImGui::SliderFloat("Min time after load (sec)", &cfg.global.minTimeAfterLoadSeconds, 0.0f, 10.0f, "%.1f");
-					changed |= ImGui::SliderInt("Max chains", &cfg.global.maxChains, 1, 10);
-					changed |= ImGui::SliderInt("Max steps per chain", &cfg.global.maxStepsPerChain, 1, 30);
 					ImGui::EndTabItem();
 				}
 
@@ -98,23 +93,19 @@ namespace UI
 						return c;
 					};
 					changed |= drawKeyCombo("Record key", cfg.global.record.toggleKey);
-					changed |= drawKeyCombo("Record cancel key", cfg.global.record.cancelKey);
 					changed |= drawKeyCombo("Play key", cfg.global.playback.playKey);
-					changed |= drawKeyCombo("Play cancel key", cfg.global.playback.cancelKey);
 					ImGui::EndTabItem();
 				}
 
 				if (ImGui::BeginTabItem("Record")) {
 					changed |= ImGui::SliderFloat("Max idle (sec)", &cfg.global.record.maxIdleSec, 0.5f, 30.0f, "%.1f");
 					changed |= ImGui::Checkbox("Record only successful casts", &cfg.global.record.recordOnlySuccessfulCasts);
-					changed |= ImGui::Checkbox("Ignore powers", &cfg.global.record.ignorePowers);
-					changed |= ImGui::Checkbox("Ignore shouts", &cfg.global.record.ignoreShouts);
-					changed |= ImGui::Checkbox("Ignore scrolls", &cfg.global.record.ignoreScrolls);
+					ImGui::TextDisabled("Powers and shouts are always recorded. Scrolls are always ignored.");
 					ImGui::EndTabItem();
 				}
 
 				if (ImGui::BeginTabItem("Playback")) {
-					changed |= ImGui::SliderInt("Default chain index", &cfg.global.playback.defaultChainIndex, 1, std::max(1, cfg.global.maxChains));
+					changed |= ImGui::SliderInt("Default chain index", &cfg.global.playback.defaultChainIndex, 1, std::max(1, static_cast<int>(cfg.chains.size())));
 					changed |= ImGui::SliderFloat("Step delay (sec)", &cfg.global.playback.stepDelaySec, 0.0f, 1.0f, "%.2f");
 					changed |= ImGui::Checkbox("Abort on fail", &cfg.global.playback.abortOnFail);
 					changed |= ImGui::Checkbox("Skip on fail", &cfg.global.playback.skipOnFail);
@@ -134,107 +125,81 @@ namespace UI
 					ImGui::EndTabItem();
 				}
 
-				if (ImGui::BeginTabItem("Targeting")) {
-					const char* modes[] = { "selfOnly", "crosshairOnly", "hybrid" };
-					int modeIndex = 2;
-					if (cfg.global.targeting.mode == "selfOnly") modeIndex = 0;
-					else if (cfg.global.targeting.mode == "crosshairOnly") modeIndex = 1;
-					if (ImGui::Combo("Mode", &modeIndex, modes, static_cast<int>(std::size(modes)))) {
-						cfg.global.targeting.mode = modes[modeIndex];
-						changed = true;
-					}
-					changed |= ImGui::Checkbox("Prefer crosshair actor", &cfg.global.targeting.preferCrosshairActor);
-					changed |= ImGui::Checkbox("Fallback to self if no target", &cfg.global.targeting.fallbackToSelfIfNoTarget);
-					ImGui::TextDisabled("Targeting uses crosshair target only (no raycast).");
-					ImGui::EndTabItem();
-				}
-
 				if (ImGui::BeginTabItem("Chains")) {
 					if (!cfg.chains.empty()) {
-						ImGui::SliderInt("Selected chain", &selectedChain, 0, static_cast<int>(cfg.chains.size()) - 1, "Chain %d");
-						auto& chain = cfg.chains[static_cast<std::size_t>(selectedChain)];
-						changed |= ImGui::Checkbox("Enabled", &chain.enabled);
-						char nameBuf[128]{};
-						std::snprintf(nameBuf, sizeof(nameBuf), "%s", chain.name.c_str());
-						if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
-							chain.name = nameBuf;
-							changed = true;
-						}
-						static constexpr std::array<const char*, 30> keys{
-							"None","R","G","Q","E","F","Z","X","C","V","B","T","Y","H","J","K","L","M","N","P","U","I","O","Mouse4","Mouse5","F1","F2","F3","F4","F5"
-						};
-						if (ImGui::BeginCombo("Chain hotkey", chain.hotkey.c_str())) {
-							for (const auto* k : keys) {
-								const bool selected = (chain.hotkey == k);
-								if (ImGui::Selectable(k, selected) && !selected) {
-									chain.hotkey = k;
-									changed = true;
+						if (ImGui::BeginTabBar("ChainTabs")) {
+							for (std::size_t chainIndex = 0; chainIndex < cfg.chains.size(); ++chainIndex) {
+								const auto tabLabel = std::format("{}", chainIndex + 1);
+								if (ImGui::BeginTabItem(tabLabel.c_str())) {
+									auto& chain = cfg.chains[chainIndex];
+									char nameBuf[128]{};
+									std::snprintf(nameBuf, sizeof(nameBuf), "%s", chain.name.c_str());
+									if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
+										chain.name = nameBuf;
+										changed = true;
+									}
+
+									static constexpr std::array<const char*, 30> keys{
+										"None","R","G","Q","E","F","Z","X","C","V","B","T","Y","H","J","K","L","M","N","P","U","I","O","Mouse4","Mouse5","F1","F2","F3","F4","F5"
+									};
+									if (ImGui::BeginCombo("Chain hotkey", chain.hotkey.c_str())) {
+										for (const auto* k : keys) {
+											const bool selected = (chain.hotkey == k);
+											if (ImGui::Selectable(k, selected) && !selected) {
+												chain.hotkey = k;
+												changed = true;
+											}
+										}
+										ImGui::EndCombo();
+									}
+
+									if (ImGui::Button("Clear Chain")) {
+										chain.steps.clear();
+										changed = true;
+									}
+
+									ImGui::Separator();
+									for (std::size_t i = 0; i < chain.steps.size(); ++i) {
+										auto& step = chain.steps[i];
+										ImGui::PushID(static_cast<int>(i));
+										ImGui::Text("Step %d", static_cast<int>(i + 1));
+										changed |= DrawSpellCombo("Spell", step.spellFormID, spells);
+
+										const bool isConcentration = controller->IsSpellConcentration(step.spellFormID);
+
+										if (isConcentration) {
+											changed |= ImGui::SliderFloat("Hold (sec)", &step.holdSec, 0.05f, 10.0f, "%.2f");
+										}
+
+										if (ImGui::Button("Up") && i > 0) {
+											std::swap(chain.steps[i], chain.steps[i - 1]);
+											changed = true;
+										}
+										ImGui::SameLine();
+										if (ImGui::Button("Down") && i + 1 < chain.steps.size()) {
+											std::swap(chain.steps[i], chain.steps[i + 1]);
+											changed = true;
+										}
+										ImGui::SameLine();
+										if (ImGui::Button("Delete")) {
+											chain.steps.erase(chain.steps.begin() + static_cast<std::ptrdiff_t>(i));
+											changed = true;
+											ImGui::PopID();
+											break;
+										}
+										ImGui::Separator();
+										ImGui::PopID();
+									}
+
+									if (ImGui::Button("Add Empty Step")) {
+										chain.steps.emplace_back();
+										changed = true;
+									}
+
+									ImGui::EndTabItem();
 								}
 							}
-							ImGui::EndCombo();
-						}
-
-						if (ImGui::Button("Start Recording to this Chain")) {
-							controller->SetConfig(cfg, true);
-							controller->StartRecording(selectedChain + 1);
-						}
-						ImGui::SameLine();
-						if (ImGui::Button("Play this Chain")) {
-							controller->SetConfig(cfg, true);
-							controller->StartPlayback(selectedChain + 1);
-						}
-						ImGui::SameLine();
-						if (ImGui::Button("Clear Chain")) {
-							chain.steps.clear();
-							changed = true;
-						}
-
-						ImGui::Separator();
-						for (std::size_t i = 0; i < chain.steps.size(); ++i) {
-							auto& step = chain.steps[i];
-							ImGui::PushID(static_cast<int>(i));
-							ImGui::Text("Step %d", static_cast<int>(i + 1));
-							changed |= DrawSpellCombo("Spell", step.spellFormID, spells);
-
-							int type = (step.type == SMART_CAST::StepType::kConcentration) ? 1 : 0;
-							if (ImGui::Combo("Type", &type, "fireAndForget\0concentration\0")) {
-								step.type = (type == 1) ? SMART_CAST::StepType::kConcentration : SMART_CAST::StepType::kFireAndForget;
-								changed = true;
-							}
-
-							int castOn = static_cast<int>(step.castOn);
-							if (ImGui::Combo("Cast On", &castOn, "self\0crosshair\0aimed\0")) {
-								step.castOn = static_cast<SMART_CAST::CastOn>(castOn);
-								changed = true;
-							}
-
-							if (step.type == SMART_CAST::StepType::kConcentration) {
-								changed |= ImGui::SliderFloat("Hold (sec)", &step.holdSec, 0.05f, 10.0f, "%.2f");
-							}
-
-							if (ImGui::Button("Up") && i > 0) {
-								std::swap(chain.steps[i], chain.steps[i - 1]);
-								changed = true;
-							}
-							ImGui::SameLine();
-							if (ImGui::Button("Down") && i + 1 < chain.steps.size()) {
-								std::swap(chain.steps[i], chain.steps[i + 1]);
-								changed = true;
-							}
-							ImGui::SameLine();
-							if (ImGui::Button("Delete")) {
-								chain.steps.erase(chain.steps.begin() + static_cast<std::ptrdiff_t>(i));
-								changed = true;
-								ImGui::PopID();
-								break;
-							}
-							ImGui::Separator();
-							ImGui::PopID();
-						}
-
-						if (ImGui::Button("Add Empty Step") && static_cast<int>(chain.steps.size()) < cfg.global.maxStepsPerChain) {
-							chain.steps.emplace_back();
-							changed = true;
+							ImGui::EndTabBar();
 						}
 					}
 					ImGui::EndTabItem();

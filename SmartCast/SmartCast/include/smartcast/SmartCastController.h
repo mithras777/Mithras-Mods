@@ -136,6 +136,7 @@ namespace SMART_CAST
 		void StopPlayback(bool a_forceStopCast);
 
 		[[nodiscard]] bool IsSpellConcentration(std::string_view a_formKey) const;
+		[[nodiscard]] bool IsSpellSelfDelivery(std::string_view a_formKey) const;
 		[[nodiscard]] std::vector<KnownSpellOption> GetKnownSpells() const;
 		[[nodiscard]] bool IsRecording() const;
 		[[nodiscard]] bool IsPlaying() const;
@@ -152,6 +153,7 @@ namespace SMART_CAST
 			std::size_t playbackStepIndex{ 0 };
 			float concentrationHoldRemaining{ 0.0f };
 			float releasePaddingRemaining{ 0.0f };
+			float concentrationTickTimer{ 0.0f };
 			bool initialized{ false };
 			bool wasCastingLeft{ false };
 			bool wasCastingRight{ false };
@@ -163,6 +165,7 @@ namespace SMART_CAST
 			std::array<bool, 8> keyWasDown{};
 			RE::ObjectRefHandle playbackTarget{};
 			bool playbackCastOnSelf{ true };
+			bool wasPowerOrShoutCasting{ false };
 		};
 
 		enum class HotkeySlot : std::uint32_t
@@ -206,6 +209,7 @@ namespace SMART_CAST
 		[[nodiscard]] static bool ParseFormKey(std::string_view a_formKey, std::string& a_pluginName, RE::FormID& a_localFormID);
 		[[nodiscard]] static std::string BuildFormKey(const RE::TESForm* a_form);
 		[[nodiscard]] static RE::TESObjectREFR* GetCrosshairTarget(bool a_preferActor);
+		[[nodiscard]] static RE::SpellItem* ResolveSelectedPowerSpell(RE::PlayerCharacter* a_player);
 		[[nodiscard]] static float Clamp01(float a_value);
 		[[nodiscard]] static float Quantize(float a_value, float a_step);
 

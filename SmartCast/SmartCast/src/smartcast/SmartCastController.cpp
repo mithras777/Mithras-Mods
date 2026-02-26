@@ -1,6 +1,8 @@
 #include "smartcast/SmartCastController.h"
 
 #include "RE/C/CrosshairPickData.h"
+#include "RE/S/SendHUDMessage.h"
+#include "RE/T/TESShout.h"
 #include "event/GameEventManager.h"
 
 #include <Windows.h>
@@ -19,6 +21,10 @@ namespace SMART_CAST
 	namespace
 	{
 		constexpr std::uint32_t kConfigVersion = 1;
+		void Notify(const std::string& a_text)
+		{
+			RE::SendHUDMessage::ShowHUDMessage(a_text.c_str());
+		}
 
 		std::string Trim(std::string_view text)
 		{
@@ -52,9 +58,13 @@ namespace SMART_CAST
 	{
 		Config cfg{};
 		cfg.version = kConfigVersion;
-		cfg.global.maxChains = 5;
-		cfg.global.maxStepsPerChain = 12;
+		cfg.global.maxChains = 6;
+		cfg.global.maxStepsPerChain = 0;
 		cfg.global.playback.defaultChainIndex = 1;
+		cfg.global.record.ignorePowers = false;
+		cfg.global.record.ignoreShouts = false;
+		cfg.global.record.ignoreScrolls = true;
+		cfg.global.record.maxIdleSec = 6.0f;
 		cfg.chains.resize(static_cast<std::size_t>(cfg.global.maxChains));
 		for (std::size_t i = 0; i < cfg.chains.size(); ++i) {
 			cfg.chains[i].name = std::format("Chain {}", i + 1);
@@ -250,30 +260,33 @@ namespace SMART_CAST
 	void Controller::ClampConfig(Config& cfg) const
 	{
 		cfg.version = kConfigVersion;
-		cfg.global.maxChains = std::clamp(cfg.global.maxChains, 1, 10);
-		cfg.global.maxStepsPerChain = std::clamp(cfg.global.maxStepsPerChain, 1, 30);
+		cfg.global.maxChains = 6;
+		cfg.global.maxStepsPerChain = 0;
 		cfg.global.playback.defaultChainIndex = std::clamp(cfg.global.playback.defaultChainIndex, 1, cfg.global.maxChains);
 		cfg.global.minTimeAfterLoadSeconds = std::clamp(cfg.global.minTimeAfterLoadSeconds, 0.0f, 10.0f);
 		cfg.global.record.maxIdleSec = std::clamp(cfg.global.record.maxIdleSec, 0.5f, 30.0f);
+		cfg.global.record.cancelKey = cfg.global.record.toggleKey;
+		cfg.global.record.ignorePowers = false;
+		cfg.global.record.ignoreShouts = false;
+		cfg.global.record.ignoreScrolls = true;
 		cfg.global.playback.stepDelaySec = std::clamp(cfg.global.playback.stepDelaySec, 0.0f, 2.0f);
+		cfg.global.playback.cancelKey = cfg.global.playback.playKey;
 		cfg.global.concentration.minHoldSec = std::clamp(cfg.global.concentration.minHoldSec, 0.05f, 10.0f);
 		cfg.global.concentration.maxHoldSec = std::clamp(cfg.global.concentration.maxHoldSec, cfg.global.concentration.minHoldSec, 10.0f);
 		cfg.global.concentration.sampleGranularitySec = std::clamp(cfg.global.concentration.sampleGranularitySec, 0.01f, 1.0f);
 		cfg.global.concentration.releasePaddingSec = std::clamp(cfg.global.concentration.releasePaddingSec, 0.0f, 1.0f);
 		for (auto& chain : cfg.chains) {
 			if (chain.name.empty()) chain.name = "Chain";
-			if (chain.steps.size() > static_cast<std::size_t>(cfg.global.maxStepsPerChain)) {
-				chain.steps.resize(static_cast<std::size_t>(cfg.global.maxStepsPerChain));
-			}
+			chain.enabled = true;
 			for (auto& step : chain.steps) {
-				step.holdSec = std::clamp(step.holdSec, cfg.global.concentration.minHoldSec, cfg.global.concentration.maxHoldSec);
+				step.holdSec = std::clamp(step.holdSec, 0.05f, 10.0f);
 			}
 		}
 	}
 
 	void Controller::EnsureChainCount(Config& cfg) const
 	{
-		const auto target = static_cast<std::size_t>(cfg.global.maxChains);
+		const auto target = static_cast<std::size_t>(6);
 		if (cfg.chains.size() < target) {
 			const auto old = cfg.chains.size();
 			cfg.chains.resize(target);
@@ -303,16 +316,18 @@ namespace SMART_CAST
 		m_runtime.mode = Mode::kRecording;
 		m_runtime.activeChainIndex = idx;
 		m_runtime.recordIdleTimer = 0.0f;
-		m_config.chains[static_cast<std::size_t>(idx)].steps.clear();
+		Notify(std::format("SmartCast: Recording chain {}", idx + 1));
 	}
 
 	void Controller::StopRecording()
 	{
 		if (m_runtime.mode == Mode::kRecording) {
+			const auto chain = m_runtime.activeChainIndex + 1;
 			m_runtime.mode = Mode::kIdle;
 			m_runtime.recordIdleTimer = 0.0f;
 			m_leftCapture = CastCapture{};
 			m_rightCapture = CastCapture{};
+			Notify(std::format("SmartCast: Stopped recording chain {}", chain));
 		}
 	}
 
@@ -321,7 +336,7 @@ namespace SMART_CAST
 		const auto idx = ResolveChainIndex(a_chainIndex1Based);
 		if (idx < 0) return;
 		const auto& chain = m_config.chains[static_cast<std::size_t>(idx)];
-		if (!chain.enabled || chain.steps.empty()) return;
+		if (chain.steps.empty()) return;
 		if (m_runtime.mode == Mode::kRecording) StopRecording();
 		m_runtime.mode = Mode::kPlaying;
 		m_runtime.activeChainIndex = idx;
@@ -329,16 +344,27 @@ namespace SMART_CAST
 		m_runtime.stepDelayTimer = 0.0f;
 		m_runtime.concentrationHoldRemaining = 0.0f;
 		m_runtime.releasePaddingRemaining = 0.0f;
+		m_runtime.concentrationTickTimer = 0.0f;
+		m_runtime.activeConcentrationSpell.clear();
+		m_runtime.playbackTarget = RE::ObjectRefHandle{};
+		m_runtime.playbackCastOnSelf = true;
+		Notify(std::format("SmartCast: Playing chain {}", idx + 1));
 	}
 
 	void Controller::StopPlayback(bool)
 	{
 		if (m_runtime.mode == Mode::kPlaying) {
+			const auto chain = m_runtime.activeChainIndex + 1;
 			m_runtime.mode = Mode::kIdle;
 			m_runtime.playbackStepIndex = 0;
 			m_runtime.stepDelayTimer = 0.0f;
 			m_runtime.concentrationHoldRemaining = 0.0f;
 			m_runtime.releasePaddingRemaining = 0.0f;
+			m_runtime.concentrationTickTimer = 0.0f;
+			m_runtime.activeConcentrationSpell.clear();
+			m_runtime.playbackTarget = RE::ObjectRefHandle{};
+			m_runtime.playbackCastOnSelf = true;
+			Notify(std::format("SmartCast: Stopped chain {}", chain));
 		}
 	}
 
@@ -356,7 +382,6 @@ namespace SMART_CAST
 			auto* camera = RE::PlayerCamera::GetSingleton();
 			if (!camera || !camera->IsInFirstPerson()) return true;
 		}
-		if (m_config.global.preventInMenus && GAME_EVENT::Manager::GetSingleton()->IsBlockingMenuOpen()) return true;
 		if (m_config.global.preventWhileStaggered && player->IsStaggering()) return true;
 		if (m_config.global.preventWhileRagdoll && player->IsInRagdollState()) return true;
 		return false;
@@ -394,16 +419,33 @@ namespace SMART_CAST
 
 	void Controller::UpdateHotkeys(RE::PlayerCharacter*)
 	{
-		if (IsHotkeyPressed(HotkeySlot::kRecordToggle, m_config.global.record.toggleKey)) {
+		const bool recordTogglePressed = IsHotkeyPressed(HotkeySlot::kRecordToggle, m_config.global.record.toggleKey);
+		const bool recordCancelPressed = (m_config.global.record.cancelKey != "None") &&
+			IsHotkeyPressed(HotkeySlot::kRecordCancel, m_config.global.record.cancelKey);
+		const bool playPressed = IsHotkeyPressed(HotkeySlot::kPlay, m_config.global.playback.playKey);
+		const bool playCancelPressed = (m_config.global.playback.cancelKey != "None") &&
+			IsHotkeyPressed(HotkeySlot::kPlayCancel, m_config.global.playback.cancelKey);
+		auto* ui = RE::UI::GetSingleton();
+		const bool menuBlocked = GAME_EVENT::Manager::GetSingleton()->IsBlockingMenuOpen();
+		const bool paused = !ui || ui->GameIsPaused();
+		const bool allowPlaybackHotkeys = !menuBlocked && !paused;
+
+		if (recordTogglePressed) {
 			if (m_runtime.mode == Mode::kRecording) StopRecording(); else StartRecording(m_config.global.playback.defaultChainIndex);
 		}
-		if (m_config.global.record.cancelKey != "None" && IsHotkeyPressed(HotkeySlot::kRecordCancel, m_config.global.record.cancelKey) && m_runtime.mode == Mode::kRecording) {
+		if (!recordTogglePressed && recordCancelPressed && m_runtime.mode == Mode::kRecording) {
 			StopRecording();
 		}
-		if (IsHotkeyPressed(HotkeySlot::kPlay, m_config.global.playback.playKey)) {
-			if (m_runtime.mode == Mode::kPlaying) StopPlayback(true); else StartPlayback(m_config.global.playback.defaultChainIndex);
+
+		const bool samePlayCancelKey = (m_config.global.playback.playKey == m_config.global.playback.cancelKey);
+		if (allowPlaybackHotkeys && playPressed) {
+			if (m_runtime.mode == Mode::kPlaying) {
+				StopPlayback(true);
+			} else {
+				StartPlayback(m_config.global.playback.defaultChainIndex);
+			}
 		}
-		if (m_config.global.playback.cancelKey != "None" && IsHotkeyPressed(HotkeySlot::kPlayCancel, m_config.global.playback.cancelKey) && m_runtime.mode == Mode::kPlaying) {
+		if (allowPlaybackHotkeys && !playPressed && !samePlayCancelKey && playCancelPressed && m_runtime.mode == Mode::kPlaying) {
 			StopPlayback(true);
 		}
 	}
@@ -423,9 +465,6 @@ namespace SMART_CAST
 			return;
 		}
 		if (cap.started && !castingNow) {
-			if (cap.spell && cap.spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
-				RecordConcentrationDuration(cap.spell, m_runtime.timeSinceLoad - cap.startTime);
-			}
 			cap = CastCapture{};
 		}
 	}
@@ -436,18 +475,22 @@ namespace SMART_CAST
 		const auto idx = static_cast<std::size_t>(m_runtime.activeChainIndex);
 		if (idx >= m_config.chains.size()) return;
 		auto& chain = m_config.chains[idx];
-		if (chain.steps.size() >= static_cast<std::size_t>(m_config.global.maxStepsPerChain)) { StopRecording(); return; }
 		const auto spellType = spell->GetSpellType();
-		if (m_config.global.record.ignorePowers && (spellType == RE::MagicSystem::SpellType::kPower || spellType == RE::MagicSystem::SpellType::kLesserPower)) return;
-		if (m_config.global.record.ignoreShouts && spellType == RE::MagicSystem::SpellType::kVoicePower) return;
 		if (m_config.global.record.ignoreScrolls && spellType == RE::MagicSystem::SpellType::kScroll) return;
 
 		ChainStep step{};
 		step.spellFormID = BuildFormKey(spell);
 		step.type = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration ? StepType::kConcentration : StepType::kFireAndForget;
 		step.holdSec = step.type == StepType::kConcentration ? m_config.global.concentration.minHoldSec : 0.0f;
-		if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf) step.castOn = CastOn::kSelf;
-		else step.castOn = GetCrosshairTarget(m_config.global.targeting.preferCrosshairActor) ? CastOn::kCrosshair : CastOn::kAimed;
+		step.castOn = spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf ? CastOn::kSelf : CastOn::kCrosshair;
+
+		if (!chain.steps.empty()) {
+			const auto& last = chain.steps.back();
+			if (last.spellFormID == step.spellFormID) {
+				return;
+			}
+		}
+
 		chain.steps.push_back(std::move(step));
 		m_runtime.recordIdleTimer = 0.0f;
 	}
@@ -471,13 +514,24 @@ namespace SMART_CAST
 	{
 		auto* spell = ResolveSpell(step.spellFormID);
 		if (!spell || !player->HasSpell(spell)) return false;
+		const bool isConcentration = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+		const auto castOn = spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf ? CastOn::kSelf : CastOn::kCrosshair;
 		RE::ObjectRefHandle handle{};
 		bool castOnSelf = true;
-		const bool ok = CastSpellForStep(player, spell, step.castOn, step.type == StepType::kConcentration, &handle, &castOnSelf);
+		const bool ok = CastSpellForStep(player, spell, castOn, isConcentration, &handle, &castOnSelf);
 		if (!ok) return false;
-		if (step.type == StepType::kConcentration) {
-			m_runtime.concentrationHoldRemaining = std::clamp(step.holdSec, m_config.global.concentration.minHoldSec, m_config.global.concentration.maxHoldSec);
+		if (isConcentration) {
+			m_runtime.concentrationHoldRemaining = std::clamp(step.holdSec, 0.05f, 10.0f);
 			m_runtime.releasePaddingRemaining = m_config.global.concentration.releasePaddingSec;
+			m_runtime.concentrationTickTimer = 0.30f;
+			m_runtime.activeConcentrationSpell = step.spellFormID;
+			m_runtime.playbackTarget = handle;
+			m_runtime.playbackCastOnSelf = castOnSelf;
+		} else {
+			m_runtime.concentrationTickTimer = 0.0f;
+			m_runtime.activeConcentrationSpell.clear();
+			m_runtime.playbackTarget = RE::ObjectRefHandle{};
+			m_runtime.playbackCastOnSelf = true;
 		}
 		return true;
 	}
@@ -490,24 +544,14 @@ namespace SMART_CAST
 
 		RE::TESObjectREFR* target = player;
 		bool castOnSelf = true;
-		auto useCrosshair = [&]() {
-			auto* ref = GetCrosshairTarget(m_config.global.targeting.preferCrosshairActor);
-			if (ref) { target = ref; castOnSelf = false; return true; }
-			if (m_config.global.targeting.fallbackToSelfIfNoTarget) { target = player; castOnSelf = true; return true; }
-			return false;
-		};
 
-		if (m_config.global.targeting.mode == "selfOnly") {
+		if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf || castOn == CastOn::kSelf) {
 			target = player;
 			castOnSelf = true;
-		} else if (m_config.global.targeting.mode == "crosshairOnly") {
-			if (!useCrosshair()) return false;
 		} else {
-			if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf || castOn == CastOn::kSelf) {
-				target = player; castOnSelf = true;
-			} else if (!useCrosshair()) {
-				return false;
-			}
+			// "Aimed" behavior: let the engine cast forward from current view/aim without crosshair target forcing.
+			target = player;
+			castOnSelf = false;
 		}
 
 		caster->CastSpellImmediate(spell, castOnSelf, target, 1.0f, false, 0.0f, player);
@@ -528,6 +572,15 @@ namespace SMART_CAST
 		auto* rightSpell = rightForm ? rightForm->As<RE::SpellItem>() : nullptr;
 		ProcessCastCapture(player, m_leftCapture, leftSpell && player->IsCasting(leftSpell), leftForm);
 		ProcessCastCapture(player, m_rightCapture, rightSpell && player->IsCasting(rightSpell), rightForm);
+
+		auto* selectedPowerSpell = ResolveSelectedPowerSpell(player);
+		bool isShouting = false;
+		(void)player->GetGraphVariableBool(RE::BSFixedString("IsShouting"), isShouting);
+		const bool powerOrShoutCasting = (selectedPowerSpell && player->IsCasting(selectedPowerSpell)) || isShouting;
+		if (!m_runtime.wasPowerOrShoutCasting && powerOrShoutCasting && selectedPowerSpell) {
+			RecordStepOnCastStart(player, selectedPowerSpell);
+		}
+		m_runtime.wasPowerOrShoutCasting = powerOrShoutCasting;
 	}
 
 	void Controller::UpdatePlayback(RE::PlayerCharacter* player, float delta)
@@ -536,7 +589,27 @@ namespace SMART_CAST
 		if (ShouldBlockGlobal(player)) { StopPlayback(true); return; }
 		if (m_config.global.playback.stopIfPlayerHit && player->IsStaggering()) { StopPlayback(true); return; }
 		if (m_runtime.stepDelayTimer > 0.0f) { m_runtime.stepDelayTimer = std::max(0.0f, m_runtime.stepDelayTimer - delta); return; }
-		if (m_runtime.concentrationHoldRemaining > 0.0f) { m_runtime.concentrationHoldRemaining = std::max(0.0f, m_runtime.concentrationHoldRemaining - delta); return; }
+		if (m_runtime.concentrationHoldRemaining > 0.0f) {
+			m_runtime.concentrationHoldRemaining = std::max(0.0f, m_runtime.concentrationHoldRemaining - delta);
+			m_runtime.concentrationTickTimer = std::max(0.0f, m_runtime.concentrationTickTimer - delta);
+			if (m_runtime.concentrationTickTimer <= 0.0f && !m_runtime.activeConcentrationSpell.empty()) {
+				if (auto* spell = ResolveSpell(m_runtime.activeConcentrationSpell)) {
+					auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+					if (!caster) {
+						caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
+					}
+					if (caster) {
+						auto targetPtr = m_runtime.playbackTarget.get();
+						auto* target = m_runtime.playbackCastOnSelf ? static_cast<RE::TESObjectREFR*>(player) : targetPtr.get();
+						if (target) {
+							caster->CastSpellImmediate(spell, m_runtime.playbackCastOnSelf, target, 1.0f, false, 0.0f, player);
+						}
+					}
+				}
+				m_runtime.concentrationTickTimer = 0.30f;
+			}
+			return;
+		}
 		if (m_runtime.releasePaddingRemaining > 0.0f) { m_runtime.releasePaddingRemaining = std::max(0.0f, m_runtime.releasePaddingRemaining - delta); return; }
 		const auto chainIdx = static_cast<std::size_t>(m_runtime.activeChainIndex);
 		if (chainIdx >= m_config.chains.size()) { StopPlayback(true); return; }
@@ -614,11 +687,47 @@ namespace SMART_CAST
 		return nullptr;
 	}
 
-	bool Controller::IsSpellConcentration(std::string_view key) const
+	RE::SpellItem* Controller::ResolveSelectedPowerSpell(RE::PlayerCharacter* player)
 	{
-		auto* spell = ResolveSpell(key);
-		return spell && spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+		if (!player) {
+			return nullptr;
+		}
+
+		auto* selectedPower = player->GetActorRuntimeData().selectedPower;
+		if (!selectedPower) {
+			return nullptr;
+		}
+
+		if (auto* spell = selectedPower->As<RE::SpellItem>()) {
+			return spell;
+		}
+
+		if (auto* shout = selectedPower->As<RE::TESShout>()) {
+			const auto level = std::clamp(player->GetCurrentShoutLevel(), 0, 2);
+			if (auto* levelSpell = shout->variations[level].spell) {
+				return levelSpell;
+			}
+			for (const auto& variation : shout->variations) {
+				if (variation.spell) {
+					return variation.spell;
+				}
+			}
+		}
+
+		return nullptr;
 	}
+
+bool Controller::IsSpellConcentration(std::string_view key) const
+{
+	auto* spell = ResolveSpell(key);
+	return spell && spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+}
+
+bool Controller::IsSpellSelfDelivery(std::string_view key) const
+{
+	auto* spell = ResolveSpell(key);
+	return spell && spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf;
+}
 
 	std::vector<KnownSpellOption> Controller::GetKnownSpells() const
 	{
@@ -630,7 +739,12 @@ namespace SMART_CAST
 			RE::BSContainer::ForEachResult Visit(RE::SpellItem* spell) override {
 				if (!spell) return RE::BSContainer::ForEachResult::kContinue;
 				const auto st = spell->GetSpellType();
-				if (st != RE::MagicSystem::SpellType::kSpell && st != RE::MagicSystem::SpellType::kLesserPower && st != RE::MagicSystem::SpellType::kPower) return RE::BSContainer::ForEachResult::kContinue;
+				if (st != RE::MagicSystem::SpellType::kSpell &&
+					st != RE::MagicSystem::SpellType::kLesserPower &&
+					st != RE::MagicSystem::SpellType::kPower &&
+					st != RE::MagicSystem::SpellType::kVoicePower) {
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
 				KnownSpellOption s{};
 				s.name = spell->GetName();
 				s.formKey = Controller::BuildFormKey(spell);
