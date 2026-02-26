@@ -2,6 +2,7 @@
 
 #include "event/GameEventManager.h"
 #include "util/LogUtil.h"
+#include "RE/C/CrosshairPickData.h"
 
 #include <algorithm>
 #include <array>
@@ -44,8 +45,12 @@ namespace QUICK_BUFF
 				return combatStart;
 			case TriggerID::kCombatEnd:
 				return combatEnd;
-			case TriggerID::kHealthBelow:
-				return healthBelow;
+			case TriggerID::kHealthBelow70:
+				return healthBelow70;
+			case TriggerID::kHealthBelow50:
+				return healthBelow50;
+			case TriggerID::kHealthBelow30:
+				return healthBelow30;
 			case TriggerID::kCrouchStart:
 				return crouchStart;
 			case TriggerID::kSprintStart:
@@ -78,6 +83,18 @@ namespace QUICK_BUFF
 	void Manager::ResetRuntime()
 	{
 		m_runtime = RuntimeState{};
+		m_pendingConcentration.clear();
+		m_pendingConcentration.shrink_to_fit();
+	}
+
+	void Manager::ResetConfigToDefaults(bool a_saveToDisk)
+	{
+		m_config = DefaultConfig();
+		ClampConfig(m_config);
+		if (a_saveToDisk) {
+			SaveConfig();
+		}
+		ResetRuntime();
 	}
 
 	Config Manager::GetConfig() const
@@ -92,6 +109,11 @@ namespace QUICK_BUFF
 		if (a_saveToDisk) {
 			SaveConfig();
 		}
+	}
+
+	Config Manager::GetDefaultConfig()
+	{
+		return DefaultConfig();
 	}
 
 	void Manager::Update(RE::PlayerCharacter* a_player, float a_deltaTime)
@@ -122,6 +144,8 @@ namespace QUICK_BUFF
 			return;
 		}
 
+		UpdateConcentration(a_player, a_deltaTime, live);
+
 		if (!m_runtime.wasInCombat && live.inCombat) {
 			(void)AttemptTrigger(a_player, TriggerID::kCombatStart, live, false);
 		}
@@ -138,18 +162,24 @@ namespace QUICK_BUFF
 			(void)AttemptTrigger(a_player, TriggerID::kWeaponDraw, live, false);
 		}
 
-		const auto& healthCfg = m_config.healthBelow;
-		const float threshold = healthCfg.thresholdHealthPercent;
-		const float margin = healthCfg.hysteresisMargin;
-		if (m_runtime.healthBelowArmed &&
-			m_runtime.lastHealthPercent >= threshold &&
-			live.healthPercent < threshold) {
-			(void)AttemptTrigger(a_player, TriggerID::kHealthBelow, live, false);
-			m_runtime.healthBelowArmed = false;
-		}
-		if (live.healthPercent > threshold + margin) {
-			m_runtime.healthBelowArmed = true;
-		}
+		const auto processHealthThreshold = [&](std::size_t a_index, TriggerID a_id) {
+			const auto& healthCfg = m_config.Get(a_id);
+			const float threshold = healthCfg.thresholdHealthPercent;
+			const float margin = healthCfg.hysteresisMargin;
+			if (m_runtime.healthBelowArmed[a_index] &&
+				m_runtime.lastHealthPercent >= threshold &&
+				live.healthPercent < threshold) {
+				(void)AttemptTrigger(a_player, a_id, live, false);
+				m_runtime.healthBelowArmed[a_index] = false;
+			}
+			if (live.healthPercent > threshold + margin) {
+				m_runtime.healthBelowArmed[a_index] = true;
+			}
+		};
+
+		processHealthThreshold(0, TriggerID::kHealthBelow70);
+		processHealthThreshold(1, TriggerID::kHealthBelow50);
+		processHealthThreshold(2, TriggerID::kHealthBelow30);
 
 		if (!m_runtime.wasPowerAttacking && live.powerAttacking && m_runtime.powerAttackLockout <= 0.0f) {
 			(void)AttemptTrigger(a_player, TriggerID::kPowerAttackStart, live, false);
@@ -179,7 +209,7 @@ namespace QUICK_BUFF
 		return AttemptTrigger(player, a_id, live, true);
 	}
 
-	std::vector<KnownSpellOption> Manager::GetKnownSelfSpells() const
+	std::vector<KnownSpellOption> Manager::GetKnownSpells() const
 	{
 		std::vector<KnownSpellOption> out;
 		auto* player = RE::PlayerCharacter::GetSingleton();
@@ -204,10 +234,6 @@ namespace QUICK_BUFF
 					spellType != RE::MagicSystem::SpellType::kPower) {
 					return RE::BSContainer::ForEachResult::kContinue;
 				}
-				if (a_spell->GetDelivery() != RE::MagicSystem::Delivery::kSelf) {
-					return RE::BSContainer::ForEachResult::kContinue;
-				}
-
 				const auto key = Manager::BuildFormKey(a_spell);
 				if (key.empty()) {
 					return RE::BSContainer::ForEachResult::kContinue;
@@ -244,8 +270,12 @@ namespace QUICK_BUFF
 				return "combatStart";
 			case TriggerID::kCombatEnd:
 				return "combatEnd";
-			case TriggerID::kHealthBelow:
-				return "healthBelow";
+			case TriggerID::kHealthBelow70:
+				return "healthBelow70";
+			case TriggerID::kHealthBelow50:
+				return "healthBelow50";
+			case TriggerID::kHealthBelow30:
+				return "healthBelow30";
 			case TriggerID::kCrouchStart:
 				return "crouchStart";
 			case TriggerID::kSprintStart:
@@ -262,6 +292,12 @@ namespace QUICK_BUFF
 		}
 	}
 
+	bool Manager::IsSpellConcentration(std::string_view a_formKey) const
+	{
+		auto* spell = ResolveSpell(a_formKey);
+		return spell && spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+	}
+
 	Config Manager::DefaultConfig()
 	{
 		Config cfg{};
@@ -273,9 +309,17 @@ namespace QUICK_BUFF
 		cfg.combatEnd.cooldownSec = 10.0f;
 		cfg.combatEnd.conditions.requireOutOfCombat = true;
 
-		cfg.healthBelow.cooldownSec = 15.0f;
-		cfg.healthBelow.thresholdHealthPercent = 0.40f;
-		cfg.healthBelow.hysteresisMargin = 0.05f;
+		cfg.healthBelow70.cooldownSec = 15.0f;
+		cfg.healthBelow70.thresholdHealthPercent = 0.70f;
+		cfg.healthBelow70.hysteresisMargin = 0.05f;
+
+		cfg.healthBelow50.cooldownSec = 15.0f;
+		cfg.healthBelow50.thresholdHealthPercent = 0.50f;
+		cfg.healthBelow50.hysteresisMargin = 0.05f;
+
+		cfg.healthBelow30.cooldownSec = 15.0f;
+		cfg.healthBelow30.thresholdHealthPercent = 0.30f;
+		cfg.healthBelow30.hysteresisMargin = 0.05f;
 
 		cfg.crouchStart.cooldownSec = 5.0f;
 		cfg.sprintStart.cooldownSec = 5.0f;
@@ -299,7 +343,9 @@ namespace QUICK_BUFF
 
 		apply(a_config.combatStart);
 		apply(a_config.combatEnd);
-		apply(a_config.healthBelow);
+		apply(a_config.healthBelow70);
+		apply(a_config.healthBelow50);
+		apply(a_config.healthBelow30);
 		apply(a_config.crouchStart);
 		apply(a_config.sprintStart);
 		apply(a_config.weaponDraw);
@@ -348,6 +394,7 @@ namespace QUICK_BUFF
 			a_cfg.thresholdHealthPercent = a_node.value("thresholdHealthPercent", a_cfg.thresholdHealthPercent);
 			a_cfg.hysteresisMargin = a_node.value("hysteresisMargin", a_cfg.hysteresisMargin);
 			a_cfg.internalLockoutSec = a_node.value("internalLockoutSec", a_cfg.internalLockoutSec);
+			a_cfg.concentrationDurationSec = a_node.value("concentrationDurationSec", a_cfg.concentrationDurationSec);
 
 			if (a_node.contains("conditions") && a_node["conditions"].is_object()) {
 				const auto& c = a_node["conditions"];
@@ -360,7 +407,7 @@ namespace QUICK_BUFF
 			if (a_node.contains("rules") && a_node["rules"].is_object()) {
 				const auto& r = a_node["rules"];
 				a_cfg.rules.requireMagickaPercentAbove = r.value("requireMagickaPercentAbove", a_cfg.rules.requireMagickaPercentAbove);
-				a_cfg.rules.skipIfEffectAlreadyActive = r.value("skipIfEffectAlreadyActive", a_cfg.rules.skipIfEffectAlreadyActive);
+				a_cfg.rules.skipIfEffectAlreadyActive = true;
 			}
 		};
 
@@ -372,8 +419,17 @@ namespace QUICK_BUFF
 			if (t.contains("combatEnd")) {
 				parseTrigger(t["combatEnd"], cfg.combatEnd);
 			}
+			if (t.contains("healthBelow70")) {
+				parseTrigger(t["healthBelow70"], cfg.healthBelow70);
+			}
+			if (t.contains("healthBelow50")) {
+				parseTrigger(t["healthBelow50"], cfg.healthBelow50);
+			}
+			if (t.contains("healthBelow30")) {
+				parseTrigger(t["healthBelow30"], cfg.healthBelow30);
+			}
 			if (t.contains("healthBelow")) {
-				parseTrigger(t["healthBelow"], cfg.healthBelow);
+				parseTrigger(t["healthBelow"], cfg.healthBelow50);
 			}
 			if (t.contains("crouchStart")) {
 				parseTrigger(t["crouchStart"], cfg.crouchStart);
@@ -406,6 +462,7 @@ namespace QUICK_BUFF
 				{ "thresholdHealthPercent", a_cfg.thresholdHealthPercent },
 				{ "hysteresisMargin", a_cfg.hysteresisMargin },
 				{ "internalLockoutSec", a_cfg.internalLockoutSec },
+				{ "concentrationDurationSec", a_cfg.concentrationDurationSec },
 				{ "conditions", {
 					{ "firstPersonOnly", a_cfg.conditions.firstPersonOnly },
 					{ "weaponDrawnOnly", a_cfg.conditions.weaponDrawnOnly },
@@ -433,7 +490,9 @@ namespace QUICK_BUFF
 			{ "triggers", {
 				{ "combatStart", serializeTrigger(m_config.combatStart) },
 				{ "combatEnd", serializeTrigger(m_config.combatEnd) },
-				{ "healthBelow", serializeTrigger(m_config.healthBelow) },
+				{ "healthBelow70", serializeTrigger(m_config.healthBelow70) },
+				{ "healthBelow50", serializeTrigger(m_config.healthBelow50) },
+				{ "healthBelow30", serializeTrigger(m_config.healthBelow30) },
 				{ "crouchStart", serializeTrigger(m_config.crouchStart) },
 				{ "sprintStart", serializeTrigger(m_config.sprintStart) },
 				{ "weaponDraw", serializeTrigger(m_config.weaponDraw) },
@@ -462,17 +521,25 @@ namespace QUICK_BUFF
 			a_cfg.thresholdHealthPercent = std::clamp(a_cfg.thresholdHealthPercent, 0.01f, 0.99f);
 			a_cfg.hysteresisMargin = std::clamp(a_cfg.hysteresisMargin, 0.0f, 0.20f);
 			a_cfg.internalLockoutSec = std::clamp(a_cfg.internalLockoutSec, 0.0f, 1.0f);
+			a_cfg.concentrationDurationSec = std::clamp(a_cfg.concentrationDurationSec, 1.0f, 10.0f);
 			a_cfg.rules.requireMagickaPercentAbove = Clamp01(a_cfg.rules.requireMagickaPercentAbove);
+			a_cfg.rules.skipIfEffectAlreadyActive = true;
 		};
 
 		clampTrigger(a_config.combatStart);
 		clampTrigger(a_config.combatEnd);
-		clampTrigger(a_config.healthBelow);
+		clampTrigger(a_config.healthBelow70);
+		clampTrigger(a_config.healthBelow50);
+		clampTrigger(a_config.healthBelow30);
 		clampTrigger(a_config.crouchStart);
 		clampTrigger(a_config.sprintStart);
 		clampTrigger(a_config.weaponDraw);
 		clampTrigger(a_config.powerAttackStart);
 		clampTrigger(a_config.shoutStart);
+
+		a_config.healthBelow70.thresholdHealthPercent = 0.70f;
+		a_config.healthBelow50.thresholdHealthPercent = 0.50f;
+		a_config.healthBelow30.thresholdHealthPercent = 0.30f;
 	}
 
 	bool Manager::ShouldSkipGlobally(const LiveState& a_liveState) const
@@ -530,6 +597,56 @@ namespace QUICK_BUFF
 		m_runtime.shoutLockout = std::max(0.0f, m_runtime.shoutLockout - a_deltaTime);
 	}
 
+	void Manager::UpdateConcentration(RE::PlayerCharacter* a_player, float a_deltaTime, const LiveState&)
+	{
+		if (m_pendingConcentration.empty()) {
+			return;
+		}
+
+		auto* caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+		if (!caster) {
+			caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
+		}
+		if (!caster) {
+			m_pendingConcentration.clear();
+			return;
+		}
+
+		constexpr float kConcentrationTick = 0.30f;
+
+		for (auto& pending : m_pendingConcentration) {
+			pending.remainingSec = std::max(0.0f, pending.remainingSec - a_deltaTime);
+			pending.tickTimer = std::max(0.0f, pending.tickTimer - a_deltaTime);
+			if (pending.remainingSec <= 0.0f || pending.tickTimer > 0.0f) {
+				continue;
+			}
+
+			auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(pending.spellFormID);
+			if (!spell) {
+				pending.remainingSec = 0.0f;
+				continue;
+			}
+			auto targetPtr = pending.targetHandle.get();
+			auto* target = pending.castOnSelf ? static_cast<RE::TESObjectREFR*>(a_player) : targetPtr.get();
+			if (!target) {
+				pending.remainingSec = 0.0f;
+				continue;
+			}
+
+			caster->CastSpellImmediate(spell, pending.castOnSelf, target, 1.0f, false, 0.0f, a_player);
+			pending.tickTimer = kConcentrationTick;
+		}
+
+		m_pendingConcentration.erase(
+			std::remove_if(
+				m_pendingConcentration.begin(),
+				m_pendingConcentration.end(),
+				[](const PendingConcentration& a_pending) {
+					return a_pending.remainingSec <= 0.0f;
+				}),
+			m_pendingConcentration.end());
+	}
+
 	void Manager::SyncPreviousStates(const LiveState& a_liveState)
 	{
 		m_runtime.wasInCombat = a_liveState.inCombat;
@@ -545,9 +662,13 @@ namespace QUICK_BUFF
 	{
 		m_runtime.initialized = true;
 		SyncPreviousStates(a_liveState);
-		const auto threshold = m_config.healthBelow.thresholdHealthPercent;
-		const auto margin = m_config.healthBelow.hysteresisMargin;
-		m_runtime.healthBelowArmed = a_liveState.healthPercent > (threshold + margin);
+		const auto initHealthArmed = [&](std::size_t a_index, TriggerID a_id) {
+			const auto& cfg = m_config.Get(a_id);
+			m_runtime.healthBelowArmed[a_index] = a_liveState.healthPercent > (cfg.thresholdHealthPercent + cfg.hysteresisMargin);
+		};
+		initHealthArmed(0, TriggerID::kHealthBelow70);
+		initHealthArmed(1, TriggerID::kHealthBelow50);
+		initHealthArmed(2, TriggerID::kHealthBelow30);
 	}
 
 	bool Manager::AttemptTrigger(RE::PlayerCharacter* a_player, TriggerID a_id, const LiveState& a_liveState, bool a_ignoreCooldown)
@@ -596,11 +717,36 @@ namespace QUICK_BUFF
 			return false;
 		}
 
-		if (spell->GetDelivery() != RE::MagicSystem::Delivery::kSelf) {
+		if (a_trigger.rules.skipIfEffectAlreadyActive && IsSpellAlreadyActive(a_player, spell)) {
 			return false;
 		}
 
-		if (a_trigger.rules.skipIfEffectAlreadyActive && IsSpellAlreadyActive(a_player, spell)) {
+		bool castOnSelf = true;
+		auto* target = ResolveSpellTarget(a_player, spell, castOnSelf);
+		if (!target) {
+			return false;
+		}
+
+		if (!CastResolvedSpell(a_player, spell, target, castOnSelf)) {
+			return false;
+		}
+
+		if (spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+			constexpr float kConcentrationTick = 0.30f;
+			PendingConcentration pending{};
+			pending.spellFormID = spell->GetFormID();
+			pending.remainingSec = a_trigger.concentrationDurationSec;
+			pending.tickTimer = kConcentrationTick;
+			pending.castOnSelf = castOnSelf;
+			pending.targetHandle = castOnSelf ? RE::ObjectRefHandle{} : target->CreateRefHandle();
+			m_pendingConcentration.push_back(pending);
+		}
+		return true;
+	}
+
+	bool Manager::CastResolvedSpell(RE::PlayerCharacter* a_player, RE::SpellItem* a_spell, RE::TESObjectREFR* a_target, bool a_castOnSelf)
+	{
+		if (!a_player || !a_spell || !a_target) {
 			return false;
 		}
 
@@ -612,15 +758,45 @@ namespace QUICK_BUFF
 			return false;
 		}
 
-		caster->CastSpellImmediate(
-			spell,
-			true,
-			a_player,
-			1.0f,
-			false,
-			0.0f,
-			a_player);
+		caster->CastSpellImmediate(a_spell, a_castOnSelf, a_target, 1.0f, false, 0.0f, a_player);
 		return true;
+	}
+
+	RE::TESObjectREFR* Manager::GetCrosshairTarget() const
+	{
+		auto* pickData = RE::CrosshairPickData::GetSingleton();
+		if (!pickData) {
+			return nullptr;
+		}
+
+		auto actorTarget = pickData->targetActor.get();
+		if (actorTarget) {
+			return actorTarget.get();
+		}
+
+		auto target = pickData->target.get();
+		return target ? target.get() : nullptr;
+	}
+
+	RE::TESObjectREFR* Manager::ResolveSpellTarget(RE::PlayerCharacter* a_player, const RE::SpellItem* a_spell, bool& a_castOnSelf) const
+	{
+		if (!a_player || !a_spell) {
+			return nullptr;
+		}
+
+		const auto delivery = a_spell->GetDelivery();
+		if (delivery == RE::MagicSystem::Delivery::kSelf) {
+			a_castOnSelf = true;
+			return a_player;
+		}
+
+		auto* crosshairTarget = GetCrosshairTarget();
+		if (!crosshairTarget) {
+			return nullptr;
+		}
+
+		a_castOnSelf = false;
+		return crosshairTarget;
 	}
 
 	RE::SpellItem* Manager::ResolveSpell(std::string_view a_formKey)

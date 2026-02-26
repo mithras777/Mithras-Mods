@@ -12,7 +12,9 @@ namespace QUICK_BUFF
 	{
 		kCombatStart = 0,
 		kCombatEnd,
-		kHealthBelow,
+		kHealthBelow70,
+		kHealthBelow50,
+		kHealthBelow30,
 		kCrouchStart,
 		kSprintStart,
 		kWeaponDraw,
@@ -46,6 +48,7 @@ namespace QUICK_BUFF
 		float thresholdHealthPercent{ 0.40f };  // healthBelow only
 		float hysteresisMargin{ 0.05f };        // healthBelow only
 		float internalLockoutSec{ 0.30f };      // power/shout only
+		float concentrationDurationSec{ 3.0f }; // concentration only
 	};
 
 	struct GlobalConfig
@@ -65,7 +68,9 @@ namespace QUICK_BUFF
 		GlobalConfig global{};
 		TriggerConfig combatStart{};
 		TriggerConfig combatEnd{};
-		TriggerConfig healthBelow{};
+		TriggerConfig healthBelow70{};
+		TriggerConfig healthBelow50{};
+		TriggerConfig healthBelow30{};
 		TriggerConfig crouchStart{};
 		TriggerConfig sprintStart{};
 		TriggerConfig weaponDraw{};
@@ -90,14 +95,17 @@ namespace QUICK_BUFF
 
 		void Initialize();
 		void ResetRuntime();
+		void ResetConfigToDefaults(bool a_saveToDisk);
 
 		[[nodiscard]] Config GetConfig() const;
 		void SetConfig(const Config& a_config, bool a_saveToDisk);
+		[[nodiscard]] static Config GetDefaultConfig();
 
 		void Update(RE::PlayerCharacter* a_player, float a_deltaTime);
 		bool TryTestCast(TriggerID a_id);
 
-		[[nodiscard]] std::vector<KnownSpellOption> GetKnownSelfSpells() const;
+		[[nodiscard]] std::vector<KnownSpellOption> GetKnownSpells() const;
+		[[nodiscard]] bool IsSpellConcentration(std::string_view a_formKey) const;
 		[[nodiscard]] static std::string_view GetTriggerName(TriggerID a_id);
 
 	private:
@@ -111,11 +119,20 @@ namespace QUICK_BUFF
 			bool wasPowerAttacking{ false };
 			bool wasShouting{ false };
 			float lastHealthPercent{ 1.0f };
-			bool healthBelowArmed{ true };
+			std::array<bool, 3> healthBelowArmed{ true, true, true };
 			float timeSinceLoad{ 0.0f };
 			std::array<float, static_cast<std::size_t>(TriggerID::kTotal)> cooldownTimers{};
 			float powerAttackLockout{ 0.0f };
 			float shoutLockout{ 0.0f };
+		};
+
+		struct PendingConcentration
+		{
+			RE::FormID spellFormID{ 0 };
+			float remainingSec{ 0.0f };
+			float tickTimer{ 0.0f };
+			bool castOnSelf{ true };
+			RE::ObjectRefHandle targetHandle{};
 		};
 
 		struct LiveState
@@ -142,11 +159,15 @@ namespace QUICK_BUFF
 		[[nodiscard]] bool ShouldSkipGlobally(const LiveState& a_liveState) const;
 		[[nodiscard]] LiveState BuildLiveState(RE::PlayerCharacter* a_player) const;
 		void UpdateTimers(float a_deltaTime);
+		void UpdateConcentration(RE::PlayerCharacter* a_player, float a_deltaTime, const LiveState& a_liveState);
 		void SyncPreviousStates(const LiveState& a_liveState);
 		void InitializeRuntimeFrom(const LiveState& a_liveState);
 
 		bool AttemptTrigger(RE::PlayerCharacter* a_player, TriggerID a_id, const LiveState& a_liveState, bool a_ignoreCooldown);
 		bool CastSpellSelf(RE::PlayerCharacter* a_player, const TriggerConfig& a_trigger, const LiveState& a_liveState, bool a_ignoreCooldown);
+		bool CastResolvedSpell(RE::PlayerCharacter* a_player, RE::SpellItem* a_spell, RE::TESObjectREFR* a_target, bool a_castOnSelf);
+		[[nodiscard]] RE::TESObjectREFR* GetCrosshairTarget() const;
+		[[nodiscard]] RE::TESObjectREFR* ResolveSpellTarget(RE::PlayerCharacter* a_player, const RE::SpellItem* a_spell, bool& a_castOnSelf) const;
 
 		[[nodiscard]] static RE::SpellItem* ResolveSpell(std::string_view a_formKey);
 		[[nodiscard]] static std::string BuildFormKey(const RE::TESForm* a_form);
@@ -157,5 +178,6 @@ namespace QUICK_BUFF
 	private:
 		Config m_config{};
 		RuntimeState m_runtime{};
+		std::vector<PendingConcentration> m_pendingConcentration{};
 	};
 }

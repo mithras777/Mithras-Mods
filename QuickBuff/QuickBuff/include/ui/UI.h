@@ -9,6 +9,12 @@
 #elif __has_include("SKSEMenuFramework.h")
 	#include "SKSEMenuFramework.h"
 	#define QUICKBUFF_HAS_MENU_FRAMEWORK 1
+#elif __has_include("../../../Shared/SKSEMenuFramework/SKSEMenuFramework.h")
+	#include "../../../Shared/SKSEMenuFramework/SKSEMenuFramework.h"
+	#define QUICKBUFF_HAS_MENU_FRAMEWORK 1
+#elif __has_include("../../../../Shared/SKSEMenuFramework/SKSEMenuFramework.h")
+	#include "../../../../Shared/SKSEMenuFramework/SKSEMenuFramework.h"
+	#define QUICKBUFF_HAS_MENU_FRAMEWORK 1
 #elif __has_include("../../../Shared/SKSEMenuFramework.h")
 	#include "../../../Shared/SKSEMenuFramework.h"
 	#define QUICKBUFF_HAS_MENU_FRAMEWORK 1

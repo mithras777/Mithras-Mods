@@ -20,7 +20,9 @@ namespace UI
 		constexpr std::array<TriggerUIDef, static_cast<std::size_t>(QUICK_BUFF::TriggerID::kTotal)> kTriggerDefs{ {
 			{ QUICK_BUFF::TriggerID::kCombatStart, "Combat Start" },
 			{ QUICK_BUFF::TriggerID::kCombatEnd, "Combat End" },
-			{ QUICK_BUFF::TriggerID::kHealthBelow, "Health Drops Below Threshold" },
+			{ QUICK_BUFF::TriggerID::kHealthBelow70, "Health Below 70%" },
+			{ QUICK_BUFF::TriggerID::kHealthBelow50, "Health Below 50%" },
+			{ QUICK_BUFF::TriggerID::kHealthBelow30, "Health Below 30%" },
 			{ QUICK_BUFF::TriggerID::kCrouchStart, "Crouch Start" },
 			{ QUICK_BUFF::TriggerID::kSprintStart, "Sprint Start" },
 			{ QUICK_BUFF::TriggerID::kWeaponDraw, "Weapon Draw" },
@@ -58,7 +60,52 @@ namespace UI
 			return changed;
 		}
 
-		bool DrawTriggerSection(QUICK_BUFF::Config& a_cfg, const TriggerUIDef& a_def, const std::vector<QUICK_BUFF::KnownSpellOption>& a_spells)
+		bool IsHealthTrigger(QUICK_BUFF::TriggerID a_id)
+		{
+			return a_id == QUICK_BUFF::TriggerID::kHealthBelow70 ||
+			       a_id == QUICK_BUFF::TriggerID::kHealthBelow50 ||
+			       a_id == QUICK_BUFF::TriggerID::kHealthBelow30;
+		}
+
+		bool GetTabEnabled(const QUICK_BUFF::Config& a_cfg, std::initializer_list<QUICK_BUFF::TriggerID> a_triggers)
+		{
+			for (const auto id : a_triggers) {
+				if (a_cfg.Get(id).enabled) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		bool DrawTabEnable(QUICK_BUFF::Config& a_cfg, std::initializer_list<QUICK_BUFF::TriggerID> a_triggers, const char* a_label)
+		{
+			bool anyEnabled = GetTabEnabled(a_cfg, a_triggers);
+			if (!ImGui::Checkbox(a_label, &anyEnabled)) {
+				return false;
+			}
+
+			for (const auto id : a_triggers) {
+				a_cfg.Get(id).enabled = anyEnabled;
+			}
+			return true;
+		}
+
+		bool DrawTabReset(QUICK_BUFF::Config& a_cfg, const QUICK_BUFF::Config& a_defaults, std::initializer_list<QUICK_BUFF::TriggerID> a_triggers, const char* a_label)
+		{
+			if (!ImGui::Button(a_label)) {
+				return false;
+			}
+			for (const auto id : a_triggers) {
+				a_cfg.Get(id) = a_defaults.Get(id);
+			}
+			return true;
+		}
+
+		bool DrawTriggerSection(
+			QUICK_BUFF::Manager* a_manager,
+			QUICK_BUFF::Config& a_cfg,
+			const TriggerUIDef& a_def,
+			const std::vector<QUICK_BUFF::KnownSpellOption>& a_spells)
 		{
 			auto& trigger = a_cfg.Get(a_def.id);
 			bool changed = false;
@@ -77,20 +124,14 @@ namespace UI
 			changed |= ImGui::Checkbox(std::format("Require out of combat##{}_ooc", a_def.title).c_str(), &trigger.conditions.requireOutOfCombat);
 
 			ImGui::SeparatorText(std::format("Rules##{}_rules", a_def.title).c_str());
-			changed |= ImGui::Checkbox(std::format("Skip if already active##{}_active", a_def.title).c_str(), &trigger.rules.skipIfEffectAlreadyActive);
 			float magickaPercent = trigger.rules.requireMagickaPercentAbove * 100.0f;
 			if (ImGui::SliderFloat(std::format("Require magicka above %%##{}_mag", a_def.title).c_str(), &magickaPercent, 0.0f, 100.0f, "%.0f%%")) {
 				trigger.rules.requireMagickaPercentAbove = magickaPercent / 100.0f;
 				changed = true;
 			}
 
-			if (a_def.id == QUICK_BUFF::TriggerID::kHealthBelow) {
-				float threshold = trigger.thresholdHealthPercent * 100.0f;
+			if (IsHealthTrigger(a_def.id)) {
 				float hysteresis = trigger.hysteresisMargin * 100.0f;
-				if (ImGui::SliderFloat(std::format("Threshold %%##{}_hp", a_def.title).c_str(), &threshold, 1.0f, 99.0f, "%.0f%%")) {
-					trigger.thresholdHealthPercent = threshold / 100.0f;
-					changed = true;
-				}
 				if (ImGui::SliderFloat(std::format("Hysteresis %%##{}_hyst", a_def.title).c_str(), &hysteresis, 0.0f, 20.0f, "%.0f%%")) {
 					trigger.hysteresisMargin = hysteresis / 100.0f;
 					changed = true;
@@ -101,12 +142,18 @@ namespace UI
 				changed |= ImGui::SliderFloat(std::format("Internal lockout (sec)##{}_lock", a_def.title).c_str(), &trigger.internalLockoutSec, 0.0f, 1.0f, "%.2f");
 			}
 
-			if (trigger.enabled && trigger.spellFormID.empty()) {
-				ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.1f, 1.0f), "No spell selected");
+			const bool isConcentration = !trigger.spellFormID.empty() && a_manager->IsSpellConcentration(trigger.spellFormID);
+			if (isConcentration) {
+				changed |= ImGui::SliderFloat(
+					std::format("Concentration duration (sec)##{}_conc", a_def.title).c_str(),
+					&trigger.concentrationDurationSec,
+					1.0f,
+					10.0f,
+					"%.1f");
 			}
 
-			if (ImGui::Button(std::format("Test Cast##{}_test", a_def.title).c_str())) {
-				(void)QUICK_BUFF::Manager::GetSingleton()->TryTestCast(a_def.id);
+			if (trigger.enabled && trigger.spellFormID.empty()) {
+				ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.1f, 1.0f), "No spell selected");
 			}
 			ImGui::Spacing();
 			return changed;
@@ -130,22 +177,78 @@ namespace UI
 		{
 			auto* manager = QUICK_BUFF::Manager::GetSingleton();
 			auto cfg = manager->GetConfig();
+			const auto defaults = QUICK_BUFF::Manager::GetDefaultConfig();
 			bool changed = false;
+			const auto spells = manager->GetKnownSpells();
 
-			changed |= ImGui::Checkbox("Mod Enabled", &cfg.global.enabled);
+			if (ImGui::BeginTabBar("QuickBuffTabs")) {
+				if (ImGui::BeginTabItem("General")) {
+					changed |= ImGui::Checkbox("Mod Enabled", &cfg.global.enabled);
+					ImGui::Spacing();
+					changed |= ImGui::Checkbox("First person only", &cfg.global.firstPersonOnlyDefault);
+					changed |= ImGui::Checkbox("Weapon drawn only", &cfg.global.weaponDrawnOnlyDefault);
+					changed |= ImGui::Checkbox("Block while in menus", &cfg.global.preventCastingInMenus);
+					changed |= ImGui::Checkbox("Block while staggered", &cfg.global.preventCastingWhileStaggered);
+					changed |= ImGui::Checkbox("Block while ragdoll", &cfg.global.preventCastingWhileRagdoll);
+					changed |= ImGui::SliderFloat("Minimum time after load (sec)", &cfg.global.minTimeAfterLoadSeconds, 0.0f, 10.0f, "%.1f");
+					if (ImGui::Button("Reset")) {
+						cfg.global = defaults.global;
+						changed = true;
+					}
+					ImGui::EndTabItem();
+				}
 
-			if (ImGui::CollapsingHeader("Global Defaults", ImGuiTreeNodeFlags_DefaultOpen)) {
-				changed |= ImGui::Checkbox("Default: First person only", &cfg.global.firstPersonOnlyDefault);
-				changed |= ImGui::Checkbox("Default: Weapon drawn only", &cfg.global.weaponDrawnOnlyDefault);
-				changed |= ImGui::Checkbox("Block while in menus", &cfg.global.preventCastingInMenus);
-				changed |= ImGui::Checkbox("Block while staggered", &cfg.global.preventCastingWhileStaggered);
-				changed |= ImGui::Checkbox("Block while ragdoll", &cfg.global.preventCastingWhileRagdoll);
-				changed |= ImGui::SliderFloat("Minimum time after load (sec)", &cfg.global.minTimeAfterLoadSeconds, 0.0f, 10.0f, "%.1f");
-			}
+				if (ImGui::BeginTabItem("Combat")) {
+					changed |= DrawTabEnable(cfg, { QUICK_BUFF::TriggerID::kCombatStart, QUICK_BUFF::TriggerID::kCombatEnd }, "Enable");
+					ImGui::SameLine();
+					changed |= DrawTabReset(cfg, defaults, { QUICK_BUFF::TriggerID::kCombatStart, QUICK_BUFF::TriggerID::kCombatEnd }, "Reset");
+					ImGui::Separator();
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kCombatStart)], spells);
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kCombatEnd)], spells);
+					ImGui::EndTabItem();
+				}
 
-			const auto spells = manager->GetKnownSelfSpells();
-			for (const auto& triggerDef : kTriggerDefs) {
-				changed |= DrawTriggerSection(cfg, triggerDef, spells);
+				if (ImGui::BeginTabItem("Health")) {
+					changed |= DrawTabEnable(cfg, { QUICK_BUFF::TriggerID::kHealthBelow70, QUICK_BUFF::TriggerID::kHealthBelow50, QUICK_BUFF::TriggerID::kHealthBelow30 }, "Enable");
+					ImGui::SameLine();
+					changed |= DrawTabReset(cfg, defaults, { QUICK_BUFF::TriggerID::kHealthBelow70, QUICK_BUFF::TriggerID::kHealthBelow50, QUICK_BUFF::TriggerID::kHealthBelow30 }, "Reset");
+					ImGui::Separator();
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kHealthBelow70)], spells);
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kHealthBelow50)], spells);
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kHealthBelow30)], spells);
+					ImGui::EndTabItem();
+				}
+
+				if (ImGui::BeginTabItem("Movement")) {
+					changed |= DrawTabEnable(cfg, { QUICK_BUFF::TriggerID::kCrouchStart, QUICK_BUFF::TriggerID::kSprintStart }, "Enable");
+					ImGui::SameLine();
+					changed |= DrawTabReset(cfg, defaults, { QUICK_BUFF::TriggerID::kCrouchStart, QUICK_BUFF::TriggerID::kSprintStart }, "Reset");
+					ImGui::Separator();
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kCrouchStart)], spells);
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kSprintStart)], spells);
+					ImGui::EndTabItem();
+				}
+
+				if (ImGui::BeginTabItem("Weapon")) {
+					changed |= DrawTabEnable(cfg, { QUICK_BUFF::TriggerID::kWeaponDraw }, "Enable");
+					ImGui::SameLine();
+					changed |= DrawTabReset(cfg, defaults, { QUICK_BUFF::TriggerID::kWeaponDraw }, "Reset");
+					ImGui::Separator();
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kWeaponDraw)], spells);
+					ImGui::EndTabItem();
+				}
+
+				if (ImGui::BeginTabItem("Power/Shout")) {
+					changed |= DrawTabEnable(cfg, { QUICK_BUFF::TriggerID::kPowerAttackStart, QUICK_BUFF::TriggerID::kShoutStart }, "Enable");
+					ImGui::SameLine();
+					changed |= DrawTabReset(cfg, defaults, { QUICK_BUFF::TriggerID::kPowerAttackStart, QUICK_BUFF::TriggerID::kShoutStart }, "Reset");
+					ImGui::Separator();
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kPowerAttackStart)], spells);
+					changed |= DrawTriggerSection(manager, cfg, kTriggerDefs[static_cast<std::size_t>(QUICK_BUFF::TriggerID::kShoutStart)], spells);
+					ImGui::EndTabItem();
+				}
+
+				ImGui::EndTabBar();
 			}
 
 			if (changed) {
