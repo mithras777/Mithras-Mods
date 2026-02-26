@@ -518,6 +518,17 @@ set GitIgnore_Line6=/%PROJECT_NAME%/extern/
 >> .gitignore echo !GitIgnore_Line5!
 >> .gitignore echo !GitIgnore_Line6!
 
+:: =================================
+:: Optional initial configure
+:: =================================
+echo.
+choice /M "Configure project now? (will download dependencies if missing)"
+if errorlevel 2 (
+    echo [INFO] Skipping initial configure.
+    pause
+    exit /b 0
+)
+
 :build_configuration
 :: =================================
 :: Build configuration
