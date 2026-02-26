@@ -20,9 +20,6 @@ namespace DIAGONAL
 		constexpr float kSprintAssistDuration = 0.10f;
 		constexpr float kJumpSuppressDuration = 0.20f;
 		constexpr float kJumpLateralAccel = 120.0f;
-		constexpr float kMinSupportNormalZ = 0.02f;
-		constexpr float kMaxSlopeVerticalRatio = 4.00f;
-		constexpr float kMaxStairsVerticalRatio = 8.00f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -477,7 +474,7 @@ namespace DIAGONAL
 		}
 		const RE::NiPoint3 driftHorizontal = rightNorm * clampedTarget;
 
-		// Build support-plane drift with preserved XY speed to avoid slow uphill strafing on stairs.
+		// Project lateral drift onto the support plane so uphill/downhill strafe follows terrain.
 		RE::NiPoint3 supportNormal{
 			controller->supportNorm.quad.m128_f32[0],
 			controller->supportNorm.quad.m128_f32[1],
@@ -494,19 +491,26 @@ namespace DIAGONAL
 			supportNormal.y /= supportLen;
 			supportNormal.z /= supportLen;
 		}
-		const bool onStairs = controller->flags.all(RE::CHARACTER_FLAGS::kOnStairs);
-		RE::NiPoint3 driftOnSupportPlane = driftHorizontal;
-		if (std::abs(supportNormal.z) > kMinSupportNormalZ) {
-			// Keep requested horizontal strafe and solve Z from plane equation: v dot n = 0.
-			driftOnSupportPlane.z =
-				-((driftHorizontal.x * supportNormal.x) + (driftHorizontal.y * supportNormal.y)) / supportNormal.z;
-
-			const float maxVertical = std::abs(clampedTarget) * (onStairs ? kMaxStairsVerticalRatio : kMaxSlopeVerticalRatio);
-			driftOnSupportPlane.z = ClampFloat(driftOnSupportPlane.z, -maxVertical, maxVertical);
-		}
-		if (onStairs) {
-			// Let Havok step logic handle vertical stair climbing; manual Z warps here cause clipping/stickiness.
-			driftOnSupportPlane.z = 0.0f;
+		const float intoNormal =
+			(driftHorizontal.x * supportNormal.x) +
+			(driftHorizontal.y * supportNormal.y) +
+			(driftHorizontal.z * supportNormal.z);
+		RE::NiPoint3 driftOnSupportPlane = {
+			driftHorizontal.x - (supportNormal.x * intoNormal),
+			driftHorizontal.y - (supportNormal.y * intoNormal),
+			driftHorizontal.z - (supportNormal.z * intoNormal)
+		};
+		const float driftPlaneLen = std::sqrt(
+			(driftOnSupportPlane.x * driftOnSupportPlane.x) +
+			(driftOnSupportPlane.y * driftOnSupportPlane.y) +
+			(driftOnSupportPlane.z * driftOnSupportPlane.z));
+		if (driftPlaneLen > kEpsilon) {
+			const float scale = std::abs(clampedTarget) / driftPlaneLen;
+			driftOnSupportPlane.x *= scale;
+			driftOnSupportPlane.y *= scale;
+			driftOnSupportPlane.z *= scale;
+		} else {
+			driftOnSupportPlane = driftHorizontal;
 		}
 
 		// Drive controller-intended side movement (preferred path).
