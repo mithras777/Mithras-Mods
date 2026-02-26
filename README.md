@@ -28,6 +28,7 @@ This folder contains Skyrim SE/AE SKSE plugins built from the **SkyrimSE-Plugin-
 8. Build manually:
    - `cmake --build --preset vs2022-ng-rel`
 9. Keep `SpellMastery` in your workspace as your dependency source project for future mod creation.
+
 Resulting layout:
 
 ```
@@ -255,10 +256,11 @@ For this repo workflow, do not rely on a fresh dependency download for every new
    - `cmake --build --preset vs2022-ng-rel`
 
 If you skip this and let the batch auto-configure from empty extern, CMake will re-fetch `openvr` and other dependencies.
+
 ### Build Commands
 ```bash
 # Configure and build Release
-cmake --preset vs2022-ng-rel
+cmake --preset vs2022-ng
 cmake --build --preset vs2022-ng-rel
 
 # Or use the interactive batch script

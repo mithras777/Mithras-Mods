@@ -11,6 +11,8 @@ set(PROJECT_SOURCE_ROOT_DIR   "${PROJECT_ROOT_DIR}/src")
 set(PROJECT_PCH_ROOT_DIR      "${PROJECT_ROOT_DIR}/pch")
 set(PROJECT_RESOURCE_ROOT_DIR "${PROJECT_ROOT_DIR}/resource")
 set(PROJECT_EXTERN_ROOT_DIR   "${PROJECT_ROOT_DIR}/extern")
+# Shared extern source used by Mithras workflow (contains SKSEMenuFramework and reusable deps)
+set(MITHRAS_SHARED_EXTERN_ROOT_DIR "${PROJECT_SOURCE_DIR}/../SpellMastery/SpellMastery/extern")
 # Set defaults for version components if not defined
 set(VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(VERSION_MINOR ${PROJECT_VERSION_MINOR})
@@ -104,6 +106,14 @@ target_include_directories(
 		${PROJECT_PCH_ROOT_DIR}
 		${PROJECT_EXTERN_ROOT_DIR}
 )
+
+if(EXISTS "${MITHRAS_SHARED_EXTERN_ROOT_DIR}")
+	message(STATUS "Using shared extern include path: ${MITHRAS_SHARED_EXTERN_ROOT_DIR}")
+	target_include_directories(
+		${PROJECT_NAME} PRIVATE
+			${MITHRAS_SHARED_EXTERN_ROOT_DIR}
+	)
+endif()
 # Setup precompiled header, cmake does it weird.
 if(MSVC)
 	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/YuPCH.h")
