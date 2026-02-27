@@ -20,6 +20,12 @@ namespace DIAGONAL
 		constexpr float kSprintAssistDuration = 0.10f;
 		constexpr float kJumpSuppressDuration = 0.20f;
 		constexpr float kJumpLateralAccel = 120.0f;
+		constexpr float kMinWalkableSupportZ = 0.45f;
+		constexpr float kBlockedMoveRatio = 0.35f;
+		constexpr float kStairClimbBiasPerUnit = 3.0f;
+		constexpr float kStairClimbBiasMin = 0.08f;
+		constexpr float kStairClimbBiasMax = 0.65f;
+		constexpr float kUphillDotThreshold = 0.10f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -87,7 +93,8 @@ namespace DIAGONAL
 		{
 			a_os << "{\n";
 			a_os << "  \"enabled\": " << (a_cfg.enabled ? "true" : "false") << ",\n";
-			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << "\n";
+			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << ",\n";
+			a_os << "  \"stairFixEnabled\": " << (a_cfg.stairFixEnabled ? "true" : "false") << "\n";
 			a_os << "}\n";
 		}
 	}
@@ -474,7 +481,7 @@ namespace DIAGONAL
 		}
 		const RE::NiPoint3 driftHorizontal = rightNorm * clampedTarget;
 
-		// Project lateral drift onto the support plane so uphill/downhill strafe follows terrain.
+		// Legacy behavior: always project onto support plane.
 		RE::NiPoint3 supportNormal{
 			controller->supportNorm.quad.m128_f32[0],
 			controller->supportNorm.quad.m128_f32[1],
@@ -491,6 +498,9 @@ namespace DIAGONAL
 			supportNormal.y /= supportLen;
 			supportNormal.z /= supportLen;
 		}
+		const bool onStairs = controller->flags.any(RE::CHARACTER_FLAGS::kOnStairs);
+		const bool unreliableSupportPlane = onStairs || supportNormal.z < kMinWalkableSupportZ;
+
 		const float intoNormal =
 			(driftHorizontal.x * supportNormal.x) +
 			(driftHorizontal.y * supportNormal.y) +
@@ -513,6 +523,19 @@ namespace DIAGONAL
 			driftOnSupportPlane = driftHorizontal;
 		}
 
+		const float driftLen2D = std::sqrt((driftHorizontal.x * driftHorizontal.x) + (driftHorizontal.y * driftHorizontal.y));
+		const float uphillLen2D = std::sqrt((supportNormal.x * supportNormal.x) + (supportNormal.y * supportNormal.y));
+		float uphillDot = -1.0f;
+		if (driftLen2D > kEpsilon && uphillLen2D > kEpsilon) {
+			const float driftDirX = driftHorizontal.x / driftLen2D;
+			const float driftDirY = driftHorizontal.y / driftLen2D;
+			const float uphillDirX = -supportNormal.x / uphillLen2D;
+			const float uphillDirY = -supportNormal.y / uphillLen2D;
+			uphillDot = (driftDirX * uphillDirX) + (driftDirY * uphillDirY);
+		}
+		const bool movingUphill = uphillDot > kUphillDotThreshold;
+		const bool useStairFix = m_config.stairFixEnabled && unreliableSupportPlane && movingUphill;
+
 		// Drive controller-intended side movement (preferred path).
 		controller->velocityMod.quad.m128_f32[0] = driftOnSupportPlane.x;
 		controller->velocityMod.quad.m128_f32[1] = driftOnSupportPlane.y;
@@ -526,12 +549,71 @@ namespace DIAGONAL
 		// Grounded sprint can clamp side velocity; inject only a lateral controller step.
 		// Skip shortly after jump press to avoid jump/liftoff distortion.
 		if (onGroundState && m_jumpSuppressTimer <= 0.0f) {
-			RE::hkVector4 pos{};
-			controller->GetPositionImpl(pos, false);
-			pos.quad.m128_f32[0] += driftOnSupportPlane.x * a_dt;
-			pos.quad.m128_f32[1] += driftOnSupportPlane.y * a_dt;
-			pos.quad.m128_f32[2] += driftOnSupportPlane.z * a_dt;
+			if (!useStairFix) {
+				RE::hkVector4 pos{};
+				controller->GetPositionImpl(pos, false);
+				pos.quad.m128_f32[0] += driftOnSupportPlane.x * a_dt;
+				pos.quad.m128_f32[1] += driftOnSupportPlane.y * a_dt;
+				pos.quad.m128_f32[2] += driftOnSupportPlane.z * a_dt;
+				controller->SetPositionImpl(pos, false, false);
+				return;
+			}
+
+			RE::hkVector4 before{};
+			controller->GetPositionImpl(before, false);
+
+			RE::NiPoint3 stepDelta = driftOnSupportPlane * a_dt;
+			if (useStairFix) {
+				stepDelta = driftHorizontal * a_dt;
+				const float step2D = std::sqrt((stepDelta.x * stepDelta.x) + (stepDelta.y * stepDelta.y));
+				stepDelta.z = ClampFloat(step2D * kStairClimbBiasPerUnit, kStairClimbBiasMin, kStairClimbBiasMax);
+			}
+
+			RE::hkVector4 pos = before;
+			pos.quad.m128_f32[0] += stepDelta.x;
+			pos.quad.m128_f32[1] += stepDelta.y;
+			pos.quad.m128_f32[2] += stepDelta.z;
 			controller->SetPositionImpl(pos, false, false);
+
+			// If move is mostly rejected (common on stair contacts), retry with flat forced step.
+			RE::hkVector4 after{};
+			controller->GetPositionImpl(after, false);
+			const float expected2D = std::sqrt((stepDelta.x * stepDelta.x) + (stepDelta.y * stepDelta.y));
+			const float moved2D = std::sqrt(
+				((after.quad.m128_f32[0] - before.quad.m128_f32[0]) * (after.quad.m128_f32[0] - before.quad.m128_f32[0])) +
+				((after.quad.m128_f32[1] - before.quad.m128_f32[1]) * (after.quad.m128_f32[1] - before.quad.m128_f32[1])));
+			if (expected2D > kEpsilon && moved2D < (expected2D * kBlockedMoveRatio)) {
+				const float flatStepX = driftHorizontal.x * a_dt;
+				const float flatStepY = driftHorizontal.y * a_dt;
+				const float flatStep2D = std::sqrt((flatStepX * flatStepX) + (flatStepY * flatStepY));
+				const float stairLift = ClampFloat(flatStep2D * kStairClimbBiasPerUnit, kStairClimbBiasMin, kStairClimbBiasMax);
+
+				RE::hkVector4 forced = before;
+				forced.quad.m128_f32[0] += flatStepX;
+				forced.quad.m128_f32[1] += flatStepY;
+				if (onStairs) {
+					forced.quad.m128_f32[2] += stairLift;
+					controller->SetPositionImpl(forced, false, true);
+				} else {
+					controller->SetPositionImpl(forced, false, true);
+				}
+
+				// Final fallback: force warp and add another stair-lift step.
+				if (onStairs) {
+					RE::hkVector4 afterForced{};
+					controller->GetPositionImpl(afterForced, false);
+					const float forcedMoved2D = std::sqrt(
+						((afterForced.quad.m128_f32[0] - before.quad.m128_f32[0]) * (afterForced.quad.m128_f32[0] - before.quad.m128_f32[0])) +
+						((afterForced.quad.m128_f32[1] - before.quad.m128_f32[1]) * (afterForced.quad.m128_f32[1] - before.quad.m128_f32[1])));
+					if (forcedMoved2D < (expected2D * kBlockedMoveRatio)) {
+						RE::hkVector4 forcedWarp = before;
+						forcedWarp.quad.m128_f32[0] += flatStepX;
+						forcedWarp.quad.m128_f32[1] += flatStepY;
+						forcedWarp.quad.m128_f32[2] += (stairLift * 1.25f);
+						controller->SetPositionImpl(forcedWarp, false, true);
+					}
+				}
+			}
 			return;
 		}
 
@@ -579,6 +661,7 @@ namespace DIAGONAL
 		FakeDiagonalConfig loaded = {};
 		ReadBool(text, "enabled", loaded.enabled);
 		ReadFloat(text, "lateralSpeed", loaded.lateralSpeed);
+		ReadBool(text, "stairFixEnabled", loaded.stairFixEnabled);
 
 		std::scoped_lock lock(m_lock);
 		m_config = loaded;
