@@ -26,6 +26,7 @@ namespace DIAGONAL
 		constexpr float kStairClimbBiasMin = 0.08f;
 		constexpr float kStairClimbBiasMax = 0.65f;
 		constexpr float kUphillDotThreshold = 0.10f;
+		constexpr float kFovResyncThreshold = 0.25f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -95,6 +96,25 @@ namespace DIAGONAL
 			a_os << "  \"enabled\": " << (a_cfg.enabled ? "true" : "false") << ",\n";
 			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << "\n";
 			a_os << "}\n";
+		}
+
+		void ResyncFirstPersonFOV()
+		{
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			if (!camera || !camera->IsInFirstPerson()) {
+				return;
+			}
+
+			auto& runtime = camera->GetRuntimeData2();
+			const float diff = std::abs(runtime.worldFOV - runtime.firstPersonFOV);
+			if (diff <= kFovResyncThreshold) {
+				return;
+			}
+
+			// Keep current user-selected FOV value while forcing both channels to match.
+			const float target = std::max(runtime.worldFOV, runtime.firstPersonFOV);
+			runtime.worldFOV = target;
+			runtime.firstPersonFOV = target;
 		}
 	}
 
@@ -593,6 +613,7 @@ namespace DIAGONAL
 				if (onStairs) {
 					forced.quad.m128_f32[2] += stairLift;
 					controller->SetPositionImpl(forced, false, true);
+					ResyncFirstPersonFOV();
 				} else {
 					controller->SetPositionImpl(forced, false, true);
 				}
@@ -610,6 +631,7 @@ namespace DIAGONAL
 						forcedWarp.quad.m128_f32[1] += flatStepY;
 						forcedWarp.quad.m128_f32[2] += (stairLift * 1.25f);
 						controller->SetPositionImpl(forcedWarp, false, true);
+						ResyncFirstPersonFOV();
 					}
 				}
 			}
