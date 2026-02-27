@@ -2,6 +2,8 @@
 
 #include "version.h"
 #include "hook/MainHook.h"
+#include "movement/MovementPatcher.h"
+#include "movement/Settings.h"
 #include "util/LogUtil.h"
 #include "util/StringUtil.h"
 
@@ -81,6 +83,9 @@ namespace DLLMAIN {
 
 	Plugin::~Plugin()
 	{
+		auto* settings = MOVEMENT::Settings::GetSingleton();
+		MOVEMENT::MovementPatcher::GetSingleton()->ShutdownRestoreIfNeeded(settings->Get());
+
 #if defined(_DEBUG)
 		std::cout << "Debug Console Terminated." << std::endl;
 		FreeConsole();

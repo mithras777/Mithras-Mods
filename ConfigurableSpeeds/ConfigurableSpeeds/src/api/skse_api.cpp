@@ -2,7 +2,9 @@
 
 #include "plugin.h"
 #include "version.h"
-#include "event/GameEventManager.h"
+#include "movement/MovementPatcher.h"
+#include "movement/Settings.h"
+#include "ui/MCM_Menu.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -43,8 +45,10 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
-				// Register game events
-				GAME_EVENT::Manager::Register();
+				auto* settings = MOVEMENT::Settings::GetSingleton();
+				settings->Initialize();
+				MOVEMENT::MovementPatcher::GetSingleton()->StartupApply(settings->Get());
+				UI::MCM::Register();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;
