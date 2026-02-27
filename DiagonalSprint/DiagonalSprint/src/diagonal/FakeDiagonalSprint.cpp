@@ -93,8 +93,7 @@ namespace DIAGONAL
 		{
 			a_os << "{\n";
 			a_os << "  \"enabled\": " << (a_cfg.enabled ? "true" : "false") << ",\n";
-			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << ",\n";
-			a_os << "  \"stairFixEnabled\": " << (a_cfg.stairFixEnabled ? "true" : "false") << "\n";
+			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << "\n";
 			a_os << "}\n";
 		}
 	}
@@ -534,7 +533,7 @@ namespace DIAGONAL
 			uphillDot = (driftDirX * uphillDirX) + (driftDirY * uphillDirY);
 		}
 		const bool movingUphill = uphillDot > kUphillDotThreshold;
-		const bool useStairFix = m_config.stairFixEnabled && unreliableSupportPlane && movingUphill;
+		const bool useStairFix = unreliableSupportPlane && movingUphill;
 
 		// Drive controller-intended side movement (preferred path).
 		controller->velocityMod.quad.m128_f32[0] = driftOnSupportPlane.x;
@@ -661,7 +660,6 @@ namespace DIAGONAL
 		FakeDiagonalConfig loaded = {};
 		ReadBool(text, "enabled", loaded.enabled);
 		ReadFloat(text, "lateralSpeed", loaded.lateralSpeed);
-		ReadBool(text, "stairFixEnabled", loaded.stairFixEnabled);
 
 		std::scoped_lock lock(m_lock);
 		m_config = loaded;

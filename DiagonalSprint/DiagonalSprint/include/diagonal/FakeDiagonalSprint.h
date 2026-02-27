@@ -9,7 +9,6 @@ namespace DIAGONAL
 	{
 		bool enabled{ true };
 		float lateralSpeed{ 4.1f };
-		bool stairFixEnabled{ true };
 	};
 
 	class FakeDiagonalSprint final : public REX::Singleton<FakeDiagonalSprint>

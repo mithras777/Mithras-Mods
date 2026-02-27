@@ -17,14 +17,12 @@ namespace UI
 		{
 			const DIAGONAL::FakeDiagonalConfig defaults{};
 			a_cfg.lateralSpeed = defaults.lateralSpeed;
-			a_cfg.stairFixEnabled = defaults.stairFixEnabled;
 		}
 
 		bool ConfigChanged(const DIAGONAL::FakeDiagonalConfig& a_lhs, const DIAGONAL::FakeDiagonalConfig& a_rhs)
 		{
 			return a_lhs.enabled != a_rhs.enabled ||
-			       a_lhs.lateralSpeed != a_rhs.lateralSpeed ||
-			       a_lhs.stairFixEnabled != a_rhs.stairFixEnabled;
+			       a_lhs.lateralSpeed != a_rhs.lateralSpeed;
 		}
 	}
 
@@ -63,7 +61,6 @@ namespace UI
 				if (ImGui::BeginTabItem("Controls")) {
 					if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
 						ImGui::SliderFloat("Lateral Speed", &cfg.lateralSpeed, 0.5f, 10.0f, "%.1f");
-						ImGui::Checkbox("Stair Upward Fix", &cfg.stairFixEnabled);
 						ImGui::Spacing();
 						if (ImGui::Button("Defaults##Controls")) {
 							ResetControlsDefaults(cfg);
