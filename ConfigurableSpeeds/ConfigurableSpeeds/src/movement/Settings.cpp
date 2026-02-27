@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string_view>
 
 namespace MOVEMENT
 {
@@ -33,6 +34,32 @@ namespace MOVEMENT
 			} catch (...) {
 				return a_fallback;
 			}
+		}
+
+		std::string GroupForName(std::string_view a_name)
+		{
+			if (a_name.find("Default") != std::string_view::npos) {
+				return "Default";
+			}
+			if (a_name.find("Combat") != std::string_view::npos ||
+			    a_name.find("Attack") != std::string_view::npos ||
+			    a_name.find("Blocking") != std::string_view::npos ||
+			    a_name.find("Bow") != std::string_view::npos ||
+			    a_name.find("Magic") != std::string_view::npos ||
+			    a_name.find("Sprinting") != std::string_view::npos) {
+				return "Combat";
+			}
+			return "Misc";
+		}
+
+		MovementEntry MakeEntry(std::string_view a_name, std::string_view a_form)
+		{
+			MovementEntry entry{};
+			entry.name = a_name;
+			entry.form = a_form;
+			entry.group = GroupForName(a_name);
+			entry.enabled = false;
+			return entry;
 		}
 	}
 
@@ -80,52 +107,24 @@ namespace MOVEMENT
 		root["version"] = snapshot.version;
 		root["general"] = {
 			{ "enabled", snapshot.general.enabled },
-			{ "restoreOnDisable", snapshot.general.restoreOnDisable },
-			{ "dumpOnStartup", snapshot.general.dumpOnStartup },
-			{ "policy", {
-				{ "useMultipliers", snapshot.general.policy.useMultipliers },
-				{ "useOverrides", snapshot.general.policy.useOverrides }
-			} }
-		};
-		root["multipliers"] = {
-			{ "walk", snapshot.multipliers.walk },
-			{ "run", snapshot.multipliers.run },
-			{ "sprint", snapshot.multipliers.sprint },
-			{ "sneakWalk", snapshot.multipliers.sneakWalk },
-			{ "sneakRun", snapshot.multipliers.sneakRun }
-		};
-		root["overrides"] = {
-			{ "walk", {
-				{ "enabled", snapshot.overrides.walk.enabled },
-				{ "value", snapshot.overrides.walk.value }
-			} },
-			{ "run", {
-				{ "enabled", snapshot.overrides.run.enabled },
-				{ "value", snapshot.overrides.run.value }
-			} },
-			{ "sprint", {
-				{ "enabled", snapshot.overrides.sprint.enabled },
-				{ "value", snapshot.overrides.sprint.value }
-			} },
-			{ "sneakWalk", {
-				{ "enabled", snapshot.overrides.sneakWalk.enabled },
-				{ "value", snapshot.overrides.sneakWalk.value }
-			} },
-			{ "sneakRun", {
-				{ "enabled", snapshot.overrides.sneakRun.enabled },
-				{ "value", snapshot.overrides.sneakRun.value }
-			} }
+			{ "restoreOnDisable", snapshot.general.restoreOnDisable }
 		};
 
-		nlohmann::json targets = nlohmann::json::array();
-		for (const auto& target : snapshot.targets) {
-			targets.push_back({
-				{ "name", target.name },
-				{ "form", target.form },
-				{ "enabled", target.enabled }
+		nlohmann::json entries = nlohmann::json::array();
+		for (const auto& entry : snapshot.entries) {
+			nlohmann::json speeds = nlohmann::json::array();
+			for (std::size_t i = 0; i < 5; ++i) {
+				speeds.push_back({ entry.speeds[i][0], entry.speeds[i][1] });
+			}
+			entries.push_back({
+				{ "name", entry.name },
+				{ "form", entry.form },
+				{ "group", entry.group },
+				{ "enabled", entry.enabled },
+				{ "speeds", std::move(speeds) }
 			});
 		}
-		root["targets"] = std::move(targets);
+		root["entries"] = std::move(entries);
 
 		std::ofstream file(path, std::ios::trunc);
 		if (!file.is_open()) {
@@ -179,74 +178,41 @@ namespace MOVEMENT
 		}
 
 		SettingsData loaded = Defaults();
-		loaded.version = ReadOr<int>(root, "version", 1);
+		loaded.version = ReadOr<int>(root, "version", loaded.version);
 
 		if (root.contains("general") && root["general"].is_object()) {
 			const auto& general = root["general"];
 			loaded.general.enabled = ReadOr<bool>(general, "enabled", loaded.general.enabled);
 			loaded.general.restoreOnDisable = ReadOr<bool>(general, "restoreOnDisable", loaded.general.restoreOnDisable);
-			loaded.general.dumpOnStartup = ReadOr<bool>(general, "dumpOnStartup", loaded.general.dumpOnStartup);
-			if (general.contains("policy") && general["policy"].is_object()) {
-				const auto& policy = general["policy"];
-				loaded.general.policy.useMultipliers = ReadOr<bool>(policy, "useMultipliers", loaded.general.policy.useMultipliers);
-				loaded.general.policy.useOverrides = ReadOr<bool>(policy, "useOverrides", loaded.general.policy.useOverrides);
-			}
 		}
 
-		if (root.contains("multipliers") && root["multipliers"].is_object()) {
-			const auto& multipliers = root["multipliers"];
-			loaded.multipliers.walk = ReadOr<float>(multipliers, "walk", loaded.multipliers.walk);
-			loaded.multipliers.run = ReadOr<float>(multipliers, "run", loaded.multipliers.run);
-			loaded.multipliers.sprint = ReadOr<float>(multipliers, "sprint", loaded.multipliers.sprint);
-			loaded.multipliers.sneakWalk = ReadOr<float>(multipliers, "sneakWalk", loaded.multipliers.sneakWalk);
-			loaded.multipliers.sneakRun = ReadOr<float>(multipliers, "sneakRun", loaded.multipliers.sneakRun);
-		}
-
-		if (root.contains("overrides") && root["overrides"].is_object()) {
-			const auto& overrides = root["overrides"];
-			auto readOverrideEntry = [&overrides](const char* a_key, MOVEMENT::SpeedOverrides::Entry a_fallback) {
-				if (!overrides.contains(a_key)) {
-					return a_fallback;
-				}
-
-				const auto& node = overrides.at(a_key);
-				if (node.is_number()) {
-					try {
-						const float legacy = node.get<float>();
-						if (legacy >= 0.0f) {
-							a_fallback.enabled = true;
-							a_fallback.value = legacy;
-						}
-					} catch (...) {
-					}
-					return a_fallback;
-				}
-
-				if (node.is_object()) {
-					a_fallback.enabled = ReadOr<bool>(node, "enabled", a_fallback.enabled);
-					a_fallback.value = ReadOr<float>(node, "value", a_fallback.value);
-				}
-				return a_fallback;
-			};
-
-			loaded.overrides.walk = readOverrideEntry("walk", loaded.overrides.walk);
-			loaded.overrides.run = readOverrideEntry("run", loaded.overrides.run);
-			loaded.overrides.sprint = readOverrideEntry("sprint", loaded.overrides.sprint);
-			loaded.overrides.sneakWalk = readOverrideEntry("sneakWalk", loaded.overrides.sneakWalk);
-			loaded.overrides.sneakRun = readOverrideEntry("sneakRun", loaded.overrides.sneakRun);
-		}
-
-		if (root.contains("targets") && root["targets"].is_array()) {
-			loaded.targets.clear();
-			for (const auto& entry : root["targets"]) {
-				if (!entry.is_object()) {
+		if (root.contains("entries") && root["entries"].is_array()) {
+			loaded.entries.clear();
+			for (const auto& node : root["entries"]) {
+				if (!node.is_object()) {
 					continue;
 				}
-				TargetEntry target{};
-				target.name = ReadOr<std::string>(entry, "name", "");
-				target.form = ReadOr<std::string>(entry, "form", "");
-				target.enabled = ReadOr<bool>(entry, "enabled", true);
-				loaded.targets.push_back(std::move(target));
+
+				MovementEntry entry{};
+				entry.name = ReadOr<std::string>(node, "name", "");
+				entry.form = ReadOr<std::string>(node, "form", "");
+				entry.group = ReadOr<std::string>(node, "group", GroupForName(entry.name));
+				entry.enabled = ReadOr<bool>(node, "enabled", false);
+
+				if (node.contains("speeds") && node["speeds"].is_array()) {
+					const auto& speeds = node["speeds"];
+					for (std::size_t i = 0; i < 5 && i < speeds.size(); ++i) {
+						const auto& pair = speeds[i];
+						if (pair.is_array() && pair.size() >= 2) {
+							entry.speeds[i][0] = pair[0].get<float>();
+							entry.speeds[i][1] = pair[1].get<float>();
+						}
+					}
+				}
+
+				if (!entry.form.empty()) {
+					loaded.entries.push_back(std::move(entry));
+				}
 			}
 		}
 
@@ -260,27 +226,101 @@ namespace MOVEMENT
 	SettingsData Settings::Defaults()
 	{
 		SettingsData data{};
-		data.version = 1;
+		data.version = 2;
+		data.entries = {
+			MakeEntry("AIControlledNPC_Sprinting_MT", "Skyrim.esm|0x000F3469"),
+			MakeEntry("AtronachFlame_Default", "Skyrim.esm|0x000884A4"),
+			MakeEntry("AtronachFrost_Blocking_MT", "Skyrim.esm|0x00059661"),
+			MakeEntry("AtronachFrost_Default_MT", "Skyrim.esm|0x00059662"),
+			MakeEntry("AtronachStorm_Default", "Skyrim.esm|0x0006B7C8"),
+			MakeEntry("Bear_Default_MT", "Skyrim.esm|0x00059656"),
+			MakeEntry("Bear_Swimming_MT", "Skyrim.esm|0x00054B36"),
+			MakeEntry("ChaurusDefault_MT", "Skyrim.esm|0x00064113"),
+			MakeEntry("Chicken_Default_MT", "Skyrim.esm|0x000B0B90"),
+			MakeEntry("CowSwimDefault_MT", "Skyrim.esm|0x000C9EDB"),
+			MakeEntry("Cow_Default_MT", "Skyrim.esm|0x00059655"),
+			MakeEntry("Deer_DefaultRun_MT", "Skyrim.esm|0x000B8F2E"),
+			MakeEntry("Deer_Default_MT", "Skyrim.esm|0x00059658"),
+			MakeEntry("Dog_Default_MT", "Skyrim.esm|0x0004E5E0"),
+			MakeEntry("Dog_Run_MT", "Skyrim.esm|0x000EA64A"),
+			MakeEntry("Dragon_Perching_MT", "Skyrim.esm|0x00065AA2"),
+			MakeEntry("Draugr1HM_MT", "Skyrim.esm|0x000745A9"),
+			MakeEntry("Draugr2GSBlocking_MT", "Skyrim.esm|0x00021A46"),
+			MakeEntry("Draugr2HMBlocking_MT", "Skyrim.esm|0x00023EF3"),
+			MakeEntry("DraugrBattleAxe_MT", "Skyrim.esm|0x000745AA"),
+			MakeEntry("DraugrBlocking_MT", "Skyrim.esm|0x0006773A"),
+			MakeEntry("DraugrBowDrawn_MT", "Skyrim.esm|0x000745A8"),
+			MakeEntry("DraugrBow_MT", "Skyrim.esm|0x000745AB"),
+			MakeEntry("DraugrDefault_MT", "Skyrim.esm|0x0005F5C8"),
+			MakeEntry("DraugrGreatSword_MT", "Skyrim.esm|0x000745AC"),
+			MakeEntry("Draugr2H_MT", "Skyrim.esm|0x000745AD"),
+			MakeEntry("DraugrRanged_MT", "Skyrim.esm|0x00071BEF"),
+			MakeEntry("DraugrShieldBlocking_MT", "Skyrim.esm|0x000B7306"),
+			MakeEntry("DwarvenSpider_Default_MT", "Skyrim.esm|0x000872AF"),
+			MakeEntry("FalmerBowDrawn_MT", "Skyrim.esm|0x000D82F5"),
+			MakeEntry("Falmer_1HM_Run", "Skyrim.esm|0x00103273"),
+			MakeEntry("Falmer_1HM_Walk", "Skyrim.esm|0x00103272"),
+			MakeEntry("Falmer_Default_MT", "Skyrim.esm|0x00063856"),
+			MakeEntry("GiantCombatRun_MT", "Skyrim.esm|0x000A5CB2"),
+			MakeEntry("GiantCombatWalk_MT", "Skyrim.esm|0x00095568"),
+			MakeEntry("GiantDefault_MT", "Skyrim.esm|0x0003C59D"),
+			MakeEntry("Horse_Default_MT", "Skyrim.esm|0x0001CF24"),
+			MakeEntry("Horse_Fall_MT", "Skyrim.esm|0x00078722"),
+			MakeEntry("Horse_Sprint_MT", "Skyrim.esm|0x0004408D"),
+			MakeEntry("Horse_Swim_MT", "Skyrim.esm|0x000C2EE2"),
+			MakeEntry("IceWraith_Default_MT", "Skyrim.esm|0x0002F585"),
+			MakeEntry("Mammoth_Default_MT", "Skyrim.esm|0x0005965B"),
+			MakeEntry("MCrab_Default_MT", "Skyrim.esm|0x000BA555"),
+			MakeEntry("NPC_1HM_MT", "Skyrim.esm|0x00069CD8"),
+			MakeEntry("NPC_2HM_MT", "Skyrim.esm|0x00069CD9"),
+			MakeEntry("NPC_Attacking2H_MT", "Skyrim.esm|0x000CEDFC"),
+			MakeEntry("NPC_Attacking_MT", "Skyrim.esm|0x000A0BC2"),
+			MakeEntry("NPC_Bleedout_MT", "Skyrim.esm|0x00036D41"),
+			MakeEntry("NPC_Blocking_MT", "Skyrim.esm|0x00035B4C"),
+			MakeEntry("NPC_Blocking_ShieldCharge_MT", "Skyrim.esm|0x000EF541"),
+			MakeEntry("NPC_BowDrawn_MT", "Skyrim.esm|0x0003580C"),
+			MakeEntry("NPC_BowDrawn_QuickShot_MT", "Skyrim.esm|0x000EF542"),
+			MakeEntry("NPC_Bow_MT", "Skyrim.esm|0x00069CDA"),
+			MakeEntry("NPC_Default_MT", "Skyrim.esm|0x0003580D"),
+			MakeEntry("NPC_Drunk_MT", "Skyrim.esm|0x000CEFCF"),
+			MakeEntry("NPC_Horse_MT", "Skyrim.esm|0x00069F74"),
+			MakeEntry("NPC_MagicCasting_MT", "Skyrim.esm|0x00069CDC"),
+			MakeEntry("NPC_Magic_MT", "Skyrim.esm|0x00069CDB"),
+			MakeEntry("NPC_PowerAttacking_MT", "Skyrim.esm|0x000BFF7F"),
+			MakeEntry("NPC_Sneaking_MT", "Skyrim.esm|0x0003580B"),
+			MakeEntry("NPC_Sprinting_MT", "Skyrim.esm|0x00034D9C"),
+			MakeEntry("NPC_Swimming_MT", "Skyrim.esm|0x00036D42"),
+			MakeEntry("SabreCat_Default_MT", "Skyrim.esm|0x00059657"),
+			MakeEntry("SabreCat_Run_MT", "Skyrim.esm|0x000EA64C"),
+			MakeEntry("Skeever_AttackLunge_MT", "Skyrim.esm|0x0004CECF"),
+			MakeEntry("Skeever_Default_MT", "Skyrim.esm|0x0004CED0"),
+			MakeEntry("SlaughterfishSwim_MT", "Skyrim.esm|0x000D8C5E"),
+			MakeEntry("SphereCombat_MT", "Skyrim.esm|0x0007874F"),
+			MakeEntry("SphereDefault_MT", "Skyrim.esm|0x0007874E"),
+			MakeEntry("SphereRanged_MT", "Skyrim.esm|0x00078750"),
+			MakeEntry("SpiderDefault_MT", "Skyrim.esm|0x00045C4E"),
+			MakeEntry("Spriggan_Combat", "Skyrim.esm|0x0002BB09"),
+			MakeEntry("Spriggan_Default", "Skyrim.esm|0x000973BA"),
+			MakeEntry("SteamCombat_MT", "Skyrim.esm|0x000800EE"),
+			MakeEntry("SteamDefault_MT", "Skyrim.esm|0x000800ED"),
+			MakeEntry("TrollDefault_MT", "Skyrim.esm|0x0005F5C9"),
+			MakeEntry("WerewolfBeastDefault_MT", "Skyrim.esm|0x000CDD8B"),
+			MakeEntry("WerewolfBeastSprint_MT", "Skyrim.esm|0x000CDD98"),
+			MakeEntry("Wisp_Default_MT", "Skyrim.esm|0x0004252A"),
+			MakeEntry("Witchlight_Default_MT", "Skyrim.esm|0x00086F47"),
+			MakeEntry("Wolf_Default_MT", "Skyrim.esm|0x00055D28"),
+			MakeEntry("Wolf_Run_MT", "Skyrim.esm|0x000EA64B")
+		};
 		return data;
 	}
 
 	void Settings::Clamp(SettingsData& a_settings)
 	{
-		auto clampMultiplier = [](float value) { return std::clamp(value, 0.1f, 3.0f); };
-		auto clampOverride = [](MOVEMENT::SpeedOverrides::Entry& value) {
-			value.value = std::clamp(value.value, 0.0f, 2000.0f);
-		};
-
-		a_settings.multipliers.walk = clampMultiplier(a_settings.multipliers.walk);
-		a_settings.multipliers.run = clampMultiplier(a_settings.multipliers.run);
-		a_settings.multipliers.sprint = clampMultiplier(a_settings.multipliers.sprint);
-		a_settings.multipliers.sneakWalk = clampMultiplier(a_settings.multipliers.sneakWalk);
-		a_settings.multipliers.sneakRun = clampMultiplier(a_settings.multipliers.sneakRun);
-
-		clampOverride(a_settings.overrides.walk);
-		clampOverride(a_settings.overrides.run);
-		clampOverride(a_settings.overrides.sprint);
-		clampOverride(a_settings.overrides.sneakWalk);
-		clampOverride(a_settings.overrides.sneakRun);
+		for (auto& entry : a_settings.entries) {
+			for (std::size_t i = 0; i < 5; ++i) {
+				entry.speeds[i][0] = std::clamp(entry.speeds[i][0], 0.0f, 2000.0f);
+				entry.speeds[i][1] = std::clamp(entry.speeds[i][1], 0.0f, 2000.0f);
+			}
+		}
 	}
 }

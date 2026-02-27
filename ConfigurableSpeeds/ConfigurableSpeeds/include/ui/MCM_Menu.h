@@ -30,24 +30,18 @@ namespace UI::MCM
 		void Render();
 	}
 
-	namespace MultipliersTab
+	namespace CombatTab
 	{
 		void Render();
 	}
 
-	namespace OverridesTab
+	namespace DefaultTab
 	{
 		void Render();
 	}
 
-	namespace TargetsTab
-	{
-		void Render();
-	}
-
-	namespace ToolsTab
+	namespace MiscTab
 	{
 		void Render();
 	}
 }
-
