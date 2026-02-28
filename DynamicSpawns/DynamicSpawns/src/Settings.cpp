@@ -97,6 +97,7 @@ namespace DYNAMIC_SPAWNS
 
 	void Settings::LoadOrCreate()
 	{
+		std::scoped_lock lk(m_lock);
 		const auto path = GetSettingsPath();
 		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
@@ -147,6 +148,34 @@ namespace DYNAMIC_SPAWNS
 		return m_settings;
 	}
 
+	bool Settings::Save()
+	{
+		std::scoped_lock lk(m_lock);
+		const auto path = GetSettingsPath();
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+		try {
+			std::ofstream file(path, std::ios::trunc);
+			file << ToJson(m_settings).dump(2);
+			return true;
+		} catch (const std::exception& e) {
+			LOG_ERROR("Failed to save settings.json: {}", e.what());
+			return false;
+		}
+	}
+
+	void Settings::UpdateAndSave(const SettingsData& a_updated)
+	{
+		{
+			std::scoped_lock lk(m_lock);
+			m_settings = a_updated;
+			Clamp(m_settings);
+			FillLowerCaches(m_settings);
+			ApplyLogLevel();
+		}
+		Save();
+	}
+
 	std::filesystem::path Settings::GetSettingsPath() const
 	{
 		const auto& plugin = DLLMAIN::Plugin::GetSingleton()->Info();
@@ -166,7 +195,39 @@ namespace DYNAMIC_SPAWNS
 	SettingsData Settings::MakeDefault()
 	{
 		SettingsData defaults{};
-		defaults.spawnRules.emplace_back();
+		defaults.spawnRules.clear();
+
+		auto makeRule = [](std::string name, std::vector<std::string> keywords, std::string form) {
+			SpawnRule r{};
+			r.name = std::move(name);
+			r.match.cellType = CellType::kAny;
+			r.match.timeOfDay = TimeOfDay::kAny;
+			r.match.worldspace.clear();
+			r.match.locationKeywordAny = std::move(keywords);
+			r.what.method = SpawnMethod::kLeveledList;
+			r.what.form = std::move(form);
+			r.budget.chance = 0.40;
+			r.budget.minToSpawn = 1;
+			r.budget.maxToSpawn = 3;
+			return r;
+		};
+
+		defaults.spawnRules.emplace_back(makeRule("Draugr", { "LocTypeDraugrCrypt" }, "LCharDraugrMelee1H"));
+		defaults.spawnRules.emplace_back(makeRule("Bandits", { "LocTypeBanditCamp", "LocTypeMine" }, "LCharBanditMelee1H"));
+		defaults.spawnRules.emplace_back(makeRule("Falmer", { "LocTypeFalmerHive" }, "LCharFalmerMelee"));
+		defaults.spawnRules.emplace_back(makeRule("Dwarven", { "LocSetDwarvenRuin", "LocTypeDwarvenAutomatons" }, "LCharDwarvenSpider"));
+		defaults.spawnRules.emplace_back(makeRule("Forsworn", { "LocTypeForswornCamp" }, "LCharForswornMelee1H"));
+		defaults.spawnRules.emplace_back(makeRule("Vampire", { "LocTypeVampireLair" }, "LCharVampireMelee"));
+		defaults.spawnRules.emplace_back(makeRule("Warlock", { "LocTypeWarlockLair" }, "LCharWarlockDestruction"));
+
+		SpawnRule wilderness{};
+		wilderness.name = "Default Wilderness";
+		wilderness.match.worldspace = "Tamriel";
+		wilderness.match.cellType = CellType::kExterior;
+		wilderness.match.locationKeywordAny = { "LocTypeWilderness" };
+		wilderness.what.method = SpawnMethod::kLeveledList;
+		wilderness.what.form = "Skyrim.esm|0x00023AB8";
+		defaults.spawnRules.emplace_back(std::move(wilderness));
 		return defaults;
 	}
 
@@ -240,6 +301,31 @@ namespace DYNAMIC_SPAWNS
 					{ "onlySpawnIfEncounterZoneExists", a_settings.filters.onlySpawnIfEncounterZoneExists }
 				} },
 			{ "spawnRules", rules }
+			,
+			{ "genesis",
+				{
+					{ "skipIfHostilesNearby", a_settings.genesis.skipIfHostilesNearby },
+					{ "hostileScanRadius", a_settings.genesis.hostileScanRadius },
+					{ "hostileScanMaxRefs", a_settings.genesis.hostileScanMaxRefs },
+					{ "unlevelNPCs", a_settings.genesis.unlevelNPCs },
+					{ "healthPctMin", a_settings.genesis.healthPctMin },
+					{ "healthPctMax", a_settings.genesis.healthPctMax },
+					{ "magickaPctMin", a_settings.genesis.magickaPctMin },
+					{ "magickaPctMax", a_settings.genesis.magickaPctMax },
+					{ "staminaPctMin", a_settings.genesis.staminaPctMin },
+					{ "staminaPctMax", a_settings.genesis.staminaPctMax },
+					{ "giveSpawnPotions", a_settings.genesis.giveSpawnPotions },
+					{ "potionChancePct", a_settings.genesis.potionChancePct },
+					{ "potionCountMin", a_settings.genesis.potionCountMin },
+					{ "potionCountMax", a_settings.genesis.potionCountMax },
+					{ "spawnPotionPool", a_settings.genesis.spawnPotionPool },
+					{ "lootInjectionEnabled", a_settings.genesis.lootInjectionEnabled },
+					{ "lootChancePct", a_settings.genesis.lootChancePct },
+					{ "lootPotionPool", a_settings.genesis.lootPotionPool },
+					{ "lootScrollPool", a_settings.genesis.lootScrollPool },
+					{ "lootMiscPool", a_settings.genesis.lootMiscPool },
+					{ "lootSackPool", a_settings.genesis.lootSackPool }
+				} }
 		};
 	}
 
@@ -329,6 +415,31 @@ namespace DYNAMIC_SPAWNS
 			out.spawnRules.emplace_back();
 		}
 
+		if (a_json.contains("genesis")) {
+			const auto& genesis = a_json["genesis"];
+			out.genesis.skipIfHostilesNearby = genesis.value("skipIfHostilesNearby", out.genesis.skipIfHostilesNearby);
+			out.genesis.hostileScanRadius = genesis.value("hostileScanRadius", out.genesis.hostileScanRadius);
+			out.genesis.hostileScanMaxRefs = genesis.value("hostileScanMaxRefs", out.genesis.hostileScanMaxRefs);
+			out.genesis.unlevelNPCs = genesis.value("unlevelNPCs", out.genesis.unlevelNPCs);
+			out.genesis.healthPctMin = genesis.value("healthPctMin", out.genesis.healthPctMin);
+			out.genesis.healthPctMax = genesis.value("healthPctMax", out.genesis.healthPctMax);
+			out.genesis.magickaPctMin = genesis.value("magickaPctMin", out.genesis.magickaPctMin);
+			out.genesis.magickaPctMax = genesis.value("magickaPctMax", out.genesis.magickaPctMax);
+			out.genesis.staminaPctMin = genesis.value("staminaPctMin", out.genesis.staminaPctMin);
+			out.genesis.staminaPctMax = genesis.value("staminaPctMax", out.genesis.staminaPctMax);
+			out.genesis.giveSpawnPotions = genesis.value("giveSpawnPotions", out.genesis.giveSpawnPotions);
+			out.genesis.potionChancePct = genesis.value("potionChancePct", out.genesis.potionChancePct);
+			out.genesis.potionCountMin = genesis.value("potionCountMin", out.genesis.potionCountMin);
+			out.genesis.potionCountMax = genesis.value("potionCountMax", out.genesis.potionCountMax);
+			out.genesis.spawnPotionPool = genesis.value("spawnPotionPool", out.genesis.spawnPotionPool);
+			out.genesis.lootInjectionEnabled = genesis.value("lootInjectionEnabled", out.genesis.lootInjectionEnabled);
+			out.genesis.lootChancePct = genesis.value("lootChancePct", out.genesis.lootChancePct);
+			out.genesis.lootPotionPool = genesis.value("lootPotionPool", out.genesis.lootPotionPool);
+			out.genesis.lootScrollPool = genesis.value("lootScrollPool", out.genesis.lootScrollPool);
+			out.genesis.lootMiscPool = genesis.value("lootMiscPool", out.genesis.lootMiscPool);
+			out.genesis.lootSackPool = genesis.value("lootSackPool", out.genesis.lootSackPool);
+		}
+
 		return out;
 	}
 
@@ -345,6 +456,19 @@ namespace DYNAMIC_SPAWNS
 		a_settings.timing.cooldownSecondsSameCell = std::max(0.0F, a_settings.timing.cooldownSecondsSameCell);
 		a_settings.timing.cooldownSecondsGlobal = std::max(0.0F, a_settings.timing.cooldownSecondsGlobal);
 		a_settings.timing.deferSpawnSeconds = std::max(0.0F, a_settings.timing.deferSpawnSeconds);
+
+		a_settings.genesis.hostileScanRadius = std::max(500.0F, a_settings.genesis.hostileScanRadius);
+		a_settings.genesis.hostileScanMaxRefs = std::max(10, a_settings.genesis.hostileScanMaxRefs);
+		a_settings.genesis.healthPctMin = std::clamp(a_settings.genesis.healthPctMin, 1.0F, 1000.0F);
+		a_settings.genesis.healthPctMax = std::clamp(a_settings.genesis.healthPctMax, a_settings.genesis.healthPctMin, 1000.0F);
+		a_settings.genesis.magickaPctMin = std::clamp(a_settings.genesis.magickaPctMin, 1.0F, 1000.0F);
+		a_settings.genesis.magickaPctMax = std::clamp(a_settings.genesis.magickaPctMax, a_settings.genesis.magickaPctMin, 1000.0F);
+		a_settings.genesis.staminaPctMin = std::clamp(a_settings.genesis.staminaPctMin, 1.0F, 1000.0F);
+		a_settings.genesis.staminaPctMax = std::clamp(a_settings.genesis.staminaPctMax, a_settings.genesis.staminaPctMin, 1000.0F);
+		a_settings.genesis.potionChancePct = std::clamp(a_settings.genesis.potionChancePct, 0, 100);
+		a_settings.genesis.potionCountMin = std::max(1, a_settings.genesis.potionCountMin);
+		a_settings.genesis.potionCountMax = std::max(a_settings.genesis.potionCountMin, a_settings.genesis.potionCountMax);
+		a_settings.genesis.lootChancePct = std::clamp(a_settings.genesis.lootChancePct, 0, 100);
 
 		for (auto& rule : a_settings.spawnRules) {
 			rule.budget.chance = std::clamp(rule.budget.chance, 0.0, 1.0);

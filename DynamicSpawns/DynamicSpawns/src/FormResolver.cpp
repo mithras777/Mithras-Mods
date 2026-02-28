@@ -2,6 +2,7 @@
 
 #include "util/LogUtil.h"
 #include <optional>
+#include <random>
 
 namespace DYNAMIC_SPAWNS
 {
@@ -77,6 +78,35 @@ namespace DYNAMIC_SPAWNS
 		return resolved;
 	}
 
+	RE::TESBoundObject* FormResolver::ResolveBoundObject(const std::string& a_formString) const
+	{
+		auto* form = ResolveFormString(a_formString);
+		return form ? form->As<RE::TESBoundObject>() : nullptr;
+	}
+
+	RE::TESBoundObject* FormResolver::ResolveRandomBoundObject(const std::vector<std::string>& a_pool) const
+	{
+		if (a_pool.empty()) {
+			return nullptr;
+		}
+
+		std::vector<RE::TESBoundObject*> options{};
+		options.reserve(a_pool.size());
+		for (const auto& entry : a_pool) {
+			if (auto* bound = ResolveBoundObject(entry)) {
+				options.push_back(bound);
+			}
+		}
+
+		if (options.empty()) {
+			return nullptr;
+		}
+
+		std::mt19937 rng{ std::random_device{}() };
+		std::uniform_int_distribution<std::size_t> dist(0, options.size() - 1);
+		return options[dist(rng)];
+	}
+
 	RE::BGSKeyword* FormResolver::ResolveKeywordByEditorID(const std::string& a_editorID)
 	{
 		if (a_editorID.empty()) {
@@ -104,6 +134,9 @@ namespace DYNAMIC_SPAWNS
 		if (separator == std::string::npos) {
 			if (const auto parsed = ParseHexFormID(text)) {
 				return { "", *parsed };
+			}
+			if (auto* formByEditorID = RE::TESForm::LookupByEditorID(text)) {
+				return { "", formByEditorID->GetFormID() };
 			}
 			return {};
 		}

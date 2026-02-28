@@ -3,6 +3,7 @@
 #include "Utils.h"
 #include "util/LogUtil.h"
 
+#include <algorithm>
 #include <random>
 
 namespace DYNAMIC_SPAWNS
@@ -33,6 +34,7 @@ namespace DYNAMIC_SPAWNS
 
 		if (auto* sourceHolder = RE::ScriptEventSourceHolder::GetSingleton()) {
 			sourceHolder->AddEventSink<RE::TESCellFullyLoadedEvent>(this);
+			sourceHolder->AddEventSink<RE::TESOpenCloseEvent>(this);
 		}
 
 		m_initialized = true;
@@ -58,6 +60,7 @@ namespace DYNAMIC_SPAWNS
 	{
 		ClearManagedNow();
 		m_lastCellSpawn.clear();
+		m_lootProcessedContainers.clear();
 		m_lastGlobalSpawn = {};
 		m_pendingSpawn.reset();
 	}
@@ -90,6 +93,14 @@ namespace DYNAMIC_SPAWNS
 
 		HandleCellChanged(a_event->cell);
 		TryQueueSpawn(player, a_event->cell, false);
+		return RE::BSEventNotifyControl::kContinue;
+	}
+
+	RE::BSEventNotifyControl SpawnManager::ProcessEvent(const RE::TESOpenCloseEvent* a_event, RE::BSTEventSource<RE::TESOpenCloseEvent>*)
+	{
+		if (m_running) {
+			TryInjectLoot(a_event);
+		}
 		return RE::BSEventNotifyControl::kContinue;
 	}
 
@@ -275,6 +286,7 @@ namespace DYNAMIC_SPAWNS
 			}
 
 			if (auto* actor = SpawnOne(a_player, a_cell, a_rule)) {
+				ApplyPostSpawnGenesisCompatibility(actor, a_player, settings);
 				ManagedRegistry::GetSingleton()->AddSpawn(actor, a_cell);
 				++spawned;
 			}
@@ -336,6 +348,11 @@ namespace DYNAMIC_SPAWNS
 		}
 
 		if (filters.onlySpawnIfEncounterZoneExists && a_player->GetEncounterZone() == nullptr) {
+			return false;
+		}
+
+		if (a_settings.genesis.skipIfHostilesNearby &&
+			HasNearbyHostile(a_player, a_settings.genesis.hostileScanRadius, a_settings.genesis.hostileScanMaxRefs)) {
 			return false;
 		}
 
@@ -483,5 +500,139 @@ namespace DYNAMIC_SPAWNS
 		}
 
 		return nullptr;
+	}
+
+	bool SpawnManager::HasNearbyHostile(RE::PlayerCharacter* a_player, float a_radius, std::int32_t a_maxRefs) const
+	{
+		auto* cell = a_player ? a_player->GetParentCell() : nullptr;
+		if (!a_player || !cell) {
+			return false;
+		}
+
+		const auto origin = a_player->GetPosition();
+		std::int32_t scanned = 0;
+		bool found = false;
+
+		cell->ForEachReferenceInRange(origin, a_radius, [&](RE::TESObjectREFR* a_ref) {
+			if (!a_ref || found) {
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+			if (++scanned > a_maxRefs) {
+				return RE::BSContainer::ForEachResult::kStop;
+			}
+			auto* actor = a_ref->As<RE::Actor>();
+			if (!actor || actor == a_player || actor->IsDead()) {
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+			if (actor->IsHostileToActor(a_player)) {
+				found = true;
+				return RE::BSContainer::ForEachResult::kStop;
+			}
+			return RE::BSContainer::ForEachResult::kContinue;
+		});
+
+		return found;
+	}
+
+	void SpawnManager::ApplyPostSpawnGenesisCompatibility(RE::Actor* a_actor, RE::PlayerCharacter* a_player, const SettingsData& a_settings) const
+	{
+		if (!a_actor || !a_player) {
+			return;
+		}
+		auto* actorAV = a_actor->AsActorValueOwner();
+		auto* playerAV = a_player->AsActorValueOwner();
+		if (!actorAV || !playerAV) {
+			return;
+		}
+
+		const auto& g = a_settings.genesis;
+		std::mt19937 rng{ std::random_device{}() };
+
+		if (g.unlevelNPCs) {
+			auto rollPct = [&](float minPct, float maxPct) {
+				std::uniform_real_distribution<float> dist(minPct, maxPct);
+				return dist(rng) / 100.0F;
+			};
+			const float hp = std::max(1.0F, playerAV->GetBaseActorValue(RE::ActorValue::kHealth) * rollPct(g.healthPctMin, g.healthPctMax));
+			const float mp = std::max(1.0F, playerAV->GetBaseActorValue(RE::ActorValue::kMagicka) * rollPct(g.magickaPctMin, g.magickaPctMax));
+			const float sp = std::max(1.0F, playerAV->GetBaseActorValue(RE::ActorValue::kStamina) * rollPct(g.staminaPctMin, g.staminaPctMax));
+			actorAV->SetActorValue(RE::ActorValue::kHealth, hp);
+			actorAV->SetActorValue(RE::ActorValue::kMagicka, mp);
+			actorAV->SetActorValue(RE::ActorValue::kStamina, sp);
+		}
+
+		// Best effort equivalent for immediate hostility.
+		actorAV->SetActorValue(RE::ActorValue::kAggression, 3.0F);
+
+		if (g.giveSpawnPotions) {
+			std::uniform_int_distribution<std::int32_t> chance(1, 100);
+			if (chance(rng) <= g.potionChancePct) {
+				std::uniform_int_distribution<std::int32_t> countDist(g.potionCountMin, g.potionCountMax);
+				const auto count = countDist(rng);
+				for (std::int32_t i = 0; i < count; ++i) {
+					if (auto* item = FormResolver::GetSingleton()->ResolveRandomBoundObject(g.spawnPotionPool)) {
+						a_actor->AddObjectToContainer(item, nullptr, 1, nullptr);
+					}
+				}
+			}
+		}
+	}
+
+	void SpawnManager::TryInjectLoot(const RE::TESOpenCloseEvent* a_event)
+	{
+		if (!a_event || !a_event->opened || !a_event->ref || !a_event->activeRef) {
+			return;
+		}
+
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player || a_event->activeRef.get() != player) {
+			return;
+		}
+
+		const auto& g = Settings::GetSingleton()->Get().genesis;
+		if (!g.lootInjectionEnabled) {
+			return;
+		}
+
+		auto* containerRef = a_event->ref.get();
+		if (!containerRef) {
+			return;
+		}
+
+		auto* base = containerRef->GetBaseObject();
+		if (!base || base->GetFormType() != RE::FormType::Container) {
+			return;
+		}
+
+		const auto id = containerRef->GetFormID();
+		{
+			std::scoped_lock lk(m_lock);
+			if (m_lootProcessedContainers.contains(id)) {
+				return;
+			}
+		}
+
+		std::mt19937 rng{ std::random_device{}() };
+		std::uniform_int_distribution<std::int32_t> chance(1, 100);
+		if (chance(rng) > g.lootChancePct) {
+			return;
+		}
+
+		auto* resolver = FormResolver::GetSingleton();
+		auto addOne = [&](const std::vector<std::string>& pool) {
+			if (auto* item = resolver->ResolveRandomBoundObject(pool)) {
+				containerRef->AddObjectToContainer(item, nullptr, 1, nullptr);
+			}
+		};
+
+		addOne(g.lootPotionPool);
+		addOne(g.lootScrollPool);
+		addOne(g.lootMiscPool);
+		addOne(g.lootSackPool);
+
+		{
+			std::scoped_lock lk(m_lock);
+			m_lootProcessedContainers.insert(id);
+		}
 	}
 }

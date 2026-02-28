@@ -2,6 +2,7 @@
 
 #include <json/single_include/nlohmann/json.hpp>
 #include <filesystem>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -106,6 +107,38 @@ namespace DYNAMIC_SPAWNS
 		RuleFactions factions{};
 	};
 
+	struct GenesisCompatibilitySettings
+	{
+		bool  skipIfHostilesNearby{ false };
+		float hostileScanRadius{ 8000.0F };
+		std::int32_t hostileScanMaxRefs{ 200 };
+
+		bool  unlevelNPCs{ false };
+		float healthPctMin{ 85.0F };
+		float healthPctMax{ 125.0F };
+		float magickaPctMin{ 85.0F };
+		float magickaPctMax{ 125.0F };
+		float staminaPctMin{ 85.0F };
+		float staminaPctMax{ 125.0F };
+
+		bool                     giveSpawnPotions{ false };
+		std::int32_t             potionChancePct{ 25 };
+		std::int32_t             potionCountMin{ 1 };
+		std::int32_t             potionCountMax{ 3 };
+		std::vector<std::string> spawnPotionPool{
+			"LItemPotionHealthBest75",
+			"LItemPotionMagickaBest75",
+			"LItemPotionStaminaBest75"
+		};
+
+		bool                     lootInjectionEnabled{ false };
+		std::int32_t             lootChancePct{ 33 };
+		std::vector<std::string> lootPotionPool{ "LItemPotionHealthBest75" };
+		std::vector<std::string> lootScrollPool{ "LItemSpellTomes75" };
+		std::vector<std::string> lootMiscPool{ "LItemMiscVendorMiscItems75" };
+		std::vector<std::string> lootSackPool{ "LItemMiscVendorMiscItems75" };
+	};
+
 	struct SettingsData
 	{
 		bool                    enabled{ true };
@@ -114,6 +147,7 @@ namespace DYNAMIC_SPAWNS
 		TimingSettings          timing{};
 		FiltersSettings         filters{};
 		std::vector<SpawnRule>  spawnRules{};
+		GenesisCompatibilitySettings genesis{};
 	};
 
 	class Settings final : public REX::Singleton<Settings>
@@ -121,6 +155,8 @@ namespace DYNAMIC_SPAWNS
 	public:
 		void LoadOrCreate();
 		void Reload();
+		bool Save();
+		void UpdateAndSave(const SettingsData& a_updated);
 
 		[[nodiscard]] const SettingsData& Get() const;
 		[[nodiscard]] std::filesystem::path GetSettingsPath() const;
@@ -141,5 +177,6 @@ namespace DYNAMIC_SPAWNS
 
 		SettingsData m_settings{};
 		bool         m_loaded{ false };
+		mutable std::mutex m_lock;
 	};
 }

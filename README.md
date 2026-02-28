@@ -313,5 +313,16 @@ If `settings.json` is missing, `DynamicSpawns` generates a default one on startu
   - or `ds_clear` is run.
 - Cleanup uses disable + delete flags for temporary refs and keeps registry size bounded by `maxManagedRefs` to reduce save bloat risk.
 
+### In-Game Settings (SKSE Menu Framework)
+
+- DynamicSpawns registers a `Dynamic Spawns -> Settings` page in SKSE Menu Framework.
+- This menu updates and saves `settings.json` live (no MCM dependency).
+- Genesis parity controls exposed in menu:
+  - skip spawn if hostiles are nearby,
+  - unlevel spawned NPC stat scaling ranges,
+  - spawned-NPC potion chance/count,
+  - container bonus-loot injection chance,
+  - plus core spawn caps/cooldowns.
+
 
 

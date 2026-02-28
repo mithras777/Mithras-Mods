@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace DYNAMIC_SPAWNS
 {
@@ -28,6 +29,8 @@ namespace DYNAMIC_SPAWNS
 	public:
 		[[nodiscard]] RE::TESForm* ResolveFormString(const std::string& a_formString) const;
 		[[nodiscard]] ResolvedSpawnForm ResolveSpawnForm(const std::string& a_formString) const;
+		[[nodiscard]] RE::TESBoundObject* ResolveBoundObject(const std::string& a_formString) const;
+		[[nodiscard]] RE::TESBoundObject* ResolveRandomBoundObject(const std::vector<std::string>& a_pool) const;
 		[[nodiscard]] RE::BGSKeyword* ResolveKeywordByEditorID(const std::string& a_editorID);
 
 	private:

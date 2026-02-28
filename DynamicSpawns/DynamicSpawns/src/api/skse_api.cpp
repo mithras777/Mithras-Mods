@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include "version.h"
 #include "SpawnManager.h"
+#include "ui/UI.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -44,6 +45,7 @@ namespace SKSE {
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
 				DYNAMIC_SPAWNS::SpawnManager::GetSingleton()->OnDataLoaded();
+				UI::Register();
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;
 			}
