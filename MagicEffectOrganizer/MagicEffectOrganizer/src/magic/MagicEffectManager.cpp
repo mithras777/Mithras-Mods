@@ -3,6 +3,7 @@
 #include "util/LogUtil.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <format>
@@ -106,6 +107,51 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 			}
 
 			return std::nullopt;
+		}
+
+		RE::MagicItemList::Item* ResolveSelectedItemFallback(RE::MagicItemList* a_itemList)
+		{
+			if (!a_itemList) {
+				return nullptr;
+			}
+
+			const auto count = a_itemList->items.size();
+			if (count == 0) {
+				return nullptr;
+			}
+
+			constexpr std::array<std::string_view, 5> kIndexKeys{
+				"selectedIndex",
+				"_selectedIndex",
+				"itemIndex",
+				"index",
+				"selectedEntry"
+			};
+
+			RE::GFxValue idxValue{};
+			for (const auto key : kIndexKeys) {
+				if (!a_itemList->entryList.GetMember(key.data(), &idxValue) || !idxValue.IsNumber()) {
+					continue;
+				}
+
+				const auto index = static_cast<std::int32_t>(idxValue.GetSInt());
+				if (index >= 0 && static_cast<std::size_t>(index) < count) {
+					return a_itemList->items[static_cast<std::size_t>(index)];
+				}
+			}
+
+			for (const auto key : kIndexKeys) {
+				if (!a_itemList->root.GetMember(key.data(), &idxValue) || !idxValue.IsNumber()) {
+					continue;
+				}
+
+				const auto index = static_cast<std::int32_t>(idxValue.GetSInt());
+				if (index >= 0 && static_cast<std::size_t>(index) < count) {
+					return a_itemList->items[static_cast<std::size_t>(index)];
+				}
+			}
+
+			return nullptr;
 		}
 	}
 
@@ -322,9 +368,12 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 			runtime.itemList->Update();
 		}
 
-		auto* selected = runtime.itemList->GetSelectedItem();
+		auto* selected = ResolveSelectedItemFallback(runtime.itemList);
 		if (!selected) {
-			LOG_INFO("MagicEffectOrganizer: Hide request failed (no selected item in MagicMenu list)");
+			selected = runtime.itemList->GetSelectedItem();
+		}
+		if (!selected) {
+			LOG_INFO("MagicEffectOrganizer: Hide request failed (no selected item in MagicMenu list; itemCount={})", runtime.itemList->items.size());
 			return false;
 		}
 

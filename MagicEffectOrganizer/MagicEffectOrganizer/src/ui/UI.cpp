@@ -31,16 +31,25 @@ namespace UI
 			return out;
 		}
 
+		std::string StripDisplayFormID(std::string a_name)
+		{
+			// Stored labels end with " [XXXXXXXX]"; trim that for cleaner list display.
+			if (a_name.size() >= 11 && a_name[a_name.size() - 1] == ']' && a_name[a_name.size() - 10] == '[' && a_name[a_name.size() - 11] == ' ') {
+				a_name.erase(a_name.size() - 11);
+			}
+			return a_name;
+		}
+
 		void DrawGeneralTab(MITHRAS::MAGIC_EFFECT_ORGANIZER::Manager* a_manager)
 		{
 			auto cfg = a_manager->GetConfig();
 			const auto before = cfg;
 			const auto keyOptions = BuildKeyboardOptions();
 
-			ImGui::Checkbox("Enable hidden effect organizer", &cfg.enabled);
+			ImGui::Checkbox("Enable", &cfg.enabled);
 
 			const auto hotkeyName = MITHRAS::MAGIC_EFFECT_ORGANIZER::Manager::GetKeyboardKeyName(cfg.hotkey);
-			if (ImGui::BeginCombo("Magic menu hide hotkey", hotkeyName.c_str())) {
+			if (ImGui::BeginCombo("Hotkey", hotkeyName.c_str())) {
 				for (const auto& option : keyOptions) {
 					const bool selected = (option.code == cfg.hotkey);
 					if (ImGui::Selectable(option.name.c_str(), selected)) {
@@ -55,7 +64,9 @@ namespace UI
 
 			ImGui::Separator();
 			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextDisabled("Tip: Open Magic Menu, highlight an effect, then press your hotkey to hide it.");
+			ImGui::TextColored(
+				ImVec4(0.90f, 0.75f, 1.00f, 1.00f),
+				"Tip: Open Magic Menu, highlight an effect, then press your hotkey to hide it.");
 			ImGui::PopTextWrapPos();
 
 			if (before.enabled != cfg.enabled) {
@@ -68,74 +79,39 @@ namespace UI
 
 		void DrawOrganizerTab(MITHRAS::MAGIC_EFFECT_ORGANIZER::Manager* a_manager)
 		{
-			const auto visibleEffects = a_manager->GetVisibleEffects();
 			const auto hiddenEffects = a_manager->GetHiddenEffects();
-
-			static RE::FormID selectedVisibleFormID = 0;
-			if (selectedVisibleFormID == 0 ||
-				std::none_of(visibleEffects.begin(), visibleEffects.end(), [&](const auto& e) { return e.formID == selectedVisibleFormID; })) {
-				selectedVisibleFormID = visibleEffects.empty() ? 0 : visibleEffects.front().formID;
-			}
-
-			const auto selectedIt = std::find_if(
-				visibleEffects.begin(),
-				visibleEffects.end(),
-				[&](const auto& e) { return e.formID == selectedVisibleFormID; });
-			const char* selectedLabel = (selectedIt != visibleEffects.end()) ? selectedIt->displayName.c_str() : "<None>";
-
-			if (ImGui::BeginCombo("Magic Effects", selectedLabel)) {
-				for (const auto& entry : visibleEffects) {
-					const bool selected = (entry.formID == selectedVisibleFormID);
-					if (ImGui::Selectable(entry.displayName.c_str(), selected)) {
-						selectedVisibleFormID = entry.formID;
-					}
-					if (selected) {
-						ImGui::SetItemDefaultFocus();
-					}
-				}
-				ImGui::EndCombo();
-			}
-
-			const bool canHide = selectedVisibleFormID != 0;
-			if (!canHide) {
-				ImGui::BeginDisabled();
-			}
-			if (ImGui::Button("Hide selected effect") && canHide) {
-				a_manager->HideEffect(selectedVisibleFormID);
-			}
-			if (!canHide) {
-				ImGui::EndDisabled();
-			}
-
-			ImGui::SeparatorText("Hidden Effects");
+			ImGui::TextColored(ImVec4(0.90f, 0.75f, 1.00f, 1.00f), "Hidden Effects List");
+			ImGui::Separator();
 			if (hiddenEffects.empty()) {
 				ImGui::TextDisabled("No hidden effects yet.");
 				return;
 			}
 
-			if (ImGui::BeginTable("HiddenMagicEffectsTable", 2, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+			std::vector<RE::FormID> toUnhide;
+			if (ImGui::BeginTable("HiddenEffectsTable", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
 				ImGui::TableSetupColumn("Effect", ImGuiTableColumnFlags_WidthStretch);
-				ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 48.0f);
-				ImGui::TableHeadersRow();
+				ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 34.0f);
 
-				std::vector<RE::FormID> toUnhide;
 				for (const auto& entry : hiddenEffects) {
+					ImGui::PushID(static_cast<int>(entry.formID));
 					ImGui::TableNextRow();
+
 					ImGui::TableSetColumnIndex(0);
-					ImGui::TextUnformatted(entry.displayName.c_str());
+					const auto cleaned = StripDisplayFormID(entry.displayName);
+					ImGui::TextUnformatted(cleaned.c_str());
 
 					ImGui::TableSetColumnIndex(1);
-					const auto buttonId = std::format("X##{:08X}", entry.formID);
-					if (ImGui::Button(buttonId.c_str())) {
+					if (ImGui::Button("X")) {
 						toUnhide.push_back(entry.formID);
 					}
+					ImGui::PopID();
 				}
 
 				ImGui::EndTable();
+			}
 
-				for (const auto formID : toUnhide) {
-					a_manager->UnhideEffect(formID);
-				}
+			for (const auto formID : toUnhide) {
+				a_manager->UnhideEffect(formID);
 			}
 		}
 	}

@@ -192,7 +192,7 @@ namespace UI::MCM
 			return;
 		}
 
-		SKSEMenuFramework::SetSection("Configurable Movement Speed");
+		SKSEMenuFramework::SetSection("Configurable Speeds");
 		SKSEMenuFramework::AddSectionItem("Settings", MainPanel::Render);
 	}
 
@@ -240,8 +240,10 @@ namespace UI::MCM
 		{
 			ImGui::Checkbox("Enabled", &g_config.general.enabled);
 			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextDisabled("Speed changes apply after your character's movement state updates. "
-			                    "After editing values, briefly sprint, sneak, or change stance to refresh.");
+			ImGui::TextColored(
+				ImVec4(0.90f, 0.75f, 1.00f, 1.00f),
+				"Tip: Speed changes apply after your movement state updates. "
+				"After changing a value, briefly sprint to refresh.");
 			ImGui::PopTextWrapPos();
 		}
 	}
