@@ -8,10 +8,41 @@ namespace MOVEMENT
 {
 	namespace
 	{
+		constexpr auto kNPCDefaultForm = "Skyrim.esm|0x0003580D";
+		constexpr auto kNPC1HMForm = "Skyrim.esm|0x00069CD8";
+		constexpr auto kNPC2HMForm = "Skyrim.esm|0x00069CD9";
+
 		bool IsSprintEntry(std::string_view a_name)
 		{
 			return a_name.find("Sprinting") != std::string_view::npos ||
 			       a_name.find("Sprint") != std::string_view::npos;
+		}
+
+		void RefreshActiveActorMovement()
+		{
+			auto* processLists = RE::ProcessLists::GetSingleton();
+			if (!processLists) {
+				return;
+			}
+
+			static const RE::BSFixedString kWeapDraw("weapDraw");
+			static const RE::BSFixedString kWeapSheathe("weapSheathe");
+			static const RE::BSFixedString kWeaponDraw("weaponDraw");
+			static const RE::BSFixedString kWeaponSheathe("weaponSheathe");
+
+			processLists->ForAllActors([](RE::Actor* a_actor) {
+				if (!a_actor || a_actor->IsDead()) {
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				// Mirror the manual "sheathe/unsheathe" refresh behavior via animation graph events.
+				a_actor->NotifyAnimationGraph(kWeapSheathe);
+				a_actor->NotifyAnimationGraph(kWeaponSheathe);
+				a_actor->NotifyAnimationGraph(kWeapDraw);
+				a_actor->NotifyAnimationGraph(kWeaponDraw);
+
+				return RE::BSContainer::ForEachResult::kContinue;
+			});
 		}
 	}
 
@@ -22,6 +53,7 @@ namespace MOVEMENT
 		CaptureOriginalsOnce();
 		if (a_settings.general.enabled) {
 			ApplyResolved(a_settings);
+			RefreshActiveActorMovement();
 		}
 	}
 
@@ -32,11 +64,13 @@ namespace MOVEMENT
 			RebuildResolvedTargets(a_newSettings);
 			CaptureOriginalsOnce();
 			ApplyResolved(a_newSettings);
+			RefreshActiveActorMovement();
 			return;
 		}
 
 		if (a_oldSettings.general.enabled && a_newSettings.general.restoreOnDisable) {
 			RestoreCurrentCache();
+			RefreshActiveActorMovement();
 		}
 
 		RebuildResolvedTargets(a_newSettings);
@@ -50,18 +84,21 @@ namespace MOVEMENT
 		CaptureOriginalsOnce();
 		if (a_settings.general.enabled) {
 			ApplyResolved(a_settings);
+			RefreshActiveActorMovement();
 		}
 	}
 
 	void MovementPatcher::Restore()
 	{
 		RestoreCurrentCache();
+		RefreshActiveActorMovement();
 	}
 
 	void MovementPatcher::ShutdownRestoreIfNeeded(const SettingsData& a_settings)
 	{
 		if (a_settings.general.restoreOnDisable) {
 			RestoreCurrentCache();
+			RefreshActiveActorMovement();
 		}
 	}
 
@@ -83,12 +120,12 @@ namespace MOVEMENT
 	{
 		auto previous = m_resolved;
 		m_resolved.clear();
-		m_resolved.reserve(a_settings.entries.size());
+		m_resolved.reserve(a_settings.entries.size() + 2);
 
-		for (const auto& entry : a_settings.entries) {
-			auto resolved = ResolveTarget(entry);
+		auto addResolved = [this, &previous](const MovementEntry& a_entry) {
+			auto resolved = ResolveTarget(a_entry);
 			if (!resolved.valid) {
-				continue;
+				return;
 			}
 
 			if (const auto it = previous.find(resolved.formKey); it != previous.end() && it->second.originalsCaptured) {
@@ -101,7 +138,19 @@ namespace MOVEMENT
 			}
 
 			m_resolved[resolved.formKey] = std::move(resolved);
+		};
+
+		for (const auto& entry : a_settings.entries) {
+			addResolved(entry);
 		}
+
+		MovementEntry npc1HM{};
+		npc1HM.form = kNPC1HMForm;
+		addResolved(npc1HM);
+
+		MovementEntry npc2HM{};
+		npc2HM.form = kNPC2HMForm;
+		addResolved(npc2HM);
 	}
 
 	void MovementPatcher::CaptureOriginalsOnce()
@@ -124,6 +173,11 @@ namespace MOVEMENT
 		// Movement::SPEED_DIRECTIONS::kRotations (index 4) controls turning/rotation behavior.
 		// We intentionally do not patch it so camera/turn speed remains untouched.
 		constexpr std::size_t kPatchedDirections = 4;
+		const auto npcDefaultKey = CanonicalTargetKey(kNPCDefaultForm);
+		const auto npc1HMKey = CanonicalTargetKey(kNPC1HMForm);
+		const auto npc2HMKey = CanonicalTargetKey(kNPC2HMForm);
+		float npcDefaultRun[kPatchedDirections]{};
+		bool hasNPCDefaultRun = false;
 
 		for (const auto& setting : a_settings.entries) {
 			if (!setting.enabled) {
@@ -143,6 +197,22 @@ namespace MOVEMENT
 
 			for (std::size_t i = 0; i < kPatchedDirections; ++i) {
 				it->second.form->movementTypeData.defaultData.speeds[i][1] = setting.speeds[i][1];
+				if (key == npcDefaultKey) {
+					npcDefaultRun[i] = setting.speeds[i][1];
+					hasNPCDefaultRun = true;
+				}
+			}
+		}
+
+		if (hasNPCDefaultRun) {
+			for (const auto& targetKey : { npc1HMKey, npc2HMKey }) {
+				const auto target = m_resolved.find(targetKey);
+				if (target == m_resolved.end() || !target->second.form) {
+					continue;
+				}
+				for (std::size_t i = 0; i < kPatchedDirections; ++i) {
+					target->second.form->movementTypeData.defaultData.speeds[i][1] = npcDefaultRun[i];
+				}
 			}
 		}
 	}

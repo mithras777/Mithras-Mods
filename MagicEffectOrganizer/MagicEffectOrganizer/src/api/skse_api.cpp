@@ -3,6 +3,9 @@
 #include "plugin.h"
 #include "version.h"
 #include "event/GameEventManager.h"
+#include "input/InputEventSink.h"
+#include "magic/MagicEffectManager.h"
+#include "ui/UI.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -40,11 +43,15 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kInputLoaded: {
+				MEO_INPUT::EventSink::Register();
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
+				MITHRAS::MAGIC_EFFECT_ORGANIZER::Manager::GetSingleton()->Initialize();
+				MEO_INPUT::EventSink::Register();
 				// Register game events
 				GAME_EVENT::Manager::Register();
+				UI::Register();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;

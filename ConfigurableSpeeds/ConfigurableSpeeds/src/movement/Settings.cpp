@@ -311,26 +311,21 @@ namespace MOVEMENT
 	SettingsData Settings::Defaults()
 	{
 		SettingsData data{};
-		data.version = 7;
+		data.version = 8;
 		data.entries = {
 			MakeEntry("Horse_Default_MT", "Skyrim.esm|0x0001CF24", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 125.110f, 450.000f }, { 108.080f, 108.080f }, { 1.571f, 4.712f }}}),
 			MakeEntry("Horse_Sprint_MT", "Skyrim.esm|0x0004408D", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 600.000f, 600.000f }, { 0.000f, 0.000f }, { 1.571f, 1.571f }}}),
-			MakeEntry("Horse_Swim_MT", "Skyrim.esm|0x000C2EE2", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 210.000f, 210.000f }, { 0.000f, 0.000f }, { 1.571f, 1.571f }}}),
-			MakeEntry("NPC_1HM_MT", "Skyrim.esm|0x00069CD8", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 45.450f, 205.250f }, { 3.142f, 3.142f }}}),
-			MakeEntry("NPC_2HM_MT", "Skyrim.esm|0x00069CD9", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 205.250f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_Attacking2H_MT", "Skyrim.esm|0x000CEDFC", {{{ 87.710f, 134.940f }, { 87.710f, 134.940f }, { 75.780f, 180.310f }, { 75.430f, 104.720f }, { 2.094f, 2.094f }}}),
 			MakeEntry("NPC_Attacking_MT", "Skyrim.esm|0x000A0BC2", {{{ 80.090f, 288.000f }, { 79.750f, 288.000f }, { 80.100f, 288.000f }, { 71.930f, 205.250f }, { 2.094f, 2.094f }}}),
 			MakeEntry("NPC_Blocking_MT", "Skyrim.esm|0x00035B4C", {{{ 81.000f, 81.000f }, { 81.000f, 81.000f }, { 81.000f, 81.000f }, { 71.000f, 71.000f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_BowDrawn_MT", "Skyrim.esm|0x0003580C", {{{ 76.810f, 115.000f }, { 74.890f, 115.000f }, { 120.000f, 135.000f }, { 65.110f, 98.000f }, { 1.571f, 1.571f }}}),
 			MakeEntry("NPC_Bow_MT", "Skyrim.esm|0x00069CDA", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 205.250f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_Default_MT", "Skyrim.esm|0x0003580D", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 205.250f }, { 3.142f, 3.142f }}}),
-			MakeEntry("NPC_Horse_MT", "Skyrim.esm|0x00069F74", {{{ 125.110f, 500.000f }, { 125.110f, 500.000f }, { 125.110f, 500.000f }, { 108.080f, 108.080f }, { 1.571f, 1.571f }}}),
 			MakeEntry("NPC_MagicCasting_MT", "Skyrim.esm|0x00069CDC", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 170.840f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_Magic_MT", "Skyrim.esm|0x00069CDB", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 170.840f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_PowerAttacking_MT", "Skyrim.esm|0x000BFF7F", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 45.450f, 205.250f }, { 3.142f, 6.283f }}}),
 			MakeEntry("NPC_Sneaking_MT", "Skyrim.esm|0x0003580B", {{{ 41.440f, 200.000f }, { 41.440f, 200.000f }, { 47.200f, 222.000f }, { 43.380f, 150.000f }, { 1.571f, 3.142f }}}),
-			MakeEntry("NPC_Sprinting_MT", "Skyrim.esm|0x00034D9C", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 500.000f, 500.000f }, { 270.840f, 270.840f }, { 1.571f, 1.571f }}}),
-			MakeEntry("NPC_Swimming_MT", "Skyrim.esm|0x00036D42", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 205.250f }, { 3.142f, 3.142f }}})
+			MakeEntry("NPC_Sprinting_MT", "Skyrim.esm|0x00034D9C", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 500.000f, 500.000f }, { 270.840f, 270.840f }, { 1.571f, 1.571f }}})
 		};
 		return data;
 	}

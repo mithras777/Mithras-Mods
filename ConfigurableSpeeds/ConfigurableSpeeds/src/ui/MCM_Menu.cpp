@@ -159,7 +159,6 @@ namespace UI::MCM
 					if (IsSprintEntry(entry.name)) {
 						ImGui::SliderFloat("Sprinting", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
 					} else {
-						ImGui::TextUnformatted("Run");
 						for (std::size_t direction = 0; direction < kDirections.size(); ++direction) {
 							std::string label = std::string(kDirections[direction]) + "##Run" + kDirections[direction];
 							ImGui::SliderFloat(label.c_str(), &entry.speeds[direction][1], 0.0f, 2000.0f, "%.1f");

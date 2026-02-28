@@ -23,7 +23,7 @@ namespace MOVEMENT
 
 	struct SettingsData
 	{
-		int version{ 7 };
+		int version{ 8 };
 		GeneralSettings general{};
 		std::vector<MovementEntry> entries{};
 	};
