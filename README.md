@@ -291,5 +291,27 @@ Built DLLs are placed in `.bin/x64-release/` or `.bin/x64-debug/` at the project
 
 Always use **NG (alandtse)** when prompted so the same build works on all Skyrim versions.
 
+---
+
+## 8. DynamicSpawns (Native SKSE) Notes
+
+### Config + Logs
+
+- Main config: `Data/SKSE/Plugins/DynamicSpawns/settings.json`
+- Optional presets: `Data/SKSE/Plugins/DynamicSpawns/presets/*.json`
+- Log file: `Documents/My Games/Skyrim Special Edition/SKSE/DynamicSpawns.log`
+
+If `settings.json` is missing, `DynamicSpawns` generates a default one on startup and logs that it loaded/generated config.
+
+### Safe Managed Despawn Behavior
+
+- Spawned actors are tracked in an in-memory managed registry (no forced persistence).
+- Managed actors are cleaned up when:
+  - they die,
+  - they exceed `despawnDistance`,
+  - their old cell detaches when `despawnOnCellDetach = true`,
+  - or `ds_clear` is run.
+- Cleanup uses disable + delete flags for temporary refs and keeps registry size bounded by `maxManagedRefs` to reduce save bloat risk.
+
 
 
