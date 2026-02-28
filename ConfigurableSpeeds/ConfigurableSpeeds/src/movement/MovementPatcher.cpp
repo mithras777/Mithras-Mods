@@ -25,21 +25,31 @@ namespace MOVEMENT
 				return;
 			}
 
-			static const RE::BSFixedString kWeapDraw("weapDraw");
-			static const RE::BSFixedString kWeapSheathe("weapSheathe");
-			static const RE::BSFixedString kWeaponDraw("weaponDraw");
-			static const RE::BSFixedString kWeaponSheathe("weaponSheathe");
+			static const RE::BSFixedString kSprintStartLower("sprintStart");
+			static const RE::BSFixedString kSprintStopLower("sprintStop");
+			static const RE::BSFixedString kSprintStartUpper("SprintStart");
+			static const RE::BSFixedString kSprintStopUpper("SprintStop");
+			static const RE::BSFixedString kIsSprinting("IsSprinting");
+			static const RE::BSFixedString kSyncSprintState("iSyncSprintState");
+			static const RE::BSFixedString kSpeedSynced("bSpeedSynced");
 
 			processLists->ForAllActors([](RE::Actor* a_actor) {
 				if (!a_actor || a_actor->IsDead()) {
 					return RE::BSContainer::ForEachResult::kContinue;
 				}
 
-				// Mirror the manual "sheathe/unsheathe" refresh behavior via animation graph events.
-				a_actor->NotifyAnimationGraph(kWeapSheathe);
-				a_actor->NotifyAnimationGraph(kWeaponSheathe);
-				a_actor->NotifyAnimationGraph(kWeapDraw);
-				a_actor->NotifyAnimationGraph(kWeaponDraw);
+				// Force a deterministic sprint state pulse so movement state machines refresh immediately.
+				a_actor->SetGraphVariableBool(kSpeedSynced, false);
+				a_actor->SetGraphVariableBool(kIsSprinting, true);
+				a_actor->SetGraphVariableInt(kSyncSprintState, 1);
+				a_actor->NotifyAnimationGraph(kSprintStartLower);
+				a_actor->NotifyAnimationGraph(kSprintStartUpper);
+
+				a_actor->SetGraphVariableBool(kIsSprinting, false);
+				a_actor->SetGraphVariableInt(kSyncSprintState, 0);
+				a_actor->NotifyAnimationGraph(kSprintStopLower);
+				a_actor->NotifyAnimationGraph(kSprintStopUpper);
+				a_actor->SetGraphVariableBool(kSpeedSynced, false);
 
 				return RE::BSContainer::ForEachResult::kContinue;
 			});
@@ -191,6 +201,12 @@ namespace MOVEMENT
 			}
 
 			if (IsSprintEntry(setting.name)) {
+				it->second.form->movementTypeData.defaultData.speeds[2][1] = setting.speeds[2][1];
+				continue;
+			}
+
+			if (setting.group == "Horses") {
+				// Horses are forward-only for run tuning.
 				it->second.form->movementTypeData.defaultData.speeds[2][1] = setting.speeds[2][1];
 				continue;
 			}

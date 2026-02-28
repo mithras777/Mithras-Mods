@@ -6,6 +6,7 @@
 #include <cstring>
 #include <fstream>
 #include <format>
+#include <optional>
 #include <set>
 #include "json/single_include/nlohmann/json.hpp"
 
@@ -16,6 +17,96 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		using json = nlohmann::json;
 
 		constexpr RE::EffectSetting::EffectSettingData::Flag kHideFlag = RE::EffectSetting::EffectSettingData::Flag::kHideInUI;
+
+		std::vector<RE::EffectSetting*> BuildPlayerActiveEffectBases()
+		{
+			std::vector<RE::EffectSetting*> out;
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* target = player ? player->GetMagicTarget() : nullptr;
+			auto* activeList = target ? target->GetActiveEffectList() : nullptr;
+			if (!activeList) {
+				return out;
+			}
+
+			std::set<RE::FormID> seen;
+			for (auto* activeEffect : *activeList) {
+				if (!activeEffect) {
+					continue;
+				}
+
+				auto* base = activeEffect->GetBaseObject();
+				if (!base || base->IsDeleted()) {
+					continue;
+				}
+
+				const auto formID = base->GetFormID();
+				if (formID == 0 || seen.contains(formID)) {
+					continue;
+				}
+
+				seen.insert(formID);
+				out.push_back(base);
+			}
+			return out;
+		}
+
+		bool IsActiveEffectFormID(const std::vector<RE::EffectSetting*>& a_activeBases, RE::FormID a_formID)
+		{
+			for (const auto* base : a_activeBases) {
+				if (base && base->GetFormID() == a_formID) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		std::optional<RE::FormID> ResolveSelectedActiveEffectFormID(RE::MagicItemList::Item* a_selected)
+		{
+			if (!a_selected) {
+				return std::nullopt;
+			}
+
+			const auto activeBases = BuildPlayerActiveEffectBases();
+			if (activeBases.empty()) {
+				return std::nullopt;
+			}
+
+			if (auto* selectedEffect = a_selected->data.baseForm ? a_selected->data.baseForm->As<RE::EffectSetting>() : nullptr) {
+				const auto selectedFormID = selectedEffect->GetFormID();
+				if (selectedFormID != 0 && IsActiveEffectFormID(activeBases, selectedFormID)) {
+					return selectedFormID;
+				}
+			}
+
+			if (const auto* selectedMagicItem = a_selected->data.baseForm ? a_selected->data.baseForm->As<RE::MagicItem>() : nullptr) {
+				for (const auto* itemEffect : selectedMagicItem->effects) {
+					if (!itemEffect || !itemEffect->baseEffect) {
+						continue;
+					}
+					const auto formID = itemEffect->baseEffect->GetFormID();
+					if (formID != 0 && IsActiveEffectFormID(activeBases, formID)) {
+						return formID;
+					}
+				}
+			}
+
+			const char* selectedName = a_selected->data.GetName();
+			if (!selectedName || selectedName[0] == '\0') {
+				return std::nullopt;
+			}
+
+			for (const auto* base : activeBases) {
+				if (!base) {
+					continue;
+				}
+				const char* baseName = base->GetName();
+				if (baseName && _stricmp(baseName, selectedName) == 0) {
+					return base->GetFormID();
+				}
+			}
+
+			return std::nullopt;
+		}
 	}
 
 	void Manager::Initialize()
@@ -209,73 +300,59 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 	{
 		auto* ui = RE::UI::GetSingleton();
 		if (!ui || !ui->IsMenuOpen(RE::MagicMenu::MENU_NAME)) {
+			LOG_INFO("MagicEffectOrganizer: Hide request ignored (MagicMenu not open)");
 			return false;
 		}
 
 		auto magicMenu = ui->GetMenu<RE::MagicMenu>();
 		if (!magicMenu) {
+			LOG_INFO("MagicEffectOrganizer: Hide request failed (MagicMenu handle unavailable)");
 			return false;
 		}
 
 		auto& runtime = magicMenu->GetRuntimeData();
 		if (!runtime.itemList) {
+			LOG_INFO("MagicEffectOrganizer: Hide request failed (MagicMenu itemList unavailable)");
 			return false;
+		}
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			runtime.itemList->Update(player);
+		} else {
+			runtime.itemList->Update();
 		}
 
 		auto* selected = runtime.itemList->GetSelectedItem();
 		if (!selected) {
+			LOG_INFO("MagicEffectOrganizer: Hide request failed (no selected item in MagicMenu list)");
 			return false;
 		}
 
-		RE::EffectSetting* effect = nullptr;
-		if (selected->data.baseForm) {
-			effect = selected->data.baseForm->As<RE::EffectSetting>();
-			if (!effect) {
-				if (const auto* magicItem = selected->data.baseForm->As<RE::MagicItem>(); magicItem && !magicItem->effects.empty()) {
-					for (const auto* itemEffect : magicItem->effects) {
-						if (itemEffect && itemEffect->baseEffect) {
-							effect = itemEffect->baseEffect;
-							break;
-						}
-					}
-				}
-			}
-		}
-
-		// Active Effects rows can have no baseForm in menu data.
-		// Fallback to matching selected label against the player's active effects.
-		if (!effect) {
+		const auto selectedFormID = ResolveSelectedActiveEffectFormID(selected);
+		if (!selectedFormID.has_value()) {
 			const char* selectedName = selected->data.GetName();
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			auto* target = player ? player->GetMagicTarget() : nullptr;
-			auto* activeList = target ? target->GetActiveEffectList() : nullptr;
-			if (selectedName && selectedName[0] != '\0' && activeList) {
-				for (auto* activeEffect : *activeList) {
-					if (!activeEffect) {
-						continue;
-					}
-
-					auto* base = activeEffect->GetBaseObject();
-					if (!base) {
-						continue;
-					}
-
-					const char* baseName = base->GetName();
-					if (baseName && _stricmp(baseName, selectedName) == 0) {
-						effect = base;
-						break;
-					}
-				}
-			}
-		}
-		if (!effect) {
+			const auto filter = selected->data.GetFilterFlag();
+			const auto* baseForm = selected->data.baseForm;
+			LOG_INFO(
+				"MagicEffectOrganizer: Hotkey resolve miss (name='{}', filter={}, baseForm={:08X}, type={})",
+				selectedName ? selectedName : "",
+				filter,
+				baseForm ? baseForm->GetFormID() : 0,
+				baseForm ? static_cast<std::uint32_t>(baseForm->GetFormType()) : 0U);
 			return false;
 		}
 
-		if (HideEffect(effect->GetFormID())) {
+		auto* effect = RE::TESForm::LookupByID<RE::EffectSetting>(*selectedFormID);
+		if (!effect) {
+			LOG_INFO("MagicEffectOrganizer: Hide request failed (resolved form {:08X} was not an EffectSetting)", *selectedFormID);
+			return false;
+		}
+
+		if (HideEffect(*selectedFormID)) {
 			LOG_INFO("MagicEffectOrganizer: Hidden magic effect {}", BuildEffectDisplayName(effect));
 			return true;
 		}
+		LOG_INFO("MagicEffectOrganizer: Hide request ignored (effect {:08X} already hidden)", *selectedFormID);
 		return false;
 	}
 

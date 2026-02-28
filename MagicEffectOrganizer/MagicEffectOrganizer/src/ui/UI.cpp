@@ -54,7 +54,9 @@ namespace UI
 			}
 
 			ImGui::Separator();
+			ImGui::PushTextWrapPos(0.0f);
 			ImGui::TextDisabled("Tip: Open Magic Menu, highlight an effect, then press your hotkey to hide it.");
+			ImGui::PopTextWrapPos();
 
 			if (before.enabled != cfg.enabled) {
 				a_manager->SetEnabled(cfg.enabled);

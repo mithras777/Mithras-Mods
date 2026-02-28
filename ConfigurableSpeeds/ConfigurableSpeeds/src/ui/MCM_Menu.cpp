@@ -64,6 +64,11 @@ namespace UI::MCM
 			       a_name.find("Sprint") != std::string_view::npos;
 		}
 
+		void EnforceLateralToForward(MOVEMENT::MovementEntry& a_entry)
+		{
+			a_entry.speeds[2][1] = std::max({ a_entry.speeds[2][1], a_entry.speeds[0][1], a_entry.speeds[1][1] });
+		}
+
 		std::string CanonicalForm(std::string_view a_form)
 		{
 			std::string out(a_form);
@@ -158,10 +163,18 @@ namespace UI::MCM
 					}
 					if (IsSprintEntry(entry.name)) {
 						ImGui::SliderFloat("Sprinting", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
+					} else if (entry.group == "Horses") {
+						ImGui::SliderFloat("Forward", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
 					} else {
+						bool lateralChanged = false;
 						for (std::size_t direction = 0; direction < kDirections.size(); ++direction) {
 							std::string label = std::string(kDirections[direction]) + "##Run" + kDirections[direction];
-							ImGui::SliderFloat(label.c_str(), &entry.speeds[direction][1], 0.0f, 2000.0f, "%.1f");
+							if (ImGui::SliderFloat(label.c_str(), &entry.speeds[direction][1], 0.0f, 2000.0f, "%.1f")) {
+								lateralChanged = lateralChanged || direction == 0 || direction == 1;
+							}
+						}
+						if (lateralChanged) {
+							EnforceLateralToForward(entry);
 						}
 					}
 					ImGui::TreePop();
@@ -226,6 +239,10 @@ namespace UI::MCM
 		void Render()
 		{
 			ImGui::Checkbox("Enabled", &g_config.general.enabled);
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextDisabled("Speed changes apply after your character's movement state updates. "
+			                    "After editing values, briefly sprint, sneak, or change stance to refresh.");
+			ImGui::PopTextWrapPos();
 		}
 	}
 
