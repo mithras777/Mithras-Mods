@@ -2,9 +2,19 @@
 
 #include <algorithm>
 #include <cctype>
+#include <string_view>
 
 namespace MOVEMENT
 {
+	namespace
+	{
+		bool IsSprintEntry(std::string_view a_name)
+		{
+			return a_name.find("Sprinting") != std::string_view::npos ||
+			       a_name.find("Sprint") != std::string_view::npos;
+		}
+	}
+
 	void MovementPatcher::StartupApply(const SettingsData& a_settings)
 	{
 		RestoreCurrentCache();
@@ -111,6 +121,10 @@ namespace MOVEMENT
 
 	void MovementPatcher::ApplyResolved(const SettingsData& a_settings)
 	{
+		// Movement::SPEED_DIRECTIONS::kRotations (index 4) controls turning/rotation behavior.
+		// We intentionally do not patch it so camera/turn speed remains untouched.
+		constexpr std::size_t kPatchedDirections = 4;
+
 		for (const auto& setting : a_settings.entries) {
 			if (!setting.enabled) {
 				continue;
@@ -122,10 +136,13 @@ namespace MOVEMENT
 				continue;
 			}
 
-			for (std::size_t i = 0; i < 5; ++i) {
-				for (std::size_t j = 0; j < 2; ++j) {
-					it->second.form->movementTypeData.defaultData.speeds[i][j] = setting.speeds[i][j];
-				}
+			if (IsSprintEntry(setting.name)) {
+				it->second.form->movementTypeData.defaultData.speeds[2][1] = setting.speeds[2][1];
+				continue;
+			}
+
+			for (std::size_t i = 0; i < kPatchedDirections; ++i) {
+				it->second.form->movementTypeData.defaultData.speeds[i][1] = setting.speeds[i][1];
 			}
 		}
 	}

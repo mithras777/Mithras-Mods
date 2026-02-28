@@ -5,7 +5,10 @@
 #include "util/LogUtil.h"
 
 #include <array>
+#include <algorithm>
+#include <cctype>
 #include <string>
+#include <string_view>
 
 namespace UI::MCM
 {
@@ -13,15 +16,75 @@ namespace UI::MCM
 	{
 		MOVEMENT::SettingsData g_config{};
 		MOVEMENT::SettingsData g_before{};
+		MOVEMENT::SettingsData g_defaults{};
 		bool g_dirty{ false };
 
-		constexpr std::array<const char*, 5> kRows{
-			"Walk",
-			"Run",
-			"Sprint",
-			"Sneak Walk",
-			"Sneak Run"
+		constexpr std::array<const char*, 4> kDirections{
+			"Left",
+			"Right",
+			"Forward",
+			"Back"
 		};
+
+		std::string PrettyName(std::string_view a_name)
+		{
+			auto replaceAll = [](std::string& a_text, std::string_view a_from, std::string_view a_to) {
+				std::size_t pos = 0;
+				while ((pos = a_text.find(a_from, pos)) != std::string::npos) {
+					a_text.replace(pos, a_from.size(), a_to);
+					pos += a_to.size();
+				}
+			};
+
+			std::string out(a_name);
+			if (out.rfind("NPC_", 0) == 0) {
+				out.erase(0, 4);
+			} else if (out.rfind("Horse_", 0) == 0) {
+				out.erase(0, 6);
+			}
+
+			if (out.size() > 3 && out.compare(out.size() - 3, 3, "_MT") == 0) {
+				out.erase(out.size() - 3);
+			}
+
+			replaceAll(out, "1HM", "One Handed");
+			replaceAll(out, "2HM", "Two Handed");
+			replaceAll(out, "BowDrawn", "Bow Drawn");
+			replaceAll(out, "PowerAttacking", "Power Attacking");
+			replaceAll(out, "MagicCasting", "Magic Casting");
+			replaceAll(out, "ShieldCharge", "Shield Charge");
+
+			std::replace(out.begin(), out.end(), '_', ' ');
+			return out;
+		}
+
+		bool IsSprintEntry(std::string_view a_name)
+		{
+			return a_name.find("Sprinting") != std::string_view::npos ||
+			       a_name.find("Sprint") != std::string_view::npos;
+		}
+
+		std::string CanonicalForm(std::string_view a_form)
+		{
+			std::string out(a_form);
+			std::transform(
+				out.begin(),
+				out.end(),
+				out.begin(),
+				[](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+			return out;
+		}
+
+		const MOVEMENT::MovementEntry* FindDefaultEntry(std::string_view a_form)
+		{
+			const auto key = CanonicalForm(a_form);
+			for (const auto& entry : g_defaults.entries) {
+				if (CanonicalForm(entry.form) == key) {
+					return &entry;
+				}
+			}
+			return nullptr;
+		}
 
 		bool ConfigChanged(const MOVEMENT::SettingsData& a_lhs, const MOVEMENT::SettingsData& a_rhs)
 		{
@@ -41,8 +104,8 @@ namespace UI::MCM
 				if (l.name != r.name || l.form != r.form || l.group != r.group || l.enabled != r.enabled) {
 					return true;
 				}
-				for (std::size_t row = 0; row < 5; ++row) {
-					if (l.speeds[row][0] != r.speeds[row][0] || l.speeds[row][1] != r.speeds[row][1]) {
+				for (std::size_t direction = 0; direction < 5; ++direction) {
+					if (l.speeds[direction][0] != r.speeds[direction][0] || l.speeds[direction][1] != r.speeds[direction][1]) {
 						return true;
 					}
 				}
@@ -81,16 +144,26 @@ namespace UI::MCM
 				}
 
 				ImGui::PushID(static_cast<int>(i));
-				ImGui::Separator();
-				ImGui::Checkbox("Enabled", &entry.enabled);
-				ImGui::SameLine();
-				ImGui::TextUnformatted(entry.name.c_str());
-				ImGui::TextDisabled("%s", entry.form.c_str());
-
-				if (ImGui::TreeNode("Speeds")) {
-					for (std::size_t row = 0; row < kRows.size(); ++row) {
-						ImGui::SliderFloat((std::string(kRows[row]) + " Left").c_str(), &entry.speeds[row][0], 0.0f, 2000.0f, "%.1f");
-						ImGui::SliderFloat((std::string(kRows[row]) + " Right").c_str(), &entry.speeds[row][1], 0.0f, 2000.0f, "%.1f");
+				const auto displayName = PrettyName(entry.name);
+				if (ImGui::TreeNode(displayName.c_str())) {
+					ImGui::Checkbox("Enabled", &entry.enabled);
+					ImGui::SameLine();
+					if (ImGui::Button("Reset")) {
+						if (const auto* defaults = FindDefaultEntry(entry.form)) {
+							for (std::size_t direction = 0; direction < 5; ++direction) {
+								entry.speeds[direction][0] = defaults->speeds[direction][0];
+								entry.speeds[direction][1] = defaults->speeds[direction][1];
+							}
+						}
+					}
+					if (IsSprintEntry(entry.name)) {
+						ImGui::SliderFloat("Sprinting", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
+					} else {
+						ImGui::TextUnformatted("Run");
+						for (std::size_t direction = 0; direction < kDirections.size(); ++direction) {
+							std::string label = std::string(kDirections[direction]) + "##Run" + kDirections[direction];
+							ImGui::SliderFloat(label.c_str(), &entry.speeds[direction][1], 0.0f, 2000.0f, "%.1f");
+						}
 					}
 					ImGui::TreePop();
 				}
@@ -117,6 +190,7 @@ namespace UI::MCM
 		{
 			auto* settings = MOVEMENT::Settings::GetSingleton();
 			g_config = settings->Get();
+			g_defaults = settings->GetDefaults();
 			g_before = g_config;
 			g_dirty = false;
 
@@ -125,16 +199,16 @@ namespace UI::MCM
 					GeneralTab::Render();
 					ImGui::EndTabItem();
 				}
-				if (ImGui::BeginTabItem("Combat")) {
-					CombatTab::Render();
-					ImGui::EndTabItem();
-				}
 				if (ImGui::BeginTabItem("Default")) {
 					DefaultTab::Render();
 					ImGui::EndTabItem();
 				}
-				if (ImGui::BeginTabItem("Misc")) {
-					MiscTab::Render();
+				if (ImGui::BeginTabItem("Combat")) {
+					CombatTab::Render();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem("Horses")) {
+					HorsesTab::Render();
 					ImGui::EndTabItem();
 				}
 				ImGui::EndTabBar();
@@ -153,22 +227,6 @@ namespace UI::MCM
 		void Render()
 		{
 			ImGui::Checkbox("Enabled", &g_config.general.enabled);
-			ImGui::Checkbox("Restore on disable", &g_config.general.restoreOnDisable);
-			ImGui::Spacing();
-
-			if (ImGui::Button("Apply Now")) {
-				MOVEMENT::MovementPatcher::GetSingleton()->ApplyNow(g_config);
-			}
-
-			ImGui::SameLine();
-			if (ImGui::Button("Restore Originals")) {
-				auto* patcher = MOVEMENT::MovementPatcher::GetSingleton();
-				patcher->Restore();
-				g_config.general.enabled = false;
-				QueueApply();
-			}
-
-			ImGui::TextDisabled("Each enabled entry writes its Left/Right speeds directly to the mapped movement type.");
 		}
 	}
 
@@ -188,11 +246,11 @@ namespace UI::MCM
 		}
 	}
 
-	namespace MiscTab
+	namespace HorsesTab
 	{
 		void Render()
 		{
-			RenderGroup("Misc");
+			RenderGroup("Horses");
 		}
 	}
 }

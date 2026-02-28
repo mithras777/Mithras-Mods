@@ -40,7 +40,7 @@ namespace UI::MCM
 		void Render();
 	}
 
-	namespace MiscTab
+	namespace HorsesTab
 	{
 		void Render();
 	}

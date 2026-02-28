@@ -16,14 +16,14 @@ namespace MOVEMENT
 	{
 		std::string name{};
 		std::string form{};  // "Plugin|0xID"
-		std::string group{}; // Combat / Default / Misc
+		std::string group{}; // Default / Combat / Horses
 		bool enabled{ true };
 		float speeds[5][2]{};
 	};
 
 	struct SettingsData
 	{
-		int version{ 2 };
+		int version{ 7 };
 		GeneralSettings general{};
 		std::vector<MovementEntry> entries{};
 	};
@@ -33,6 +33,7 @@ namespace MOVEMENT
 	public:
 		void Initialize();
 		SettingsData Get() const;
+		SettingsData GetDefaults() const;
 		void Set(const SettingsData& a_settings, bool a_writeJson);
 		void Save();
 		void ResetToDefaults(bool a_writeJson);
