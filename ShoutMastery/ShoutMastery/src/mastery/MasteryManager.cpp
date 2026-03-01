@@ -16,7 +16,6 @@ namespace MITHRAS::SHOUT_MASTERY
 		using json = nlohmann::json;
 
 		constexpr std::uint32_t kSerializationVersion = 1;
-		constexpr std::uint32_t kConfigRecord = 'SHCF';
 		constexpr std::uint32_t kMasteryRecord = 'SHMR';
 
 		void ClampConfig(MasteryConfig& a_config)
@@ -222,29 +221,6 @@ namespace MITHRAS::SHOUT_MASTERY
 		}
 
 		std::scoped_lock lock(m_lock);
-		if (a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
-			a_intfc->WriteRecordData(m_config.enabled);
-			a_intfc->WriteRecordData(m_config.gainMultiplier);
-			a_intfc->WriteRecordData(m_config.gainFromUses);
-
-			std::uint32_t thresholdCount = static_cast<std::uint32_t>(m_config.thresholds.size());
-			a_intfc->WriteRecordData(thresholdCount);
-			for (const auto threshold : m_config.thresholds) {
-				a_intfc->WriteRecordData(threshold);
-			}
-
-			a_intfc->WriteRecordData(m_config.bonuses.shoutRecoveryPerLevel);
-			a_intfc->WriteRecordData(m_config.bonuses.shoutRecoveryCap);
-			a_intfc->WriteRecordData(m_config.bonuses.shoutPowerPerLevel);
-			a_intfc->WriteRecordData(m_config.bonuses.shoutPowerCap);
-			a_intfc->WriteRecordData(m_config.bonuses.voiceRatePerLevel);
-			a_intfc->WriteRecordData(m_config.bonuses.voiceRateCap);
-			a_intfc->WriteRecordData(m_config.bonuses.voicePointsPerLevel);
-			a_intfc->WriteRecordData(m_config.bonuses.voicePointsCap);
-			a_intfc->WriteRecordData(m_config.bonuses.staminaRatePerLevel);
-			a_intfc->WriteRecordData(m_config.bonuses.staminaRateCap);
-		}
-
 		if (!a_intfc->OpenRecord(kMasteryRecord, kSerializationVersion)) {
 			return;
 		}
@@ -269,7 +245,6 @@ namespace MITHRAS::SHOUT_MASTERY
 			return;
 		}
 
-		MasteryConfig loadedCfg = DefaultConfig();
 		std::unordered_map<ShoutKey, MasteryStats, ShoutKeyHash> loadedMastery{};
 
 		std::uint32_t type = 0;
@@ -280,32 +255,7 @@ namespace MITHRAS::SHOUT_MASTERY
 				continue;
 			}
 
-			if (type == kConfigRecord) {
-				a_intfc->ReadRecordData(loadedCfg.enabled);
-				a_intfc->ReadRecordData(loadedCfg.gainMultiplier);
-				a_intfc->ReadRecordData(loadedCfg.gainFromUses);
-
-				std::uint32_t thresholdCount = 0;
-				a_intfc->ReadRecordData(thresholdCount);
-				loadedCfg.thresholds.clear();
-				loadedCfg.thresholds.reserve(thresholdCount);
-				for (std::uint32_t i = 0; i < thresholdCount; ++i) {
-					std::uint32_t threshold = 0;
-					a_intfc->ReadRecordData(threshold);
-					loadedCfg.thresholds.push_back(threshold);
-				}
-
-				a_intfc->ReadRecordData(loadedCfg.bonuses.shoutRecoveryPerLevel);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.shoutRecoveryCap);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.shoutPowerPerLevel);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.shoutPowerCap);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.voiceRatePerLevel);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.voiceRateCap);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.voicePointsPerLevel);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.voicePointsCap);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.staminaRatePerLevel);
-				a_intfc->ReadRecordData(loadedCfg.bonuses.staminaRateCap);
-			} else if (type == kMasteryRecord) {
+			if (type == kMasteryRecord) {
 				std::uint32_t count = 0;
 				a_intfc->ReadRecordData(count);
 				for (std::uint32_t i = 0; i < count; ++i) {
@@ -327,9 +277,8 @@ namespace MITHRAS::SHOUT_MASTERY
 			}
 		}
 
-		ClampConfig(loadedCfg);
+		LoadConfigFromJson();
 		std::scoped_lock lock(m_lock);
-		m_config = loadedCfg;
 		m_mastery = std::move(loadedMastery);
 		RefreshCurrentShoutLocked();
 		ReapplyBonusesLocked();

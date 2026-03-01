@@ -16,7 +16,6 @@ namespace MITHRAS::MASTERY
 		using json = nlohmann::json;
 
 		constexpr std::uint32_t kSerializationVersion = 2;
-		constexpr std::uint32_t kConfigRecord = 'GFCM';
 		constexpr std::uint32_t kMasteryRecord = 'TSMM';
 
 		void SetDefaultTypeTuning(MasteryConfig::WeaponTypeBonusConfig& a_cfg, RE::WEAPON_TYPE a_type)
@@ -297,46 +296,6 @@ namespace MITHRAS::MASTERY
 
 		std::scoped_lock lock(m_lock);
 
-		if (a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
-			a_intfc->WriteRecordData(m_config.enabled);
-			a_intfc->WriteRecordData(m_config.gainMultiplier);
-			std::uint32_t thresholdCount = static_cast<std::uint32_t>(m_config.thresholds.size());
-			a_intfc->WriteRecordData(thresholdCount);
-			for (const auto threshold : m_config.thresholds) {
-				a_intfc->WriteRecordData(threshold);
-			}
-			a_intfc->WriteRecordData(m_config.gainFromKills);
-			a_intfc->WriteRecordData(m_config.gainFromHits);
-			a_intfc->WriteRecordData(m_config.gainFromPowerHits);
-			a_intfc->WriteRecordData(m_config.gainFromBlocks);
-			a_intfc->WriteRecordData(m_config.timeBasedLeveling);
-
-			a_intfc->WriteRecordData(m_config.generalBonuses.damagePerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.attackSpeedPerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.critChancePerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.powerAttackStaminaReductionPerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.blockStaminaReductionPerLevel);
-			a_intfc->WriteRecordData(m_config.generalBonuses.damageCap);
-			a_intfc->WriteRecordData(m_config.generalBonuses.attackSpeedCap);
-			a_intfc->WriteRecordData(m_config.generalBonuses.critChanceCap);
-			a_intfc->WriteRecordData(m_config.generalBonuses.powerAttackStaminaFloor);
-			a_intfc->WriteRecordData(m_config.generalBonuses.blockStaminaFloor);
-
-			for (const auto& typeCfg : m_config.weaponTypeBonuses) {
-				a_intfc->WriteRecordData(typeCfg.enabled);
-				a_intfc->WriteRecordData(typeCfg.tuning.damagePerLevel);
-				a_intfc->WriteRecordData(typeCfg.tuning.attackSpeedPerLevel);
-				a_intfc->WriteRecordData(typeCfg.tuning.critChancePerLevel);
-				a_intfc->WriteRecordData(typeCfg.tuning.powerAttackStaminaReductionPerLevel);
-				a_intfc->WriteRecordData(typeCfg.tuning.blockStaminaReductionPerLevel);
-				a_intfc->WriteRecordData(typeCfg.tuning.damageCap);
-				a_intfc->WriteRecordData(typeCfg.tuning.attackSpeedCap);
-				a_intfc->WriteRecordData(typeCfg.tuning.critChanceCap);
-				a_intfc->WriteRecordData(typeCfg.tuning.powerAttackStaminaFloor);
-				a_intfc->WriteRecordData(typeCfg.tuning.blockStaminaFloor);
-			}
-		}
-
 		if (!a_intfc->OpenRecord(kMasteryRecord, kSerializationVersion)) {
 			return;
 		}
@@ -369,7 +328,6 @@ namespace MITHRAS::MASTERY
 			return;
 		}
 
-		MasteryConfig loadedConfig = DefaultConfig();
 		std::unordered_map<ItemKey, MasteryStats, ItemKeyHash> loadedMap;
 
 		std::uint32_t type = 0;
@@ -381,49 +339,7 @@ namespace MITHRAS::MASTERY
 				continue;
 			}
 
-			if (type == kConfigRecord) {
-				a_intfc->ReadRecordData(loadedConfig.enabled);
-				a_intfc->ReadRecordData(loadedConfig.gainMultiplier);
-				std::uint32_t thresholdCount = 0;
-				a_intfc->ReadRecordData(thresholdCount);
-				loadedConfig.thresholds.clear();
-				loadedConfig.thresholds.reserve(thresholdCount);
-				for (std::uint32_t i = 0; i < thresholdCount; ++i) {
-					std::uint32_t threshold = 0;
-					a_intfc->ReadRecordData(threshold);
-					loadedConfig.thresholds.push_back(threshold);
-				}
-				a_intfc->ReadRecordData(loadedConfig.gainFromKills);
-				a_intfc->ReadRecordData(loadedConfig.gainFromHits);
-				a_intfc->ReadRecordData(loadedConfig.gainFromPowerHits);
-				a_intfc->ReadRecordData(loadedConfig.gainFromBlocks);
-				a_intfc->ReadRecordData(loadedConfig.timeBasedLeveling);
-
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.damagePerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.attackSpeedPerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.critChancePerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.powerAttackStaminaReductionPerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.blockStaminaReductionPerLevel);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.damageCap);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.attackSpeedCap);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.critChanceCap);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.powerAttackStaminaFloor);
-				a_intfc->ReadRecordData(loadedConfig.generalBonuses.blockStaminaFloor);
-
-				for (auto& typeCfg : loadedConfig.weaponTypeBonuses) {
-					a_intfc->ReadRecordData(typeCfg.enabled);
-					a_intfc->ReadRecordData(typeCfg.tuning.damagePerLevel);
-					a_intfc->ReadRecordData(typeCfg.tuning.attackSpeedPerLevel);
-					a_intfc->ReadRecordData(typeCfg.tuning.critChancePerLevel);
-					a_intfc->ReadRecordData(typeCfg.tuning.powerAttackStaminaReductionPerLevel);
-					a_intfc->ReadRecordData(typeCfg.tuning.blockStaminaReductionPerLevel);
-					a_intfc->ReadRecordData(typeCfg.tuning.damageCap);
-					a_intfc->ReadRecordData(typeCfg.tuning.attackSpeedCap);
-					a_intfc->ReadRecordData(typeCfg.tuning.critChanceCap);
-					a_intfc->ReadRecordData(typeCfg.tuning.powerAttackStaminaFloor);
-					a_intfc->ReadRecordData(typeCfg.tuning.blockStaminaFloor);
-				}
-			} else if (type == kMasteryRecord) {
+			if (type == kMasteryRecord) {
 				std::uint32_t count = 0;
 				a_intfc->ReadRecordData(count);
 				for (std::uint32_t i = 0; i < count; ++i) {
@@ -453,9 +369,8 @@ namespace MITHRAS::MASTERY
 			}
 		}
 
-		ClampConfig(loadedConfig);
+		LoadConfigFromJson();
 		std::scoped_lock lock(m_lock);
-		m_config = loadedConfig;
 		m_mastery = std::move(loadedMap);
 		RefreshEquippedFromPlayer();
 		ReapplyBonuses();

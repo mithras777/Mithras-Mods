@@ -16,7 +16,6 @@ namespace MITHRAS::SPELL_MASTERY
 		using json = nlohmann::json;
 
 		constexpr std::uint32_t kSerializationVersion = 1;
-		constexpr std::uint32_t kConfigRecord = 'SMCF';
 		constexpr std::uint32_t kMasteryRecord = 'SMMR';
 		constexpr auto kKillCreditWindow = std::chrono::seconds(10);
 
@@ -389,44 +388,6 @@ namespace MITHRAS::SPELL_MASTERY
 
 		std::scoped_lock lock(m_lock);
 
-		if (a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
-			a_intfc->WriteRecordData(m_config.enabled);
-			a_intfc->WriteRecordData(m_config.gainMultiplier);
-
-			std::uint32_t thresholdCount = static_cast<std::uint32_t>(m_config.thresholds.size());
-			a_intfc->WriteRecordData(thresholdCount);
-			for (const auto threshold : m_config.thresholds) {
-				a_intfc->WriteRecordData(threshold);
-			}
-
-			auto writeBonus = [&](const MasteryConfig::BonusTuning& a_bonus) {
-				a_intfc->WriteRecordData(a_bonus.skillBonusPerLevel);
-				a_intfc->WriteRecordData(a_bonus.skillBonusCap);
-				a_intfc->WriteRecordData(a_bonus.skillAdvancePerLevel);
-				a_intfc->WriteRecordData(a_bonus.skillAdvanceCap);
-				a_intfc->WriteRecordData(a_bonus.powerBonusPerLevel);
-				a_intfc->WriteRecordData(a_bonus.powerBonusCap);
-				a_intfc->WriteRecordData(a_bonus.costReductionPerLevel);
-				a_intfc->WriteRecordData(a_bonus.costReductionCap);
-				a_intfc->WriteRecordData(a_bonus.magickaRatePerLevel);
-				a_intfc->WriteRecordData(a_bonus.magickaRateCap);
-				a_intfc->WriteRecordData(a_bonus.magickaFlatPerLevel);
-				a_intfc->WriteRecordData(a_bonus.magickaFlatCap);
-			};
-
-			writeBonus(m_config.generalBonuses);
-			for (const auto& schoolCfg : m_config.schools) {
-				a_intfc->WriteRecordData(schoolCfg.progression.gainFromKills);
-				a_intfc->WriteRecordData(schoolCfg.progression.gainFromUses);
-				a_intfc->WriteRecordData(schoolCfg.progression.gainFromSummons);
-				a_intfc->WriteRecordData(schoolCfg.progression.gainFromHits);
-				a_intfc->WriteRecordData(schoolCfg.progression.gainFromEquipTime);
-				a_intfc->WriteRecordData(schoolCfg.progression.equipSecondsPerPoint);
-				a_intfc->WriteRecordData(schoolCfg.useBonusOverride);
-				writeBonus(schoolCfg.bonus);
-			}
-		}
-
 		if (!a_intfc->OpenRecord(kMasteryRecord, kSerializationVersion)) {
 			return;
 		}
@@ -457,7 +418,6 @@ namespace MITHRAS::SPELL_MASTERY
 			return;
 		}
 
-		MasteryConfig loadedCfg = DefaultConfig();
 		std::unordered_map<SpellKey, MasteryStats, SpellKeyHash> loadedMastery{};
 
 		std::uint32_t type = 0;
@@ -468,47 +428,7 @@ namespace MITHRAS::SPELL_MASTERY
 				continue;
 			}
 
-			if (type == kConfigRecord) {
-				a_intfc->ReadRecordData(loadedCfg.enabled);
-				a_intfc->ReadRecordData(loadedCfg.gainMultiplier);
-
-				std::uint32_t thresholdCount = 0;
-				a_intfc->ReadRecordData(thresholdCount);
-				loadedCfg.thresholds.clear();
-				loadedCfg.thresholds.reserve(thresholdCount);
-				for (std::uint32_t i = 0; i < thresholdCount; ++i) {
-					std::uint32_t value = 0;
-					a_intfc->ReadRecordData(value);
-					loadedCfg.thresholds.push_back(value);
-				}
-
-				auto readBonus = [&](MasteryConfig::BonusTuning& a_bonus) {
-					a_intfc->ReadRecordData(a_bonus.skillBonusPerLevel);
-					a_intfc->ReadRecordData(a_bonus.skillBonusCap);
-					a_intfc->ReadRecordData(a_bonus.skillAdvancePerLevel);
-					a_intfc->ReadRecordData(a_bonus.skillAdvanceCap);
-					a_intfc->ReadRecordData(a_bonus.powerBonusPerLevel);
-					a_intfc->ReadRecordData(a_bonus.powerBonusCap);
-					a_intfc->ReadRecordData(a_bonus.costReductionPerLevel);
-					a_intfc->ReadRecordData(a_bonus.costReductionCap);
-					a_intfc->ReadRecordData(a_bonus.magickaRatePerLevel);
-					a_intfc->ReadRecordData(a_bonus.magickaRateCap);
-					a_intfc->ReadRecordData(a_bonus.magickaFlatPerLevel);
-					a_intfc->ReadRecordData(a_bonus.magickaFlatCap);
-				};
-
-				readBonus(loadedCfg.generalBonuses);
-				for (auto& schoolCfg : loadedCfg.schools) {
-					a_intfc->ReadRecordData(schoolCfg.progression.gainFromKills);
-					a_intfc->ReadRecordData(schoolCfg.progression.gainFromUses);
-					a_intfc->ReadRecordData(schoolCfg.progression.gainFromSummons);
-					a_intfc->ReadRecordData(schoolCfg.progression.gainFromHits);
-					a_intfc->ReadRecordData(schoolCfg.progression.gainFromEquipTime);
-					a_intfc->ReadRecordData(schoolCfg.progression.equipSecondsPerPoint);
-					a_intfc->ReadRecordData(schoolCfg.useBonusOverride);
-					readBonus(schoolCfg.bonus);
-				}
-			} else if (type == kMasteryRecord) {
+			if (type == kMasteryRecord) {
 				std::uint32_t count = 0;
 				a_intfc->ReadRecordData(count);
 				for (std::uint32_t i = 0; i < count; ++i) {
@@ -537,9 +457,8 @@ namespace MITHRAS::SPELL_MASTERY
 			}
 		}
 
-		ClampConfig(loadedCfg);
+		LoadConfigFromJson();
 		std::scoped_lock lock(m_lock);
-		m_config = loadedCfg;
 		m_mastery = std::move(loadedMastery);
 		m_lastCast = {};
 		RefreshEquippedFromPlayerLocked();

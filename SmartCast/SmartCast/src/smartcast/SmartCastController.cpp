@@ -22,7 +22,7 @@ namespace SMART_CAST
 	{
 		constexpr std::uint32_t kConfigVersion = 1;
 		constexpr std::uint32_t kSerializationVersion = 1;
-		constexpr std::uint32_t kConfigRecord = 'SCCF';
+		constexpr std::uint32_t kChainRecord = 'SCCH';
 		void Notify(const std::string& a_text)
 		{
 			RE::SendHUDMessage::ShowHUDMessage(a_text.c_str());
@@ -99,7 +99,9 @@ namespace SMART_CAST
 		m_config = a_config;
 		ClampConfig(m_config);
 		EnsureChainCount(m_config);
-		(void)a_save;
+		if (a_save) {
+			SaveConfig();
+		}
 	}
 
 	void Controller::Serialize(SKSE::SerializationInterface* a_intfc) const
@@ -107,7 +109,7 @@ namespace SMART_CAST
 		if (!a_intfc) {
 			return;
 		}
-		if (!a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
+		if (!a_intfc->OpenRecord(kChainRecord, kSerializationVersion)) {
 			return;
 		}
 
@@ -118,47 +120,6 @@ namespace SMART_CAST
 				a_intfc->WriteRecordData(ch);
 			}
 		};
-
-		a_intfc->WriteRecordData(m_config.version);
-		a_intfc->WriteRecordData(m_config.global.enabled);
-		a_intfc->WriteRecordData(m_config.global.firstPersonOnly);
-		a_intfc->WriteRecordData(m_config.global.preventInMenus);
-		a_intfc->WriteRecordData(m_config.global.preventWhileStaggered);
-		a_intfc->WriteRecordData(m_config.global.preventWhileRagdoll);
-		a_intfc->WriteRecordData(m_config.global.minTimeAfterLoadSeconds);
-		a_intfc->WriteRecordData(m_config.global.maxChains);
-		a_intfc->WriteRecordData(m_config.global.maxStepsPerChain);
-
-		writeString(m_config.global.record.toggleKey);
-		writeString(m_config.global.record.cancelKey);
-		a_intfc->WriteRecordData(m_config.global.record.maxIdleSec);
-		a_intfc->WriteRecordData(m_config.global.record.recordOnlySuccessfulCasts);
-		a_intfc->WriteRecordData(m_config.global.record.ignorePowers);
-		a_intfc->WriteRecordData(m_config.global.record.ignoreShouts);
-		a_intfc->WriteRecordData(m_config.global.record.ignoreScrolls);
-
-		writeString(m_config.global.playback.playKey);
-		writeString(m_config.global.playback.cancelKey);
-		a_intfc->WriteRecordData(m_config.global.playback.defaultChainIndex);
-		a_intfc->WriteRecordData(m_config.global.playback.stepDelaySec);
-		a_intfc->WriteRecordData(m_config.global.playback.abortOnFail);
-		a_intfc->WriteRecordData(m_config.global.playback.skipOnFail);
-		a_intfc->WriteRecordData(m_config.global.playback.requireWeaponSheathed);
-		a_intfc->WriteRecordData(m_config.global.playback.autoSheathDuringPlayback);
-		a_intfc->WriteRecordData(m_config.global.playback.stopIfPlayerHit);
-		a_intfc->WriteRecordData(m_config.global.playback.stopIfAttackPressed);
-		a_intfc->WriteRecordData(m_config.global.playback.stopIfBlockPressed);
-
-		a_intfc->WriteRecordData(m_config.global.concentration.minHoldSec);
-		a_intfc->WriteRecordData(m_config.global.concentration.maxHoldSec);
-		a_intfc->WriteRecordData(m_config.global.concentration.sampleGranularitySec);
-		a_intfc->WriteRecordData(m_config.global.concentration.releasePaddingSec);
-
-		writeString(m_config.global.targeting.mode);
-		a_intfc->WriteRecordData(m_config.global.targeting.raycastRange);
-		a_intfc->WriteRecordData(m_config.global.targeting.aimConeDegrees);
-		a_intfc->WriteRecordData(m_config.global.targeting.preferCrosshairActor);
-		a_intfc->WriteRecordData(m_config.global.targeting.fallbackToSelfIfNoTarget);
 
 		const std::uint32_t chainCount = static_cast<std::uint32_t>(m_config.chains.size());
 		a_intfc->WriteRecordData(chainCount);
@@ -186,14 +147,13 @@ namespace SMART_CAST
 			return;
 		}
 
-		auto loadedConfig = m_config;
-		bool loaded = false;
+		LoadConfig();
 
 		std::uint32_t type = 0;
 		std::uint32_t version = 0;
 		std::uint32_t length = 0;
 		while (a_intfc->GetNextRecordInfo(type, version, length)) {
-			if (type != kConfigRecord || version != kSerializationVersion) {
+			if (type != kChainRecord || version != kSerializationVersion) {
 				continue;
 			}
 
@@ -209,51 +169,10 @@ namespace SMART_CAST
 				}
 			};
 
-			a_intfc->ReadRecordData(loadedConfig.version);
-			a_intfc->ReadRecordData(loadedConfig.global.enabled);
-			a_intfc->ReadRecordData(loadedConfig.global.firstPersonOnly);
-			a_intfc->ReadRecordData(loadedConfig.global.preventInMenus);
-			a_intfc->ReadRecordData(loadedConfig.global.preventWhileStaggered);
-			a_intfc->ReadRecordData(loadedConfig.global.preventWhileRagdoll);
-			a_intfc->ReadRecordData(loadedConfig.global.minTimeAfterLoadSeconds);
-			a_intfc->ReadRecordData(loadedConfig.global.maxChains);
-			a_intfc->ReadRecordData(loadedConfig.global.maxStepsPerChain);
-
-			readString(loadedConfig.global.record.toggleKey);
-			readString(loadedConfig.global.record.cancelKey);
-			a_intfc->ReadRecordData(loadedConfig.global.record.maxIdleSec);
-			a_intfc->ReadRecordData(loadedConfig.global.record.recordOnlySuccessfulCasts);
-			a_intfc->ReadRecordData(loadedConfig.global.record.ignorePowers);
-			a_intfc->ReadRecordData(loadedConfig.global.record.ignoreShouts);
-			a_intfc->ReadRecordData(loadedConfig.global.record.ignoreScrolls);
-
-			readString(loadedConfig.global.playback.playKey);
-			readString(loadedConfig.global.playback.cancelKey);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.defaultChainIndex);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.stepDelaySec);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.abortOnFail);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.skipOnFail);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.requireWeaponSheathed);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.autoSheathDuringPlayback);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.stopIfPlayerHit);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.stopIfAttackPressed);
-			a_intfc->ReadRecordData(loadedConfig.global.playback.stopIfBlockPressed);
-
-			a_intfc->ReadRecordData(loadedConfig.global.concentration.minHoldSec);
-			a_intfc->ReadRecordData(loadedConfig.global.concentration.maxHoldSec);
-			a_intfc->ReadRecordData(loadedConfig.global.concentration.sampleGranularitySec);
-			a_intfc->ReadRecordData(loadedConfig.global.concentration.releasePaddingSec);
-
-			readString(loadedConfig.global.targeting.mode);
-			a_intfc->ReadRecordData(loadedConfig.global.targeting.raycastRange);
-			a_intfc->ReadRecordData(loadedConfig.global.targeting.aimConeDegrees);
-			a_intfc->ReadRecordData(loadedConfig.global.targeting.preferCrosshairActor);
-			a_intfc->ReadRecordData(loadedConfig.global.targeting.fallbackToSelfIfNoTarget);
-
 			std::uint32_t chainCount = 0;
 			a_intfc->ReadRecordData(chainCount);
-			loadedConfig.chains.clear();
-			loadedConfig.chains.reserve(chainCount);
+			m_config.chains.clear();
+			m_config.chains.reserve(chainCount);
 			for (std::uint32_t chainIndex = 0; chainIndex < chainCount; ++chainIndex) {
 				ChainConfig chain{};
 				readString(chain.name);
@@ -276,17 +195,11 @@ namespace SMART_CAST
 					chain.steps.push_back(std::move(step));
 				}
 
-				loadedConfig.chains.push_back(std::move(chain));
+				m_config.chains.push_back(std::move(chain));
 			}
-
-			loaded = true;
 		}
-
-		if (loaded) {
-			ClampConfig(loadedConfig);
-			EnsureChainCount(loadedConfig);
-			m_config = std::move(loadedConfig);
-		}
+		ClampConfig(m_config);
+		EnsureChainCount(m_config);
 		ResetRuntime();
 	}
 
@@ -359,27 +272,6 @@ namespace SMART_CAST
 			}
 		}
 
-		if (root.contains("chains") && root["chains"].is_array()) {
-			cfg.chains.clear();
-			for (const auto& chainNode : root["chains"]) {
-				ChainConfig chain{};
-				chain.name = chainNode.value("name", chain.name);
-				chain.enabled = chainNode.value("enabled", chain.enabled);
-				chain.hotkey = chainNode.value("hotkey", chain.hotkey);
-				if (chainNode.contains("steps") && chainNode["steps"].is_array()) {
-					for (const auto& stepNode : chainNode["steps"]) {
-						ChainStep step{};
-						step.spellFormID = stepNode.value("spellFormID", step.spellFormID);
-						step.type = ToStepType(stepNode.value("type", std::string("fireAndForget")));
-						step.castOn = ToCastOn(stepNode.value("castOn", std::string("self")));
-						step.holdSec = stepNode.value("holdSec", step.holdSec);
-						chain.steps.push_back(std::move(step));
-					}
-				}
-				cfg.chains.push_back(std::move(chain));
-			}
-		}
-
 		ClampConfig(cfg);
 		EnsureChainCount(cfg);
 		m_config = cfg;
@@ -387,15 +279,6 @@ namespace SMART_CAST
 
 	void Controller::SaveConfig() const
 	{
-		json chains = json::array();
-		for (const auto& chain : m_config.chains) {
-			json steps = json::array();
-			for (const auto& step : chain.steps) {
-				steps.push_back({ { "spellFormID", step.spellFormID }, { "type", ToString(step.type) }, { "castOn", ToString(step.castOn) }, { "holdSec", step.holdSec } });
-			}
-			chains.push_back({ { "name", chain.name }, { "enabled", chain.enabled }, { "hotkey", chain.hotkey }, { "steps", steps } });
-		}
-
 		const json root = {
 			{ "version", m_config.version },
 			{ "global", {
@@ -442,8 +325,7 @@ namespace SMART_CAST
 					{ "preferCrosshairActor", m_config.global.targeting.preferCrosshairActor },
 					{ "fallbackToSelfIfNoTarget", m_config.global.targeting.fallbackToSelfIfNoTarget }
 				} }
-			} },
-			{ "chains", chains }
+			} }
 		};
 
 		try {
