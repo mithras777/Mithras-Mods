@@ -2,6 +2,7 @@
 
 #include "plugin.h"
 #include "version.h"
+#include "event/AttackAnimationEventSink.h"
 #include "event/EquipEventSink.h"
 #include "event/GameEventManager.h"
 #include "input/InputEventSink.h"
@@ -54,6 +55,7 @@ namespace SKSE {
 				// Register game events
 				GAME_EVENT::Manager::Register();
 				SB_EVENT::EquipEventSink::Register();
+				SB_EVENT::AttackAnimationEventSink::Register();
 				UI::PRISMA::Bridge::GetSingleton()->Initialize();
 				SBIND::Manager::GetSingleton()->PushUISnapshot();
 				// Log plugin loaded

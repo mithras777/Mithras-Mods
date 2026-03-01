@@ -1,5 +1,6 @@
 #include "spellbinding/SpellBindingManager.h"
 
+#include "event/AttackAnimationEventSink.h"
 #include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
 
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -34,6 +36,7 @@ namespace SBIND
 		m_config.version = kConfigVersion;
 		m_runtime = {};
 		m_runtime.unarmedKey = BuildUnarmedKey();
+		m_runtime.worldTimeSec = 0.0f;
 		LoadConfig();
 		ClampConfig(m_config);
 	}
@@ -44,6 +47,7 @@ namespace SBIND
 		m_bindings.clear();
 		m_runtime = {};
 		m_runtime.unarmedKey = BuildUnarmedKey();
+		m_runtime.worldTimeSec = 0.0f;
 		LoadConfig();
 		ClampConfig(m_config);
 	}
@@ -161,12 +165,14 @@ namespace SBIND
 		if (!a_player || a_deltaTime <= 0.0f) {
 			return;
 		}
+		SB_EVENT::AttackAnimationEventSink::Register();
 
 		const auto config = GetConfig();
 		bool menuBlocked = false;
 		{
 			std::scoped_lock lock(m_lock);
 			menuBlocked = m_runtime.menuBlocked;
+			m_runtime.worldTimeSec += a_deltaTime;
 		}
 		if (!config.enabled || a_player->IsDead() || menuBlocked) {
 			std::scoped_lock lock(m_lock);
@@ -178,8 +184,6 @@ namespace SBIND
 			std::scoped_lock lock(m_lock);
 			RefreshEquippedKeysLocked(a_player);
 		}
-
-		TryTriggerOnAttackStart(a_player);
 	}
 
 	void Manager::OnEquipChanged()
@@ -199,6 +203,75 @@ namespace SBIND
 	{
 		std::scoped_lock lock(m_lock);
 		m_runtime.menuBlocked = a_blockingMenuOpen;
+	}
+
+	void Manager::OnAttackAnimationEvent(std::string_view a_tag, std::string_view a_payload)
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return;
+		}
+
+		const auto config = GetConfig();
+		if (!config.enabled || player->IsDead()) {
+			return;
+		}
+
+		auto toLower = [](std::string_view text) {
+			std::string out(text);
+			std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+			return out;
+		};
+		const auto tag = toLower(a_tag);
+		const auto payload = toLower(a_payload);
+		const bool looksLikeAttack =
+			((tag.find("attack") != std::string::npos || tag.find("swing") != std::string::npos) &&
+			 (tag.find("start") != std::string::npos || tag.find("swing") != std::string::npos) &&
+			 tag.find("stop") == std::string::npos) ||
+			(payload.find("attack") != std::string::npos && payload.find("start") != std::string::npos);
+		if (!looksLikeAttack) {
+			return;
+		}
+
+		bool preferLeft = tag.find("left") != std::string::npos || payload.find("left") != std::string::npos;
+		const bool isPowerAttack =
+			player->IsPowerAttacking() ||
+			tag.find("power") != std::string::npos ||
+			payload.find("power") != std::string::npos;
+
+		bool menuBlocked = false;
+		std::optional<BindingKey> keyOpt;
+		{
+			std::scoped_lock lock(m_lock);
+			menuBlocked = m_runtime.menuBlocked;
+			RefreshEquippedKeysLocked(player);
+			if (m_runtime.rightWeapon.has_value() && m_runtime.leftWeapon.has_value()) {
+				if (preferLeft || IsLikelyLeftHandAttack(player)) {
+					keyOpt = m_runtime.leftWeapon;
+				} else {
+					keyOpt = m_runtime.rightWeapon;
+				}
+			} else if (m_runtime.rightWeapon.has_value()) {
+				keyOpt = m_runtime.rightWeapon;
+			} else if (m_runtime.leftWeapon.has_value()) {
+				keyOpt = m_runtime.leftWeapon;
+			} else {
+				keyOpt = m_runtime.unarmedKey;
+			}
+		}
+
+		if (menuBlocked || !keyOpt.has_value()) {
+			return;
+		}
+
+		bool triggered = false;
+		{
+			std::scoped_lock lock(m_lock);
+			triggered = TryTriggerBoundSpellLocked(player, *keyOpt, isPowerAttack);
+		}
+		if (triggered) {
+			PushUISnapshot();
+		}
 	}
 
 	void Manager::ToggleUI()
@@ -237,8 +310,16 @@ namespace SBIND
 		}
 
 		auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(*selectedFormID);
-		if (!spell || !IsSupportedSpell(spell)) {
-			Notify("SpellBinding: selected entry is not a supported spell");
+		if (!spell) {
+			Notify("SpellBinding: selected entry is not a spell");
+			return false;
+		}
+		if (spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+			Notify("SpellBinding: concentration spells are not supported");
+			return false;
+		}
+		if (!IsSupportedSpell(spell)) {
+			Notify("SpellBinding: selected spell type is not supported");
 			return false;
 		}
 
@@ -518,7 +599,7 @@ namespace SBIND
 
 		if (auto* selected = runtime.itemList->GetSelectedItem(); selected && selected->data.baseForm) {
 			auto* spell = selected->data.baseForm->As<RE::SpellItem>();
-			if (spell && IsSupportedSpell(spell)) {
+			if (spell) {
 				return spell->GetFormID();
 			}
 		}
@@ -537,7 +618,7 @@ namespace SBIND
 		}
 
 		auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formID);
-		return spell && IsSupportedSpell(spell) ? std::optional<RE::FormID>(formID) : std::nullopt;
+		return spell ? std::optional<RE::FormID>(formID) : std::nullopt;
 	}
 
 	bool Manager::TryTriggerOnAttackStart(RE::PlayerCharacter* a_player)
@@ -604,6 +685,23 @@ namespace SBIND
 			SetLastErrorLocked("Player no longer knows bound spell");
 			return false;
 		}
+		if (spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+			SetLastErrorLocked("Concentration spells are blocked");
+			return false;
+		}
+		const auto spellType = spell->GetSpellType();
+		const bool isCooldownPower = spellType == RE::MagicSystem::SpellType::kPower || spellType == RE::MagicSystem::SpellType::kVoicePower;
+		if (isCooldownPower) {
+			if (a_player->IsInCastPowerList(spell)) {
+				SetLastErrorLocked("Power is on cooldown");
+				return false;
+			}
+			const auto cdIt = m_runtime.powerCooldownUntil.find(it->second.spellFormKey);
+			if (cdIt != m_runtime.powerCooldownUntil.end() && m_runtime.worldTimeSec < cdIt->second) {
+				SetLastErrorLocked("Power cooldown active");
+				return false;
+			}
+		}
 
 		const float magickaScale = a_isPowerAttack ? m_config.powerMagickaScale : 1.0f;
 		const float damageScale = a_isPowerAttack ? m_config.powerDamageScale : 1.0f;
@@ -640,6 +738,16 @@ namespace SBIND
 		RE::TESObjectREFR* target = a_player;
 		caster->CastSpellImmediate(spell, castOnSelf, target, damageScale, false, 0.0f, a_player);
 
+		if (isCooldownPower) {
+			float cd = 0.85f;
+			if (spellType == RE::MagicSystem::SpellType::kVoicePower) {
+				cd = std::max(cd, a_player->GetVoiceRecoveryTime());
+			} else {
+				cd = std::max(cd, spell->GetChargeTime() + 0.5f);
+			}
+			m_runtime.powerCooldownUntil[it->second.spellFormKey] = m_runtime.worldTimeSec + cd;
+		}
+
 		m_runtime.lastTriggerWeapon = a_key.displayName;
 		m_runtime.lastTriggerSpell = it->second.displayName;
 		m_runtime.lastMagickaCost = finalCost;
@@ -651,6 +759,9 @@ namespace SBIND
 	bool Manager::IsSupportedSpell(const RE::SpellItem* a_spell)
 	{
 		if (!a_spell) {
+			return false;
+		}
+		if (a_spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
 			return false;
 		}
 		const auto type = a_spell->GetSpellType();

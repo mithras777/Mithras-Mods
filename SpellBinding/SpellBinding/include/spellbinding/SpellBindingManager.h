@@ -89,6 +89,7 @@ namespace SBIND
 
 		void OnEquipChanged();
 		void OnMenuStateChanged(bool a_blockingMenuOpen);
+		void OnAttackAnimationEvent(std::string_view a_tag, std::string_view a_payload);
 
 		void ToggleUI();
 		void PushUISnapshot();
@@ -105,9 +106,11 @@ namespace SBIND
 		{
 			bool wasAttacking{ false };
 			bool menuBlocked{ false };
+			float worldTimeSec{ 0.0f };
 			std::optional<BindingKey> rightWeapon{};
 			std::optional<BindingKey> leftWeapon{};
 			std::optional<BindingKey> unarmedKey{};
+			std::unordered_map<std::string, float> powerCooldownUntil{};
 			std::string lastTriggerWeapon{};
 			std::string lastTriggerSpell{};
 			std::string lastError{};
