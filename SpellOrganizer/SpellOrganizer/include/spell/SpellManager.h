@@ -11,7 +11,7 @@ namespace SKSE
 	class SerializationInterface;
 }
 
-namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
+namespace MITHRAS::SPELL_ORGANIZER
 {
 	struct OrganizerConfig
 	{
@@ -19,7 +19,7 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		std::uint32_t hotkey{ 0x23 };  // H
 	};
 
-	struct MagicEffectEntry
+	struct SpellEntry
 	{
 		RE::FormID formID{ 0 };
 		std::string displayName{};
@@ -40,16 +40,15 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		void OnHotkeyPressed(std::uint32_t a_keyCode);
 		[[nodiscard]] static std::string GetKeyboardKeyName(std::uint32_t a_keyCode);
 
-		[[nodiscard]] std::vector<MagicEffectEntry> GetVisibleEffects() const;
-		[[nodiscard]] std::vector<MagicEffectEntry> GetHiddenEffects() const;
+		[[nodiscard]] std::vector<SpellEntry> GetHiddenSpells() const;
 		static void RegisterSerialization();
 		void SaveHiddenToCosave(SKSE::SerializationInterface* a_serialization) const;
 		void LoadHiddenFromCosave(SKSE::SerializationInterface* a_serialization);
 		void RevertHiddenFromCosave();
 
-		bool HideEffect(RE::FormID a_formID);
-		bool UnhideEffect(RE::FormID a_formID);
-		bool HideCurrentlySelectedMagicMenuEffect();
+		bool HideSpell(RE::FormID a_formID);
+		bool UnhideSpell(RE::FormID a_formID);
+		bool HideCurrentlySelectedMagicMenuSpell();
 
 	private:
 		void SaveConfigToJson() const;
@@ -60,13 +59,13 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		void ApplyTrackedFlags();
 		void RefreshMagicMenuIfOpen() const;
 
-		[[nodiscard]] static std::string BuildEffectDisplayName(const RE::EffectSetting* a_effect);
-		[[nodiscard]] static std::vector<MagicEffectEntry> BuildPlayerActiveEffects();
 		[[nodiscard]] static bool IsFormIDHidden(const std::vector<RE::FormID>& a_hidden, RE::FormID a_formID);
+		[[nodiscard]] static bool IsOrganizerSpell(const RE::SpellItem* a_spell);
+		[[nodiscard]] static std::string BuildSpellDisplayName(const RE::SpellItem* a_spell);
 
 		mutable std::mutex m_lock;
 		OrganizerConfig m_config{};
-		std::vector<RE::FormID> m_hiddenEffectFormIDs{};
+		std::vector<RE::FormID> m_hiddenSpellFormIDs{};
 		bool m_captureHotkey{ false };
 	};
 }

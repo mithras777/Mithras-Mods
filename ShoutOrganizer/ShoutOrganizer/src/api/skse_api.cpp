@@ -3,6 +3,9 @@
 #include "plugin.h"
 #include "version.h"
 #include "event/GameEventManager.h"
+#include "input/InputEventSink.h"
+#include "shout/ShoutManager.h"
+#include "ui/UI.h"
 #include "util/LogUtil.h"
 
 //#define DUMP_OFFSETS
@@ -40,11 +43,15 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kInputLoaded: {
+				SHO_INPUT::EventSink::Register();
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
+				MITHRAS::SHOUT_ORGANIZER::Manager::GetSingleton()->Initialize();
+				SHO_INPUT::EventSink::Register();
 				// Register game events
 				GAME_EVENT::Manager::Register();
+				UI::Register();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;
@@ -87,6 +94,7 @@ namespace SKSE {
 		// Load Plugin
 		auto loadPlugin = DLLMAIN::Plugin::GetSingleton()->Load(a_skse);
 		if (loadPlugin) {
+			MITHRAS::SHOUT_ORGANIZER::Manager::RegisterSerialization();
 			// Register SKSE::MessagingInterface
 			SKSE::GetMessagingInterface()->RegisterListener(SKSEPlugin_Message);
 		}

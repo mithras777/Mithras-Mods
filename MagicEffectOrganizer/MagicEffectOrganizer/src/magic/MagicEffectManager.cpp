@@ -16,6 +16,9 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 	namespace
 	{
 		using json = nlohmann::json;
+		constexpr std::uint32_t kSerializationVersion = 1;
+		constexpr std::uint32_t kHiddenEffectsRecord = 'HEFF';
+		constexpr std::uint32_t kSerializationID = 'MEOG';
 
 		constexpr RE::EffectSetting::EffectSettingData::Flag kHideFlag = RE::EffectSetting::EffectSettingData::Flag::kHideInUI;
 
@@ -153,6 +156,21 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 			return nullptr;
 		}
+
+		void SaveCallback(SKSE::SerializationInterface* a_serialization)
+		{
+			Manager::GetSingleton()->SaveHiddenToCosave(a_serialization);
+		}
+
+		void LoadCallback(SKSE::SerializationInterface* a_serialization)
+		{
+			Manager::GetSingleton()->LoadHiddenFromCosave(a_serialization);
+		}
+
+		void RevertCallback(SKSE::SerializationInterface*)
+		{
+			Manager::GetSingleton()->RevertHiddenFromCosave();
+		}
 	}
 
 	void Manager::Initialize()
@@ -165,6 +183,20 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 		LoadConfigFromJson();
 		ApplyTrackedFlags();
+	}
+
+	void Manager::RegisterSerialization()
+	{
+		auto* serialization = SKSE::GetSerializationInterface();
+		if (!serialization) {
+			LOG_WARN("MagicEffectOrganizer: Serialization interface unavailable");
+			return;
+		}
+
+		serialization->SetUniqueID(kSerializationID);
+		serialization->SetSaveCallback(SaveCallback);
+		serialization->SetLoadCallback(LoadCallback);
+		serialization->SetRevertCallback(RevertCallback);
 	}
 
 	OrganizerConfig Manager::GetConfig() const
@@ -252,17 +284,17 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 	std::vector<MagicEffectEntry> Manager::GetVisibleEffects() const
 	{
-		OrganizerConfig cfg{};
+		std::vector<RE::FormID> hiddenFormIDs;
 		{
 			std::scoped_lock lock(m_lock);
-			cfg = m_config;
+			hiddenFormIDs = m_hiddenEffectFormIDs;
 		}
 
 		auto all = BuildPlayerActiveEffects();
 		std::vector<MagicEffectEntry> visible;
 		visible.reserve(all.size());
 		for (const auto& entry : all) {
-			if (!IsFormIDHidden(cfg.hiddenEffectFormIDs, entry.formID)) {
+			if (!IsFormIDHidden(hiddenFormIDs, entry.formID)) {
 				visible.push_back(entry);
 			}
 		}
@@ -271,16 +303,16 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 	std::vector<MagicEffectEntry> Manager::GetHiddenEffects() const
 	{
-		OrganizerConfig cfg{};
+		std::vector<RE::FormID> hiddenFormIDs;
 		{
 			std::scoped_lock lock(m_lock);
-			cfg = m_config;
+			hiddenFormIDs = m_hiddenEffectFormIDs;
 		}
 
 		std::vector<MagicEffectEntry> hidden;
-		hidden.reserve(cfg.hiddenEffectFormIDs.size());
+		hidden.reserve(hiddenFormIDs.size());
 
-		for (const auto formID : cfg.hiddenEffectFormIDs) {
+		for (const auto formID : hiddenFormIDs) {
 			auto* effect = RE::TESForm::LookupByID<RE::EffectSetting>(formID);
 			if (effect) {
 				hidden.push_back({ formID, BuildEffectDisplayName(effect) });
@@ -301,8 +333,8 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		bool changed = false;
 		{
 			std::scoped_lock lock(m_lock);
-			if (!IsFormIDHidden(m_config.hiddenEffectFormIDs, a_formID)) {
-				m_config.hiddenEffectFormIDs.push_back(a_formID);
+			if (!IsFormIDHidden(m_hiddenEffectFormIDs, a_formID)) {
+				m_hiddenEffectFormIDs.push_back(a_formID);
 				changed = true;
 			}
 		}
@@ -312,7 +344,6 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		}
 
 		ApplyTrackedFlags();
-		SaveConfigToJson();
 		return true;
 	}
 
@@ -321,7 +352,7 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		bool removed = false;
 		{
 			std::scoped_lock lock(m_lock);
-			auto& hidden = m_config.hiddenEffectFormIDs;
+			auto& hidden = m_hiddenEffectFormIDs;
 			auto it = std::remove(hidden.begin(), hidden.end(), a_formID);
 			if (it != hidden.end()) {
 				hidden.erase(it, hidden.end());
@@ -338,7 +369,6 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 		}
 
 		RefreshMagicMenuIfOpen();
-		SaveConfigToJson();
 		return true;
 	}
 
@@ -419,8 +449,7 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 		json root = {
 			{ "enabled", cfg.enabled },
-			{ "hotkey", cfg.hotkey },
-			{ "hiddenEffectFormIDs", cfg.hiddenEffectFormIDs }
+			{ "hotkey", cfg.hotkey }
 		};
 
 		std::ofstream file(path, std::ios::trunc);
@@ -463,13 +492,127 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 		cfg.enabled = parsed.value("enabled", cfg.enabled);
 		cfg.hotkey = parsed.value("hotkey", cfg.hotkey);
-		cfg.hiddenEffectFormIDs = parsed.value("hiddenEffectFormIDs", cfg.hiddenEffectFormIDs);
-
 		{
 			std::scoped_lock lock(m_lock);
 			m_config = cfg;
 			NormalizeConfig();
 		}
+	}
+
+	void Manager::SaveHiddenToCosave(SKSE::SerializationInterface* a_serialization) const
+	{
+		if (!a_serialization) {
+			return;
+		}
+
+		std::vector<RE::FormID> hidden;
+		{
+			std::scoped_lock lock(m_lock);
+			hidden = m_hiddenEffectFormIDs;
+		}
+
+		if (!a_serialization->OpenRecord(kHiddenEffectsRecord, kSerializationVersion)) {
+			LOG_WARN("MagicEffectOrganizer: Failed to open cosave record");
+			return;
+		}
+
+		const std::uint32_t count = static_cast<std::uint32_t>(hidden.size());
+		if (!a_serialization->WriteRecordData(count)) {
+			LOG_WARN("MagicEffectOrganizer: Failed to write cosave hidden effect count");
+			return;
+		}
+
+		for (const auto formID : hidden) {
+			if (!a_serialization->WriteRecordData(formID)) {
+				LOG_WARN("MagicEffectOrganizer: Failed to write cosave effect {:08X}", formID);
+				return;
+			}
+		}
+	}
+
+	void Manager::LoadHiddenFromCosave(SKSE::SerializationInterface* a_serialization)
+	{
+		if (!a_serialization) {
+			return;
+		}
+
+		std::vector<RE::FormID> loadedHidden;
+		std::uint32_t type = 0;
+		std::uint32_t version = 0;
+		std::uint32_t length = 0;
+		while (a_serialization->GetNextRecordInfo(type, version, length)) {
+			if (type != kHiddenEffectsRecord || version != kSerializationVersion) {
+				continue;
+			}
+
+			std::uint32_t count = 0;
+			if (!a_serialization->ReadRecordData(count)) {
+				LOG_WARN("MagicEffectOrganizer: Failed to read cosave hidden effect count");
+				continue;
+			}
+
+			loadedHidden.reserve(count);
+			for (std::uint32_t i = 0; i < count; ++i) {
+				RE::FormID stored = 0;
+				if (!a_serialization->ReadRecordData(stored)) {
+					LOG_WARN("MagicEffectOrganizer: Failed to read cosave effect at index {}", i);
+					break;
+				}
+
+				RE::FormID resolved = 0;
+				if (a_serialization->ResolveFormID(stored, resolved)) {
+					loadedHidden.push_back(resolved);
+				} else if ((stored & 0xFF000000) == 0) {
+					loadedHidden.push_back(stored);
+				}
+			}
+		}
+
+		std::vector<RE::FormID> previousHidden;
+		bool enabled = false;
+		{
+			std::scoped_lock lock(m_lock);
+			previousHidden = m_hiddenEffectFormIDs;
+			enabled = m_config.enabled;
+		}
+
+		if (enabled) {
+			for (const auto formID : previousHidden) {
+				if (auto* effect = RE::TESForm::LookupByID<RE::EffectSetting>(formID)) {
+					effect->data.flags.reset(kHideFlag);
+				}
+			}
+		}
+
+		{
+			std::scoped_lock lock(m_lock);
+			m_hiddenEffectFormIDs = std::move(loadedHidden);
+			NormalizeConfig();
+		}
+
+		ApplyTrackedFlags();
+	}
+
+	void Manager::RevertHiddenFromCosave()
+	{
+		std::vector<RE::FormID> previousHidden;
+		bool enabled = false;
+		{
+			std::scoped_lock lock(m_lock);
+			previousHidden = m_hiddenEffectFormIDs;
+			enabled = m_config.enabled;
+			m_hiddenEffectFormIDs.clear();
+		}
+
+		if (enabled) {
+			for (const auto formID : previousHidden) {
+				if (auto* effect = RE::TESForm::LookupByID<RE::EffectSetting>(formID)) {
+					effect->data.flags.reset(kHideFlag);
+				}
+			}
+		}
+
+		RefreshMagicMenuIfOpen();
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const
@@ -481,7 +624,7 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 
 	void Manager::NormalizeConfig()
 	{
-		auto& hidden = m_config.hiddenEffectFormIDs;
+		auto& hidden = m_hiddenEffectFormIDs;
 		hidden.erase(
 			std::remove_if(hidden.begin(), hidden.end(), [](const RE::FormID id) { return id == 0; }),
 			hidden.end());
@@ -492,12 +635,14 @@ namespace MITHRAS::MAGIC_EFFECT_ORGANIZER
 	void Manager::ApplyTrackedFlags()
 	{
 		OrganizerConfig cfg{};
+		std::vector<RE::FormID> hiddenFormIDs;
 		{
 			std::scoped_lock lock(m_lock);
 			cfg = m_config;
+			hiddenFormIDs = m_hiddenEffectFormIDs;
 		}
 
-		for (const auto formID : cfg.hiddenEffectFormIDs) {
+		for (const auto formID : hiddenFormIDs) {
 			auto* effect = RE::TESForm::LookupByID<RE::EffectSetting>(formID);
 			if (!effect) {
 				continue;
