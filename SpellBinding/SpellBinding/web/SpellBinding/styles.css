@@ -6,9 +6,6 @@
   --text: #dde3e8;
   --muted: #92a2b2;
   --accent: #d19b5c;
-  --accent-soft: #6c5333;
-  --ok: #79c090;
-  --error: #cf6b6b;
 }
 
 * { box-sizing: border-box; }

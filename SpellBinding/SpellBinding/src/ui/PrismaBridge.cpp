@@ -5,6 +5,8 @@
 
 #include "json/single_include/nlohmann/json.hpp"
 
+#include <format>
+
 namespace UI::PRISMA
 {
 	namespace

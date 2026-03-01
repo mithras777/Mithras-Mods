@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace GAME_EVENT {
 
 	class Manager final : public REX::Singleton<Manager>,

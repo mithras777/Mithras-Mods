@@ -1,9 +1,5 @@
 (function () {
-  const state = {
-    snapshot: null,
-    focused: false,
-  };
-
+  const state = { snapshot: null, focused: false };
   const byId = (id) => document.getElementById(id);
 
   const els = {
@@ -90,7 +86,7 @@
 
     const status = snapshot.status || {};
     els.lastTrigger.textContent = status.lastTriggerSpell ? `${status.lastTriggerSpell} via ${status.lastTriggerWeapon}` : '-';
-    els.lastCost.textContent = status.lastMagickaCost ? status.lastMagickaCost.toFixed(1) : '-';
+    els.lastCost.textContent = status.lastMagickaCost ? Number(status.lastMagickaCost).toFixed(1) : '-';
     els.lastMode.textContent = status.lastWasPowerAttack ? 'Power Attack' : 'Normal';
     els.lastError.textContent = status.lastError || '-';
 
@@ -99,8 +95,7 @@
 
   window.sb_renderSnapshot = function (payload) {
     try {
-      const snapshot = JSON.parse(payload || '{}');
-      renderSnapshot(snapshot);
+      renderSnapshot(JSON.parse(payload || '{}'));
     } catch {
       window.sb_showToast('Failed to parse snapshot payload');
     }

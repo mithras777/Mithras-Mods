@@ -163,7 +163,12 @@ namespace SBIND
 		}
 
 		const auto config = GetConfig();
-		if (!config.enabled || a_player->IsDead()) {
+		bool menuBlocked = false;
+		{
+			std::scoped_lock lock(m_lock);
+			menuBlocked = m_runtime.menuBlocked;
+		}
+		if (!config.enabled || a_player->IsDead() || menuBlocked) {
 			std::scoped_lock lock(m_lock);
 			m_runtime.wasAttacking = a_player->IsAttacking();
 			return;
@@ -198,7 +203,13 @@ namespace SBIND
 
 	void Manager::ToggleUI()
 	{
-		UI::PRISMA::Bridge::GetSingleton()->Toggle();
+		auto* bridge = UI::PRISMA::Bridge::GetSingleton();
+		bridge->Initialize();
+		if (!bridge->IsAvailable()) {
+			Notify("SpellBinding: Prisma UI is not installed");
+			return;
+		}
+		bridge->Toggle();
 	}
 
 	void Manager::PushUISnapshot()
