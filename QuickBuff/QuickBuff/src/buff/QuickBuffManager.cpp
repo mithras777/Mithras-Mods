@@ -21,6 +21,8 @@ namespace QUICK_BUFF
 		using json = nlohmann::json;
 
 		constexpr std::uint32_t kConfigVersion = 1;
+		constexpr std::uint32_t kSerializationVersion = 1;
+		constexpr std::uint32_t kConfigRecord = 'QBCF';
 
 		std::string Trim(std::string_view a_text)
 		{
@@ -91,9 +93,7 @@ namespace QUICK_BUFF
 	{
 		m_config = DefaultConfig();
 		ClampConfig(m_config);
-		if (a_saveToDisk) {
-			SaveConfig();
-		}
+		(void)a_saveToDisk;
 		ResetRuntime();
 	}
 
@@ -106,9 +106,144 @@ namespace QUICK_BUFF
 	{
 		m_config = a_config;
 		ClampConfig(m_config);
-		if (a_saveToDisk) {
-			SaveConfig();
+		(void)a_saveToDisk;
+	}
+
+	void Manager::Serialize(SKSE::SerializationInterface* a_intfc) const
+	{
+		if (!a_intfc) {
+			return;
 		}
+		if (!a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
+			return;
+		}
+
+		const auto writeString = [a_intfc](const std::string& a_value) {
+			const std::uint32_t length = static_cast<std::uint32_t>(a_value.size());
+			a_intfc->WriteRecordData(length);
+			for (const auto ch : a_value) {
+				a_intfc->WriteRecordData(ch);
+			}
+		};
+
+		const auto writeTrigger = [a_intfc, &writeString](const TriggerConfig& a_trigger) {
+			a_intfc->WriteRecordData(a_trigger.enabled);
+			writeString(a_trigger.spellFormID);
+			a_intfc->WriteRecordData(a_trigger.cooldownSec);
+			a_intfc->WriteRecordData(a_trigger.conditions.firstPersonOnly);
+			a_intfc->WriteRecordData(a_trigger.conditions.weaponDrawnOnly);
+			a_intfc->WriteRecordData(a_trigger.conditions.requireInCombat);
+			a_intfc->WriteRecordData(a_trigger.conditions.requireOutOfCombat);
+			a_intfc->WriteRecordData(a_trigger.rules.requireMagickaPercentAbove);
+			a_intfc->WriteRecordData(a_trigger.rules.skipIfEffectAlreadyActive);
+			a_intfc->WriteRecordData(a_trigger.thresholdHealthPercent);
+			a_intfc->WriteRecordData(a_trigger.hysteresisMargin);
+			a_intfc->WriteRecordData(a_trigger.internalLockoutSec);
+			a_intfc->WriteRecordData(a_trigger.concentrationDurationSec);
+		};
+
+		a_intfc->WriteRecordData(m_config.version);
+		a_intfc->WriteRecordData(m_config.global.enabled);
+		a_intfc->WriteRecordData(m_config.global.firstPersonOnlyDefault);
+		a_intfc->WriteRecordData(m_config.global.weaponDrawnOnlyDefault);
+		a_intfc->WriteRecordData(m_config.global.preventCastingInMenus);
+		a_intfc->WriteRecordData(m_config.global.preventCastingWhileStaggered);
+		a_intfc->WriteRecordData(m_config.global.preventCastingWhileRagdoll);
+		a_intfc->WriteRecordData(m_config.global.minTimeAfterLoadSeconds);
+
+		writeTrigger(m_config.combatStart);
+		writeTrigger(m_config.combatEnd);
+		writeTrigger(m_config.healthBelow70);
+		writeTrigger(m_config.healthBelow50);
+		writeTrigger(m_config.healthBelow30);
+		writeTrigger(m_config.crouchStart);
+		writeTrigger(m_config.sprintStart);
+		writeTrigger(m_config.weaponDraw);
+		writeTrigger(m_config.powerAttackStart);
+		writeTrigger(m_config.shoutStart);
+	}
+
+	void Manager::Deserialize(SKSE::SerializationInterface* a_intfc)
+	{
+		if (!a_intfc) {
+			return;
+		}
+
+		auto loadedConfig = m_config;
+		bool loaded = false;
+
+		std::uint32_t type = 0;
+		std::uint32_t version = 0;
+		std::uint32_t length = 0;
+		while (a_intfc->GetNextRecordInfo(type, version, length)) {
+			if (type != kConfigRecord || version != kSerializationVersion) {
+				continue;
+			}
+
+			const auto readString = [a_intfc](std::string& a_value) {
+				std::uint32_t length = 0;
+				a_intfc->ReadRecordData(length);
+				a_value.clear();
+				a_value.reserve(length);
+				for (std::uint32_t i = 0; i < length; ++i) {
+					char ch = '\0';
+					a_intfc->ReadRecordData(ch);
+					a_value.push_back(ch);
+				}
+			};
+
+			const auto readTrigger = [a_intfc, &readString](TriggerConfig& a_trigger) {
+				a_intfc->ReadRecordData(a_trigger.enabled);
+				readString(a_trigger.spellFormID);
+				a_intfc->ReadRecordData(a_trigger.cooldownSec);
+				a_intfc->ReadRecordData(a_trigger.conditions.firstPersonOnly);
+				a_intfc->ReadRecordData(a_trigger.conditions.weaponDrawnOnly);
+				a_intfc->ReadRecordData(a_trigger.conditions.requireInCombat);
+				a_intfc->ReadRecordData(a_trigger.conditions.requireOutOfCombat);
+				a_intfc->ReadRecordData(a_trigger.rules.requireMagickaPercentAbove);
+				a_intfc->ReadRecordData(a_trigger.rules.skipIfEffectAlreadyActive);
+				a_intfc->ReadRecordData(a_trigger.thresholdHealthPercent);
+				a_intfc->ReadRecordData(a_trigger.hysteresisMargin);
+				a_intfc->ReadRecordData(a_trigger.internalLockoutSec);
+				a_intfc->ReadRecordData(a_trigger.concentrationDurationSec);
+			};
+
+			a_intfc->ReadRecordData(loadedConfig.version);
+			a_intfc->ReadRecordData(loadedConfig.global.enabled);
+			a_intfc->ReadRecordData(loadedConfig.global.firstPersonOnlyDefault);
+			a_intfc->ReadRecordData(loadedConfig.global.weaponDrawnOnlyDefault);
+			a_intfc->ReadRecordData(loadedConfig.global.preventCastingInMenus);
+			a_intfc->ReadRecordData(loadedConfig.global.preventCastingWhileStaggered);
+			a_intfc->ReadRecordData(loadedConfig.global.preventCastingWhileRagdoll);
+			a_intfc->ReadRecordData(loadedConfig.global.minTimeAfterLoadSeconds);
+
+			readTrigger(loadedConfig.combatStart);
+			readTrigger(loadedConfig.combatEnd);
+			readTrigger(loadedConfig.healthBelow70);
+			readTrigger(loadedConfig.healthBelow50);
+			readTrigger(loadedConfig.healthBelow30);
+			readTrigger(loadedConfig.crouchStart);
+			readTrigger(loadedConfig.sprintStart);
+			readTrigger(loadedConfig.weaponDraw);
+			readTrigger(loadedConfig.powerAttackStart);
+			readTrigger(loadedConfig.shoutStart);
+
+			loaded = true;
+		}
+
+		if (loaded) {
+			ClampConfig(loadedConfig);
+			m_config = std::move(loadedConfig);
+		}
+		ResetRuntime();
+	}
+
+	void Manager::OnRevert()
+	{
+		m_config = DefaultConfig();
+		LoadConfig();
+		ClampConfig(m_config);
+		ResetRuntime();
 	}
 
 	Config Manager::GetDefaultConfig()

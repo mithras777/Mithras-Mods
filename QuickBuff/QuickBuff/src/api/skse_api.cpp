@@ -4,6 +4,7 @@
 #include "version.h"
 #include "buff/QuickBuffManager.h"
 #include "event/GameEventManager.h"
+#include "serialization/Serialization.h"
 #include "ui/UI.h"
 #include "util/LogUtil.h"
 
@@ -93,6 +94,7 @@ namespace SKSE {
 		if (loadPlugin) {
 			// Register SKSE::MessagingInterface
 			SKSE::GetMessagingInterface()->RegisterListener(SKSEPlugin_Message);
+			QUICK_BUFF::SERIALIZATION::Register();
 		}
 #if defined(DUMP_OFFSETS)
 		DumpOffsets(a_skse->RuntimeVersion());

@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include "version.h"
 #include "event/GameEventManager.h"
+#include "serialization/Serialization.h"
 #include "smartcast/SmartCastController.h"
 #include "ui/UI.h"
 #include "util/LogUtil.h"
@@ -93,6 +94,7 @@ namespace SKSE {
 		if (loadPlugin) {
 			// Register SKSE::MessagingInterface
 			SKSE::GetMessagingInterface()->RegisterListener(SKSEPlugin_Message);
+			SMART_CAST::SERIALIZATION::Register();
 		}
 #if defined(DUMP_OFFSETS)
 		DumpOffsets(a_skse->RuntimeVersion());

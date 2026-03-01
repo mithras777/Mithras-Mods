@@ -125,6 +125,9 @@ namespace SMART_CAST
 		void Initialize();
 		void Update(RE::PlayerCharacter* a_player, float a_deltaTime);
 		void ResetRuntime();
+		void Serialize(SKSE::SerializationInterface* a_intfc) const;
+		void Deserialize(SKSE::SerializationInterface* a_intfc);
+		void OnRevert();
 
 		[[nodiscard]] Config GetConfig() const;
 		void SetConfig(const Config& a_config, bool a_save);

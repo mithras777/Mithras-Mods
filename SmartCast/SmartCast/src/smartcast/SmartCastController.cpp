@@ -21,6 +21,8 @@ namespace SMART_CAST
 	namespace
 	{
 		constexpr std::uint32_t kConfigVersion = 1;
+		constexpr std::uint32_t kSerializationVersion = 1;
+		constexpr std::uint32_t kConfigRecord = 'SCCF';
 		void Notify(const std::string& a_text)
 		{
 			RE::SendHUDMessage::ShowHUDMessage(a_text.c_str());
@@ -97,9 +99,204 @@ namespace SMART_CAST
 		m_config = a_config;
 		ClampConfig(m_config);
 		EnsureChainCount(m_config);
-		if (a_save) {
-			SaveConfig();
+		(void)a_save;
+	}
+
+	void Controller::Serialize(SKSE::SerializationInterface* a_intfc) const
+	{
+		if (!a_intfc) {
+			return;
 		}
+		if (!a_intfc->OpenRecord(kConfigRecord, kSerializationVersion)) {
+			return;
+		}
+
+		const auto writeString = [a_intfc](const std::string& a_value) {
+			const std::uint32_t length = static_cast<std::uint32_t>(a_value.size());
+			a_intfc->WriteRecordData(length);
+			for (const auto ch : a_value) {
+				a_intfc->WriteRecordData(ch);
+			}
+		};
+
+		a_intfc->WriteRecordData(m_config.version);
+		a_intfc->WriteRecordData(m_config.global.enabled);
+		a_intfc->WriteRecordData(m_config.global.firstPersonOnly);
+		a_intfc->WriteRecordData(m_config.global.preventInMenus);
+		a_intfc->WriteRecordData(m_config.global.preventWhileStaggered);
+		a_intfc->WriteRecordData(m_config.global.preventWhileRagdoll);
+		a_intfc->WriteRecordData(m_config.global.minTimeAfterLoadSeconds);
+		a_intfc->WriteRecordData(m_config.global.maxChains);
+		a_intfc->WriteRecordData(m_config.global.maxStepsPerChain);
+
+		writeString(m_config.global.record.toggleKey);
+		writeString(m_config.global.record.cancelKey);
+		a_intfc->WriteRecordData(m_config.global.record.maxIdleSec);
+		a_intfc->WriteRecordData(m_config.global.record.recordOnlySuccessfulCasts);
+		a_intfc->WriteRecordData(m_config.global.record.ignorePowers);
+		a_intfc->WriteRecordData(m_config.global.record.ignoreShouts);
+		a_intfc->WriteRecordData(m_config.global.record.ignoreScrolls);
+
+		writeString(m_config.global.playback.playKey);
+		writeString(m_config.global.playback.cancelKey);
+		a_intfc->WriteRecordData(m_config.global.playback.defaultChainIndex);
+		a_intfc->WriteRecordData(m_config.global.playback.stepDelaySec);
+		a_intfc->WriteRecordData(m_config.global.playback.abortOnFail);
+		a_intfc->WriteRecordData(m_config.global.playback.skipOnFail);
+		a_intfc->WriteRecordData(m_config.global.playback.requireWeaponSheathed);
+		a_intfc->WriteRecordData(m_config.global.playback.autoSheathDuringPlayback);
+		a_intfc->WriteRecordData(m_config.global.playback.stopIfPlayerHit);
+		a_intfc->WriteRecordData(m_config.global.playback.stopIfAttackPressed);
+		a_intfc->WriteRecordData(m_config.global.playback.stopIfBlockPressed);
+
+		a_intfc->WriteRecordData(m_config.global.concentration.minHoldSec);
+		a_intfc->WriteRecordData(m_config.global.concentration.maxHoldSec);
+		a_intfc->WriteRecordData(m_config.global.concentration.sampleGranularitySec);
+		a_intfc->WriteRecordData(m_config.global.concentration.releasePaddingSec);
+
+		writeString(m_config.global.targeting.mode);
+		a_intfc->WriteRecordData(m_config.global.targeting.raycastRange);
+		a_intfc->WriteRecordData(m_config.global.targeting.aimConeDegrees);
+		a_intfc->WriteRecordData(m_config.global.targeting.preferCrosshairActor);
+		a_intfc->WriteRecordData(m_config.global.targeting.fallbackToSelfIfNoTarget);
+
+		const std::uint32_t chainCount = static_cast<std::uint32_t>(m_config.chains.size());
+		a_intfc->WriteRecordData(chainCount);
+		for (const auto& chain : m_config.chains) {
+			writeString(chain.name);
+			a_intfc->WriteRecordData(chain.enabled);
+			writeString(chain.hotkey);
+
+			const std::uint32_t stepCount = static_cast<std::uint32_t>(chain.steps.size());
+			a_intfc->WriteRecordData(stepCount);
+			for (const auto& step : chain.steps) {
+				writeString(step.spellFormID);
+				const auto stepType = static_cast<std::uint32_t>(step.type);
+				const auto castOn = static_cast<std::uint32_t>(step.castOn);
+				a_intfc->WriteRecordData(stepType);
+				a_intfc->WriteRecordData(castOn);
+				a_intfc->WriteRecordData(step.holdSec);
+			}
+		}
+	}
+
+	void Controller::Deserialize(SKSE::SerializationInterface* a_intfc)
+	{
+		if (!a_intfc) {
+			return;
+		}
+
+		auto loadedConfig = m_config;
+		bool loaded = false;
+
+		std::uint32_t type = 0;
+		std::uint32_t version = 0;
+		std::uint32_t length = 0;
+		while (a_intfc->GetNextRecordInfo(type, version, length)) {
+			if (type != kConfigRecord || version != kSerializationVersion) {
+				continue;
+			}
+
+			const auto readString = [a_intfc](std::string& a_value) {
+				std::uint32_t length = 0;
+				a_intfc->ReadRecordData(length);
+				a_value.clear();
+				a_value.reserve(length);
+				for (std::uint32_t i = 0; i < length; ++i) {
+					char ch = '\0';
+					a_intfc->ReadRecordData(ch);
+					a_value.push_back(ch);
+				}
+			};
+
+			a_intfc->ReadRecordData(loadedConfig.version);
+			a_intfc->ReadRecordData(loadedConfig.global.enabled);
+			a_intfc->ReadRecordData(loadedConfig.global.firstPersonOnly);
+			a_intfc->ReadRecordData(loadedConfig.global.preventInMenus);
+			a_intfc->ReadRecordData(loadedConfig.global.preventWhileStaggered);
+			a_intfc->ReadRecordData(loadedConfig.global.preventWhileRagdoll);
+			a_intfc->ReadRecordData(loadedConfig.global.minTimeAfterLoadSeconds);
+			a_intfc->ReadRecordData(loadedConfig.global.maxChains);
+			a_intfc->ReadRecordData(loadedConfig.global.maxStepsPerChain);
+
+			readString(loadedConfig.global.record.toggleKey);
+			readString(loadedConfig.global.record.cancelKey);
+			a_intfc->ReadRecordData(loadedConfig.global.record.maxIdleSec);
+			a_intfc->ReadRecordData(loadedConfig.global.record.recordOnlySuccessfulCasts);
+			a_intfc->ReadRecordData(loadedConfig.global.record.ignorePowers);
+			a_intfc->ReadRecordData(loadedConfig.global.record.ignoreShouts);
+			a_intfc->ReadRecordData(loadedConfig.global.record.ignoreScrolls);
+
+			readString(loadedConfig.global.playback.playKey);
+			readString(loadedConfig.global.playback.cancelKey);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.defaultChainIndex);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.stepDelaySec);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.abortOnFail);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.skipOnFail);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.requireWeaponSheathed);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.autoSheathDuringPlayback);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.stopIfPlayerHit);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.stopIfAttackPressed);
+			a_intfc->ReadRecordData(loadedConfig.global.playback.stopIfBlockPressed);
+
+			a_intfc->ReadRecordData(loadedConfig.global.concentration.minHoldSec);
+			a_intfc->ReadRecordData(loadedConfig.global.concentration.maxHoldSec);
+			a_intfc->ReadRecordData(loadedConfig.global.concentration.sampleGranularitySec);
+			a_intfc->ReadRecordData(loadedConfig.global.concentration.releasePaddingSec);
+
+			readString(loadedConfig.global.targeting.mode);
+			a_intfc->ReadRecordData(loadedConfig.global.targeting.raycastRange);
+			a_intfc->ReadRecordData(loadedConfig.global.targeting.aimConeDegrees);
+			a_intfc->ReadRecordData(loadedConfig.global.targeting.preferCrosshairActor);
+			a_intfc->ReadRecordData(loadedConfig.global.targeting.fallbackToSelfIfNoTarget);
+
+			std::uint32_t chainCount = 0;
+			a_intfc->ReadRecordData(chainCount);
+			loadedConfig.chains.clear();
+			loadedConfig.chains.reserve(chainCount);
+			for (std::uint32_t chainIndex = 0; chainIndex < chainCount; ++chainIndex) {
+				ChainConfig chain{};
+				readString(chain.name);
+				a_intfc->ReadRecordData(chain.enabled);
+				readString(chain.hotkey);
+
+				std::uint32_t stepCount = 0;
+				a_intfc->ReadRecordData(stepCount);
+				chain.steps.reserve(stepCount);
+				for (std::uint32_t stepIndex = 0; stepIndex < stepCount; ++stepIndex) {
+					ChainStep step{};
+					readString(step.spellFormID);
+					std::uint32_t stepType = static_cast<std::uint32_t>(StepType::kFireAndForget);
+					std::uint32_t castOn = static_cast<std::uint32_t>(CastOn::kSelf);
+					a_intfc->ReadRecordData(stepType);
+					a_intfc->ReadRecordData(castOn);
+					step.type = static_cast<StepType>(stepType);
+					step.castOn = static_cast<CastOn>(castOn);
+					a_intfc->ReadRecordData(step.holdSec);
+					chain.steps.push_back(std::move(step));
+				}
+
+				loadedConfig.chains.push_back(std::move(chain));
+			}
+
+			loaded = true;
+		}
+
+		if (loaded) {
+			ClampConfig(loadedConfig);
+			EnsureChainCount(loadedConfig);
+			m_config = std::move(loadedConfig);
+		}
+		ResetRuntime();
+	}
+
+	void Controller::OnRevert()
+	{
+		m_config = GetDefaultConfig();
+		LoadConfig();
+		ClampConfig(m_config);
+		EnsureChainCount(m_config);
+		ResetRuntime();
 	}
 
 	void Controller::LoadConfig()

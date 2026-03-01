@@ -96,6 +96,9 @@ namespace QUICK_BUFF
 		void Initialize();
 		void ResetRuntime();
 		void ResetConfigToDefaults(bool a_saveToDisk);
+		void Serialize(SKSE::SerializationInterface* a_intfc) const;
+		void Deserialize(SKSE::SerializationInterface* a_intfc);
+		void OnRevert();
 
 		[[nodiscard]] Config GetConfig() const;
 		void SetConfig(const Config& a_config, bool a_saveToDisk);
