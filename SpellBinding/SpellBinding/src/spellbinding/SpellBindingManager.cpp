@@ -284,7 +284,7 @@ namespace SBIND
 		BindingKey key{};
 		key.pluginName = payload.value("pluginName", "");
 		key.localFormID = payload.value("localFormID", 0u);
-		key.uniqueID = payload.value("uniqueID", 0u);
+		key.uniqueID = static_cast<std::uint16_t>(payload.value("uniqueID", 0u));
 		key.handSlot = static_cast<HandSlot>(payload.value("handSlot", 0u));
 		key.isUnarmed = payload.value("isUnarmed", false);
 		key.displayName = payload.value("displayName", "");
@@ -418,7 +418,7 @@ namespace SBIND
 				}
 				const auto* id = xList->GetByType<RE::ExtraUniqueID>();
 				if (id) {
-					uniqueID = id->uniqueID;
+					uniqueID = static_cast<std::uint16_t>(id->uniqueID);
 					break;
 				}
 			}
@@ -609,7 +609,13 @@ namespace SBIND
 		const float damageScale = a_isPowerAttack ? m_config.powerDamageScale : 1.0f;
 		const float rawCost = std::max(0.0f, spell->CalculateMagickaCost(a_player));
 		const float finalCost = rawCost * magickaScale;
-		const float currentMagicka = a_player->GetActorValue(RE::ActorValue::kMagicka);
+		auto* avOwner = a_player->AsActorValueOwner();
+		if (!avOwner) {
+			SetLastErrorLocked("No actor value owner");
+			return false;
+		}
+
+		const float currentMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
 		if (currentMagicka + 0.001f < finalCost) {
 			SetLastErrorLocked("Not enough magicka");
 			if (m_config.showHudNotifications) {
@@ -627,7 +633,7 @@ namespace SBIND
 			return false;
 		}
 
-		a_player->DamageActorValue(RE::ActorValue::kMagicka, finalCost);
+		avOwner->DamageActorValue(RE::ActorValue::kMagicka, finalCost);
 
 		const bool selfDelivery = spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf;
 		const bool castOnSelf = selfDelivery;
