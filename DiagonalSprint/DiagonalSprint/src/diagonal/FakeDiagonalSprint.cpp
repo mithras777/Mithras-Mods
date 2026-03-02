@@ -4,11 +4,14 @@
 #include "util/LogUtil.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <vector>
 #include <Windows.h>
 
 namespace DIAGONAL
@@ -19,6 +22,10 @@ namespace DIAGONAL
 		constexpr float kEpsilon = 1e-4f;
 		constexpr float kSprintAssistDuration = 0.10f;
 		constexpr float kJumpSuppressDuration = 0.20f;
+		constexpr float kJumpIntentWindow = 0.18f;
+		constexpr float kSyntheticHeldSecs = 0.06f;
+		constexpr float kWarpCooldownAfterLiftoff = 0.12f;
+		constexpr float kGroundReacquireGrace = 0.05f;
 		constexpr float kJumpLateralAccel = 120.0f;
 		constexpr float kStairClimbBiasPerUnit = 3.0f;
 		constexpr float kStairClimbBiasMin = 0.08f;
@@ -92,7 +99,8 @@ namespace DIAGONAL
 		{
 			a_os << "{\n";
 			a_os << "  \"enabled\": " << (a_cfg.enabled ? "true" : "false") << ",\n";
-			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << "\n";
+			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << ",\n";
+			a_os << "  \"freeAirControl\": " << (a_cfg.freeAirControl ? "true" : "false") << "\n";
 			a_os << "}\n";
 		}
 
@@ -191,11 +199,20 @@ namespace DIAGONAL
 
 		auto* userEvents = RE::UserEvents::GetSingleton();
 		auto* player = RE::PlayerCharacter::GetSingleton();
-		if (!userEvents || !player) {
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		if (!userEvents || !player || !camera) {
+			return;
+		}
+		if (!camera->IsInFirstPerson()) {
+			std::scoped_lock lock(m_lock);
+			ResetRuntimeState();
 			return;
 		}
 
 		std::scoped_lock lock(m_lock);
+		std::vector<RE::ButtonEvent*> jumpPressEvents{};
+		RE::INPUT_DEVICE jumpDevice = RE::INPUT_DEVICE::kNone;
+
 		for (auto* event = *a_event; event; event = event->next) {
 			if (event->GetEventType() != RE::INPUT_EVENT_TYPE::kButton) {
 				continue;
@@ -218,6 +235,13 @@ namespace DIAGONAL
 			} else if (userEvent == userEvents->jump) {
 				if (button->IsPressed()) {
 					m_jumpSuppressTimer = kJumpSuppressDuration;
+					m_jumpIntentActive = true;
+					m_jumpIntentTimer = kJumpIntentWindow;
+					m_groundStableTimer = 0.0f;
+					jumpPressEvents.push_back(button);
+					if (jumpDevice == RE::INPUT_DEVICE::kNone) {
+						jumpDevice = event->GetDevice();
+					}
 				}
 			}
 		}
@@ -228,6 +252,18 @@ namespace DIAGONAL
 			m_sprintAssistActive = true;
 			m_sprintAssistTimer = kSprintAssistDuration;
 			m_sprintAssistSide = heldStrafeInput;
+		}
+
+		if (!jumpPressEvents.empty() && ShouldUseSyntheticJump(player) && PrepareSyntheticJump(jumpDevice)) {
+			TryUpdateDeviceButtonHold(m_jumpDevice, m_jumpMappedKey, kSyntheticHeldSecs);
+			for (auto* button : jumpPressEvents) {
+				button->device = m_jumpDevice;
+				button->SetIDCode(static_cast<std::uint32_t>(m_jumpMappedKey));
+				button->GetRuntimeData().value = 1.0f;
+				button->GetRuntimeData().heldDownSecs = 0.0f;
+			}
+			m_syntheticJumpPending = false;
+			m_syntheticJumpReleasePending = false;
 		}
 
 		m_blockStrafeNow = IsFeatureActive(player) || m_sprintAssistActive;
@@ -261,6 +297,14 @@ namespace DIAGONAL
 			return;
 		}
 
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		if (!camera || !camera->IsInFirstPerson()) {
+			std::scoped_lock lock(m_lock);
+			ClearDriftVelocityMod(player);
+			ResetRuntimeState();
+			return;
+		}
+
 		std::scoped_lock lock(m_lock);
 		const bool sprintActive = IsFeatureActive(player);
 		const bool assistContextValid = IsAssistContextValid(player);
@@ -269,9 +313,28 @@ namespace DIAGONAL
 		const bool onGroundState = IsGroundedReliable(player);
 		const bool jumpingState = currentState == RE::hkpCharacterStateType::kJumping;
 		m_jumpSuppressTimer = std::max(0.0f, m_jumpSuppressTimer - a_dt);
+		m_jumpIntentTimer = std::max(0.0f, m_jumpIntentTimer - a_dt);
+		m_warpCooldownTimer = std::max(0.0f, m_warpCooldownTimer - a_dt);
+
+		if (m_prevOnGround && !onGroundState) {
+			m_warpCooldownTimer = kWarpCooldownAfterLiftoff;
+		}
+		m_prevOnGround = onGroundState;
+
+		if (m_jumpIntentActive && m_jumpIntentTimer <= 0.0f && onGroundState) {
+			m_groundStableTimer += a_dt;
+			if (m_groundStableTimer >= kGroundReacquireGrace) {
+				m_jumpIntentActive = false;
+				m_groundStableTimer = 0.0f;
+			}
+		} else {
+			m_groundStableTimer = 0.0f;
+		}
+
 		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
 		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
-		const bool jumpDiagonalIntent = jumpingState && m_jumpSuppressTimer > 0.0f && std::abs(heldStrafeInput) > kEpsilon;
+		const bool jumpSafetyLock = m_jumpIntentActive || jumpingState || !onGroundState || m_warpCooldownTimer > 0.0f;
+		const bool jumpDiagonalIntent = (jumpSafetyLock || (jumpingState && m_jumpSuppressTimer > 0.0f)) && std::abs(heldStrafeInput) > kEpsilon;
 
 		if (sprintActive) {
 			m_sprintAssistActive = false;
@@ -306,14 +369,14 @@ namespace DIAGONAL
 			}
 		}
 
-		const float targetInput = (sprintActive || jumpDiagonalIntent) ? heldStrafeInput : m_sprintAssistSide;
+		const float targetInput = (sprintActive || jumpDiagonalIntent || m_jumpIntentActive) ? heldStrafeInput : m_sprintAssistSide;
 		const RE::NiPoint3 rightFlat = ComputeCameraRightFlat();
 		const float targetLateral = targetInput * m_config.lateralSpeed;
 
 		if (std::abs(targetLateral) <= kEpsilon) {
 			ClearDriftVelocityMod(player);
 		} else {
-			ApplyLateralVelocity(player, a_dt, rightFlat, targetLateral);
+			ApplyLateralVelocity(player, a_dt, rightFlat, targetLateral, jumpSafetyLock);
 		}
 	}
 
@@ -324,6 +387,15 @@ namespace DIAGONAL
 		m_forwardDown = false;
 		m_sprintDown = false;
 		m_jumpSuppressTimer = 0.0f;
+		m_jumpIntentActive = false;
+		m_jumpIntentTimer = 0.0f;
+		m_groundStableTimer = 0.0f;
+		m_syntheticJumpPending = false;
+		m_syntheticJumpReleasePending = false;
+		m_jumpDevice = RE::INPUT_DEVICE::kNone;
+		m_jumpMappedKey = -1;
+		m_warpCooldownTimer = 0.0f;
+		m_prevOnGround = true;
 		m_sprintAssistActive = false;
 		m_sprintAssistTimer = 0.0f;
 		m_sprintAssistSide = 0.0f;
@@ -437,6 +509,109 @@ namespace DIAGONAL
 		return true;
 	}
 
+	bool FakeDiagonalSprint::ShouldUseSyntheticJump(RE::PlayerCharacter* a_player) const
+	{
+		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+		return m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon && IsAssistContextValid(a_player);
+	}
+
+	bool FakeDiagonalSprint::PrepareSyntheticJump(RE::INPUT_DEVICE a_device)
+	{
+		auto* controlMap = RE::ControlMap::GetSingleton();
+		auto* userEvents = RE::UserEvents::GetSingleton();
+		if (!controlMap || !userEvents) {
+			m_jumpDevice = RE::INPUT_DEVICE::kNone;
+			m_jumpMappedKey = -1;
+			return false;
+		}
+
+		const std::array<RE::INPUT_DEVICE, 4> candidates{
+			a_device,
+			RE::INPUT_DEVICE::kKeyboard,
+			RE::INPUT_DEVICE::kGamepad,
+			RE::INPUT_DEVICE::kNone
+		};
+		const auto invalidKey = static_cast<std::uint32_t>(RE::ControlMap::kInvalid);
+		const auto maxKey = std::numeric_limits<std::uint32_t>::max();
+
+		for (const auto candidate : candidates) {
+			if (candidate != RE::INPUT_DEVICE::kKeyboard && candidate != RE::INPUT_DEVICE::kGamepad) {
+				continue;
+			}
+
+			const std::uint32_t mapped = controlMap->GetMappedKey(userEvents->jump, candidate);
+			if (mapped == invalidKey || mapped == maxKey) {
+				continue;
+			}
+
+			m_jumpDevice = candidate;
+			m_jumpMappedKey = static_cast<std::int32_t>(mapped);
+			return true;
+		}
+
+		m_jumpDevice = RE::INPUT_DEVICE::kNone;
+		m_jumpMappedKey = -1;
+		return false;
+	}
+
+	void FakeDiagonalSprint::QueueSyntheticJumpPress(float a_heldSecs)
+	{
+		if (m_jumpMappedKey < 0 || m_jumpDevice == RE::INPUT_DEVICE::kNone) {
+			return;
+		}
+
+		auto* queue = RE::BSInputEventQueue::GetSingleton();
+		auto* userEvents = RE::UserEvents::GetSingleton();
+		if (!queue || !userEvents) {
+			return;
+		}
+
+		TryUpdateDeviceButtonHold(m_jumpDevice, m_jumpMappedKey, a_heldSecs);
+		queue->AddButtonEvent(m_jumpDevice, m_jumpMappedKey, 1.0f, 0.0f, userEvents->jump);
+	}
+
+	void FakeDiagonalSprint::QueueSyntheticJumpRelease()
+	{
+		if (m_jumpMappedKey < 0 || m_jumpDevice == RE::INPUT_DEVICE::kNone) {
+			return;
+		}
+
+		auto* queue = RE::BSInputEventQueue::GetSingleton();
+		auto* userEvents = RE::UserEvents::GetSingleton();
+		if (!queue || !userEvents) {
+			return;
+		}
+
+		queue->AddButtonEvent(m_jumpDevice, m_jumpMappedKey, 0.0f, 0.0f, userEvents->jump);
+	}
+
+	bool FakeDiagonalSprint::TryUpdateDeviceButtonHold(RE::INPUT_DEVICE a_device, std::int32_t a_key, float a_heldSecs)
+	{
+		auto* inputMgr = RE::BSInputDeviceManager::GetSingleton();
+		if (!inputMgr || a_key < 0) {
+			return false;
+		}
+
+		RE::BSInputDevice* device = nullptr;
+		if (a_device == RE::INPUT_DEVICE::kKeyboard) {
+			device = inputMgr->GetKeyboard();
+		} else if (a_device == RE::INPUT_DEVICE::kGamepad) {
+			device = inputMgr->GetGamepad();
+		}
+
+		if (!device) {
+			return false;
+		}
+
+		auto it = device->deviceButtons.find(static_cast<std::uint32_t>(a_key));
+		if (it != device->deviceButtons.end() && it->second) {
+			it->second->heldDownSecs = a_heldSecs;
+			return true;
+		}
+
+		return false;
+	}
+
 	bool FakeDiagonalSprint::IsGroundedReliable(RE::PlayerCharacter* a_player) const
 	{
 		if (!a_player) {
@@ -475,7 +650,7 @@ namespace DIAGONAL
 		return Normalize2D(rightFlat, { 1.0f, 0.0f, 0.0f });
 	}
 
-	void FakeDiagonalSprint::ApplyLateralVelocity(RE::PlayerCharacter* a_player, float a_dt, const RE::NiPoint3& a_rightFlat, float a_targetLateral)
+	void FakeDiagonalSprint::ApplyLateralVelocity(RE::PlayerCharacter* a_player, float a_dt, const RE::NiPoint3& a_rightFlat, float a_targetLateral, bool a_jumpSafetyLock)
 	{
 		auto* controller = a_player ? a_player->GetCharController() : nullptr;
 		if (!controller) {
@@ -551,11 +726,18 @@ namespace DIAGONAL
 		}
 		const bool movingUphill = uphillDot > kUphillDotThreshold;
 
-		// Drive controller-intended side movement (preferred path).
-		controller->velocityMod.quad.m128_f32[0] = driftOnSupportPlane.x;
-		controller->velocityMod.quad.m128_f32[1] = driftOnSupportPlane.y;
-		controller->velocityMod.quad.m128_f32[2] = 0.0f;
-		controller->velocityMod.quad.m128_f32[3] = 0.0f;
+		if (!a_jumpSafetyLock) {
+			// Drive controller-intended side movement (preferred path).
+			controller->velocityMod.quad.m128_f32[0] = driftOnSupportPlane.x;
+			controller->velocityMod.quad.m128_f32[1] = driftOnSupportPlane.y;
+			controller->velocityMod.quad.m128_f32[2] = 0.0f;
+			controller->velocityMod.quad.m128_f32[3] = 0.0f;
+		} else {
+			controller->velocityMod.quad.m128_f32[0] = 0.0f;
+			controller->velocityMod.quad.m128_f32[1] = 0.0f;
+			controller->velocityMod.quad.m128_f32[2] = 0.0f;
+			controller->velocityMod.quad.m128_f32[3] = 0.0f;
+		}
 
 		const auto currentState = controller->context.currentState;
 		const bool onGroundState = currentState == RE::hkpCharacterStateType::kOnGround && !a_player->IsInMidair();
@@ -563,7 +745,7 @@ namespace DIAGONAL
 
 		// Grounded sprint can clamp side velocity; inject only a lateral controller step.
 		// Skip shortly after jump press to avoid jump/liftoff distortion.
-		if (onGroundState && m_jumpSuppressTimer <= 0.0f) {
+		if (!a_jumpSafetyLock && onGroundState && m_jumpSuppressTimer <= 0.0f) {
 			const float flatStepX = driftHorizontal.x * a_dt;
 			const float flatStepY = driftHorizontal.y * a_dt;
 			const float flatStep2D = std::sqrt((flatStepX * flatStepX) + (flatStepY * flatStepY));
@@ -585,7 +767,9 @@ namespace DIAGONAL
 		}
 
 		// Brief jump-takeoff window: apply capped lateral velocity adjustment for diagonal jump feel.
-		if (jumpingState && m_jumpSuppressTimer > 0.0f) {
+		const bool allowContinuousAirControl = m_config.freeAirControl && a_jumpSafetyLock;
+		const bool allowTakeoffBoostOnly = !m_config.freeAirControl && jumpingState && m_jumpSuppressTimer > 0.0f;
+		if (allowContinuousAirControl || allowTakeoffBoostOnly) {
 			const float lateralCurrent = (horizontal.x * rightNorm.x) + (horizontal.y * rightNorm.y);
 			const float lateralDelta = ClampFloat(
 				clampedTarget - lateralCurrent,
@@ -628,6 +812,7 @@ namespace DIAGONAL
 		FakeDiagonalConfig loaded = {};
 		ReadBool(text, "enabled", loaded.enabled);
 		ReadFloat(text, "lateralSpeed", loaded.lateralSpeed);
+		ReadBool(text, "freeAirControl", loaded.freeAirControl);
 
 		std::scoped_lock lock(m_lock);
 		m_config = loaded;
