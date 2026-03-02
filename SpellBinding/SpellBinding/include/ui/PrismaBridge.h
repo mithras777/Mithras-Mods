@@ -12,6 +12,7 @@ namespace UI::PRISMA
 		void Initialize();
 		void Toggle();
 		void PushSnapshot(const std::string& a_json);
+		void PushHUDSnapshot(const std::string& a_json);
 		void ShowToast(const std::string& a_text);
 		void SetFocusState(bool a_focused);
 
@@ -19,11 +20,15 @@ namespace UI::PRISMA
 
 	private:
 		void EnsureViewCreated();
+		void EnsureHUDViewCreated();
 		void RegisterListeners();
+		void RegisterHUDListeners();
 
 	private:
 		PRISMA_UI_API::IVPrismaUI1* m_api{ nullptr };
 		PrismaView m_view{ 0 };
+		PrismaView m_hudView{ 0 };
 		bool m_listenersRegistered{ false };
+		bool m_hudListenersRegistered{ false };
 	};
 }

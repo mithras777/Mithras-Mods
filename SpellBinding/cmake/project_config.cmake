@@ -145,10 +145,12 @@ endif()
 add_custom_command(
 	TARGET ${PROJECT_NAME}
 	POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E rm -rf "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug/PrismaUI/views/SpellBinding,${PROJECT_SOURCE_DIR}/.bin/x64-release/PrismaUI/views/SpellBinding>"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug/PrismaUI/views/SpellBinding,${PROJECT_SOURCE_DIR}/.bin/x64-release/PrismaUI/views/SpellBinding>"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${PROJECT_WEB_ROOT_DIR}/SpellBinding"
 		"$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug/PrismaUI/views/SpellBinding,${PROJECT_SOURCE_DIR}/.bin/x64-release/PrismaUI/views/SpellBinding>"
+	COMMAND ${CMAKE_COMMAND} -E rm -rf "${NEXUS_RELEASE_PRISMA_VIEW_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${NEXUS_RELEASE_PRISMA_VIEW_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${PROJECT_WEB_ROOT_DIR}/SpellBinding"

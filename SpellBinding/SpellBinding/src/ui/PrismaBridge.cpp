@@ -3,15 +3,14 @@
 #include "spellbinding/SpellBindingManager.h"
 #include "util/LogUtil.h"
 
-#include "json/single_include/nlohmann/json.hpp"
-
 #include <format>
 
 namespace UI::PRISMA
 {
 	namespace
 	{
-		constexpr const char* kViewPath = "SpellBinding/index.html";
+		constexpr const char* kMenuViewPath = "SpellBinding/index.html";
+		constexpr const char* kHudViewPath = "SpellBinding/hud.html";
 	}
 
 	void Bridge::Initialize()
@@ -22,11 +21,12 @@ namespace UI::PRISMA
 		}
 
 		if (!m_api) {
-			LOG_WARN("SpellBinding: PrismaUI API unavailable, menu UI disabled");
+			LOG_WARN("SpellBinding: PrismaUI API unavailable, UI disabled");
 			return;
 		}
 
 		EnsureViewCreated();
+		EnsureHUDViewCreated();
 	}
 
 	void Bridge::EnsureViewCreated()
@@ -39,7 +39,7 @@ namespace UI::PRISMA
 			return;
 		}
 
-		m_view = m_api->CreateView(kViewPath, [](PrismaView) -> void {
+		m_view = m_api->CreateView(kMenuViewPath, [](PrismaView) -> void {
 			auto* bridge = Bridge::GetSingleton();
 			if (bridge) {
 				bridge->RegisterListeners();
@@ -47,13 +47,40 @@ namespace UI::PRISMA
 			}
 		});
 		if (m_view == 0) {
-			LOG_WARN("SpellBinding: failed to create Prisma view");
+			LOG_WARN("SpellBinding: failed to create Prisma menu view");
 			return;
 		}
 
 		m_api->Hide(m_view);
 		m_api->SetOrder(m_view, 20);
-		LOG_INFO("SpellBinding: Prisma view created");
+		LOG_INFO("SpellBinding: Prisma menu view created");
+	}
+
+	void Bridge::EnsureHUDViewCreated()
+	{
+		if (!m_api) {
+			return;
+		}
+
+		if (m_hudView != 0 && m_api->IsValid(m_hudView)) {
+			return;
+		}
+
+		m_hudView = m_api->CreateView(kHudViewPath, [](PrismaView) -> void {
+			auto* bridge = Bridge::GetSingleton();
+			if (bridge) {
+				bridge->RegisterHUDListeners();
+				SBIND::Manager::GetSingleton()->PushHUDSnapshot();
+			}
+		});
+		if (m_hudView == 0) {
+			LOG_WARN("SpellBinding: failed to create Prisma HUD view");
+			return;
+		}
+
+		m_api->Show(m_hudView);
+		m_api->SetOrder(m_hudView, 40);
+		LOG_INFO("SpellBinding: Prisma HUD view created");
 	}
 
 	void Bridge::RegisterListeners()
@@ -70,8 +97,20 @@ namespace UI::PRISMA
 			SBIND::Manager::GetSingleton()->PushUISnapshot();
 		});
 
+		m_api->RegisterJSListener(m_view, "sb_cycle_bind_slot", [](const char*) -> void {
+			SBIND::Manager::GetSingleton()->CycleBindSlotMode();
+		});
+
 		m_api->RegisterJSListener(m_view, "sb_bind_selected_magic_menu_spell", [](const char*) -> void {
 			SBIND::Manager::GetSingleton()->TryBindSelectedMagicMenuSpell();
+		});
+
+		m_api->RegisterJSListener(m_view, "sb_bind_spell_for_slot", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->BindSpellForSlotFromJson(payload ? payload : "");
+		});
+
+		m_api->RegisterJSListener(m_view, "sb_unbind_slot", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->UnbindSlotFromJson(payload ? payload : "");
 		});
 
 		m_api->RegisterJSListener(m_view, "sb_unbind_weapon", [](const char* payload) -> void {
@@ -79,27 +118,44 @@ namespace UI::PRISMA
 		});
 
 		m_api->RegisterJSListener(m_view, "sb_set_setting", [](const char* payload) -> void {
-			if (!payload || payload[0] == '\0') {
-				return;
-			}
-			try {
-				const auto parsed = nlohmann::json::parse(payload);
-				auto config = SBIND::Manager::GetSingleton()->GetConfig();
-				const auto id = parsed.value("id", std::string{});
-				if (id == "enabled") {
-					config.enabled = parsed.value("value", config.enabled);
-				} else if (id == "showHudNotifications") {
-					config.showHudNotifications = parsed.value("value", config.showHudNotifications);
-				} else if (id == "powerDamageScale") {
-					config.powerDamageScale = parsed.value("value", config.powerDamageScale);
-				} else if (id == "powerMagickaScale") {
-					config.powerMagickaScale = parsed.value("value", config.powerMagickaScale);
-				}
-				SBIND::Manager::GetSingleton()->SetConfig(config, true);
-			} catch (...) {}
+			SBIND::Manager::GetSingleton()->SetSettingFromJson(payload ? payload : "");
+		});
+
+		m_api->RegisterJSListener(m_view, "sb_set_weapon_setting", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->SetWeaponSettingFromJson(payload ? payload : "");
+		});
+
+		m_api->RegisterJSListener(m_view, "sb_set_blacklist", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->SetBlacklistFromJson(payload ? payload : "");
+		});
+
+		m_api->RegisterJSListener(m_view, "sb_enter_hud_drag_mode", [](const char*) -> void {
+			SBIND::Manager::GetSingleton()->EnterHudDragMode();
+			SBIND::Manager::GetSingleton()->PushHUDSnapshot();
+		});
+
+		m_api->RegisterJSListener(m_view, "sb_save_hud_position", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->SaveHudPositionFromJson(payload ? payload : "");
 		});
 
 		m_listenersRegistered = true;
+	}
+
+	void Bridge::RegisterHUDListeners()
+	{
+		if (!m_api || m_hudView == 0 || m_hudListenersRegistered) {
+			return;
+		}
+
+		m_api->RegisterJSListener(m_hudView, "sb_hud_drag_update", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->SaveHudPositionFromJson(payload ? payload : "");
+		});
+
+		m_api->RegisterJSListener(m_hudView, "sb_hud_drag_commit", [](const char* payload) -> void {
+			SBIND::Manager::GetSingleton()->SaveHudPositionFromJson(payload ? payload : "");
+		});
+
+		m_hudListenersRegistered = true;
 	}
 
 	void Bridge::Toggle()
@@ -111,6 +167,7 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureViewCreated();
+		EnsureHUDViewCreated();
 		if (m_view == 0 || !m_api->IsValid(m_view)) {
 			return;
 		}
@@ -138,6 +195,18 @@ namespace UI::PRISMA
 		m_api->InteropCall(m_view, "sb_renderSnapshot", a_json.c_str());
 	}
 
+	void Bridge::PushHUDSnapshot(const std::string& a_json)
+	{
+		if (!m_api) {
+			return;
+		}
+		EnsureHUDViewCreated();
+		if (m_hudView == 0 || !m_api->IsValid(m_hudView)) {
+			return;
+		}
+		m_api->InteropCall(m_hudView, "sb_renderHud", a_json.c_str());
+	}
+
 	void Bridge::ShowToast(const std::string& a_text)
 	{
 		if (!m_api) {
@@ -163,3 +232,4 @@ namespace UI::PRISMA
 		m_api->InteropCall(m_view, "sb_setFocusState", json.c_str());
 	}
 }
+

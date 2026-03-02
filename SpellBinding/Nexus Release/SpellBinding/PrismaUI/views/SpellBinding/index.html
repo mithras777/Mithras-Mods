@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -7,59 +7,102 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="app" class="layout">
-    <aside class="panel panel-list">
-      <div class="panel-head">
+  <div id="drag-banner" class="drag-banner hidden">Drag widget to save position <button id="drag-save-btn">Save</button></div>
+  <div class="app">
+    <aside class="panel list-panel">
+      <div class="list-head">
         <h2>Bound Weapons</h2>
-        <input id="search" class="search" type="text" placeholder="Search" />
+        <input id="search" type="text" placeholder="Search" />
       </div>
       <div id="binding-list" class="binding-list"></div>
     </aside>
 
-    <main class="panel panel-current">
-      <div class="title-row">
-        <h1>SpellBinding</h1>
-        <button id="refresh-btn" class="btn subtle">Refresh</button>
-      </div>
-
-      <section class="card hero">
-        <div class="hero-left">
-          <p class="eyebrow">Currently Equipped</p>
-          <h3 id="current-weapon">Unknown</h3>
-          <p id="current-slot" class="muted">Right hand</p>
-        </div>
-        <div class="hero-right">
-          <p class="eyebrow">Bound Spell</p>
-          <h3 id="current-spell">None</h3>
-          <p id="current-cost" class="muted">Cost: -</p>
-        </div>
-      </section>
-
-      <section class="card actions">
+    <main class="panel main-panel">
+      <header class="topbar">
         <div>
-          <p>Open <strong>Magic Menu</strong>, highlight a spell, then press <strong id="bind-hotkey">G</strong>.</p>
-          <p class="muted">UI Toggle: <span id="ui-hotkey">F2</span></p>
+          <h1>SpellBinding</h1>
+          <p class="muted" id="bind-mode">Bind Mode: Light</p>
         </div>
-        <div class="action-buttons">
-          <button id="bind-btn" class="btn">Bind Selected Spell</button>
-          <button id="toggle-btn" class="btn subtle">Toggle UI</button>
+        <div class="top-actions">
+          <button id="cooldown-edit-btn" class="icon-btn" title="Cooldown Widget">O</button>
+          <button id="blacklist-btn" class="icon-btn" title="Blacklist">B</button>
+          <button id="settings-btn" class="icon-btn" title="Settings">S</button>
+          <button id="close-btn" class="icon-btn danger" title="Close">X</button>
+        </div>
+      </header>
+
+      <section class="current-grid">
+        <article class="info-card">
+          <p class="label">Current Weapon</p>
+          <h3 id="current-weapon">None</h3>
+          <p id="current-slot" class="muted">Right Hand</p>
+        </article>
+
+        <article class="info-card">
+          <p class="label">Current Slot Spell</p>
+          <h3 id="current-spell">None</h3>
+          <p id="current-metric" class="muted">Cost: -</p>
+        </article>
+      </section>
+
+      <section class="panel inline-panel">
+        <div class="slot-tabs">
+          <button data-slot="0" class="slot-tab active">Light</button>
+          <button data-slot="1" class="slot-tab">Power</button>
+          <button data-slot="2" class="slot-tab">Bash</button>
+          <button id="cycle-slot-btn" class="slot-cycle">Cycle (Shift+G)</button>
+        </div>
+        <div class="inline-grid">
+          <div class="spell-picker">
+            <input id="spell-search" type="text" placeholder="Search known spells" />
+            <div id="spell-list" class="spell-list"></div>
+            <div class="inline-actions">
+              <button id="bind-selected">Bind Selected</button>
+              <button id="unbind-selected" class="danger-lite">Unbind Slot</button>
+              <button id="bind-magicmenu" class="ghost">Bind from MagicMenu (G)</button>
+            </div>
+          </div>
+          <div class="weapon-settings">
+            <label class="slider-row">Internal Cooldown <span id="cooldown-label">1.5s</span>
+              <input id="cooldown-slider" type="range" min="0.5" max="5" step="0.5" />
+            </label>
+            <label class="setting-row check"><span>Only In Combat</span><input id="only-combat" type="checkbox" /></label>
+          </div>
         </div>
       </section>
 
-      <section class="card settings">
-        <label><input id="enabled" type="checkbox" /> Enabled</label>
-        <label><input id="hud-notify" type="checkbox" /> HUD Notifications</label>
-        <label>Power Damage Scale <input id="power-dmg" type="range" min="0.1" max="5" step="0.1" /></label>
-        <label>Power Magicka Scale <input id="power-mag" type="range" min="0.1" max="5" step="0.1" /></label>
-      </section>
+      <footer class="status-grid">
+        <div><span>Last Trigger</span><strong id="last-trigger">-</strong></div>
+        <div><span>Mode</span><strong id="last-mode">Normal</strong></div>
+        <div><span>Error</span><strong id="last-error">-</strong></div>
+      </footer>
     </main>
+  </div>
 
-    <footer class="panel panel-status">
-      <div><span class="label">Last Trigger</span><span id="last-trigger">-</span></div>
-      <div><span class="label">Magicka Cost</span><span id="last-cost">-</span></div>
-      <div><span class="label">Mode</span><span id="last-mode">Normal</span></div>
-      <div><span class="label">Error</span><span id="last-error">-</span></div>
-    </footer>
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h3>Settings</h3><button id="settings-close" class="icon-btn danger">X</button></div>
+      <div class="settings-grid">
+        <div class="setting-row"><span>Menu Hotkey</span><strong id="ui-hotkey">F2</strong></div>
+        <div class="setting-row"><span>Bind Hotkey</span><strong id="bind-hotkey">G</strong></div>
+        <label class="setting-row check"><span>Enabled</span><input id="enabled" type="checkbox" /></label>
+        <label class="setting-row check"><span>HUD Notifications</span><input id="hud-notify" type="checkbox" /></label>
+        <label class="setting-row check"><span>Sound Cues</span><input id="sound-cues" type="checkbox" /></label>
+        <label class="setting-row check"><span>Cooldown Donut</span><input id="hud-donut" type="checkbox" /></label>
+        <label class="setting-row check"><span>Only Unsheathed</span><input id="hud-unsheathed" type="checkbox" /></label>
+        <label class="setting-row check"><span>Blacklist Enabled</span><input id="blacklist-enabled" type="checkbox" /></label>
+        <label class="slider-row">Dedupe <span id="dedupe-label">1.5s</span><input id="dedupe-slider" type="range" min="0.5" max="5" step="0.5" /></label>
+      </div>
+    </div>
+  </div>
+
+  <div id="blacklist-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h3>Blacklist</h3><button id="blacklist-close" class="icon-btn danger">X</button></div>
+      <input id="blacklist-search" type="text" placeholder="Search spell" />
+      <div id="blacklist-list" class="spell-list"></div>
+      <div class="inline-actions"><button id="blacklist-save">Save Blacklist</button></div>
+    </div>
   </div>
 
   <div id="toast" class="toast"></div>

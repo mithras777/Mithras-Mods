@@ -3,6 +3,8 @@
 #include "spellbinding/SpellBindingManager.h"
 #include "util/LogUtil.h"
 
+#include <Windows.h>
+
 namespace SB_INPUT
 {
 	namespace
@@ -67,7 +69,12 @@ namespace SB_INPUT
 			}
 
 			if (magicMenuOpen && keyCode == config.bindKey) {
-				manager->TryBindSelectedMagicMenuSpell();
+				const bool cycleModifier = (::GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+				if (cycleModifier) {
+					manager->CycleBindSlotMode();
+				} else {
+					manager->TryBindSelectedMagicMenuSpell();
+				}
 			}
 		}
 

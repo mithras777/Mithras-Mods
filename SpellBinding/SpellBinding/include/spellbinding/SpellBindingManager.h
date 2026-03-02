@@ -17,6 +17,13 @@ namespace SBIND
 		kUnarmed = 2
 	};
 
+	enum class AttackSlot : std::uint32_t
+	{
+		kLight = 0,
+		kPower = 1,
+		kBash = 2
+	};
+
 	struct BindingKey
 	{
 		std::string pluginName{};
@@ -49,22 +56,43 @@ namespace SBIND
 		}
 	};
 
-	struct BoundSpell
+	struct SlotBinding
 	{
 		std::string spellFormKey{};
 		std::string displayName{};
 		float lastKnownCost{ 0.0f };
+		std::uint32_t spellType{ 0 };
+		bool enabled{ false };
+	};
+
+	struct WeaponBindingProfile
+	{
+		SlotBinding light{};
+		SlotBinding power{};
+		SlotBinding bash{};
+		float triggerCooldownSec{ 1.5f };
+		bool onlyInCombat{ true };
 	};
 
 	struct SpellBindingConfig
 	{
-		std::uint32_t version{ 1 };
+		std::uint32_t version{ 2 };
 		bool enabled{ true };
-		std::uint32_t uiToggleKey{ 0x3C };  // F2
-		std::uint32_t bindKey{ 0x22 };      // G
-		float powerDamageScale{ 2.0f };
-		float powerMagickaScale{ 2.0f };
+		std::uint32_t uiToggleKey{ 0x3C };          // F2
+		std::uint32_t bindKey{ 0x22 };              // G
+		std::uint32_t cycleSlotModifierKey{ 0x2A }; // LShift
+		float fallbackDedupeSec{ 1.5f };
 		bool showHudNotifications{ true };
+		bool enableSoundCues{ true };
+		float soundCueVolume{ 0.45f };
+		bool hudDonutEnabled{ true };
+		bool hudDonutOnlyUnsheathed{ true };
+		std::string hudAnchor{ "top-right" };
+		float hudPosX{ 48.0f };
+		float hudPosY{ 48.0f };
+		bool blacklistEnabled{ true };
+		std::vector<std::string> blacklistedSpellKeys{};
+		AttackSlot currentBindSlotMode{ AttackSlot::kLight };
 	};
 
 	struct ManagerSnapshot
@@ -86,6 +114,9 @@ namespace SBIND
 
 		[[nodiscard]] SpellBindingConfig GetConfig() const;
 		void SetConfig(const SpellBindingConfig& a_config, bool a_save);
+		void SetSettingFromJson(const std::string& a_payload);
+		void SetWeaponSettingFromJson(const std::string& a_payload);
+		void SetBlacklistFromJson(const std::string& a_payload);
 
 		void OnEquipChanged();
 		void OnMenuStateChanged(bool a_blockingMenuOpen);
@@ -93,10 +124,17 @@ namespace SBIND
 
 		void ToggleUI();
 		void PushUISnapshot();
+		void PushHUDSnapshot();
 		[[nodiscard]] ManagerSnapshot GetSnapshot() const;
+		[[nodiscard]] std::string GetHUDSnapshot() const;
 
 		bool TryBindSelectedMagicMenuSpell();
+		void CycleBindSlotMode();
+		bool BindSpellForSlotFromJson(const std::string& a_payload);
+		bool UnbindSlotFromJson(const std::string& a_payload);
 		bool UnbindWeaponFromSerializedKey(const std::string& a_key);
+		void EnterHudDragMode();
+		void SaveHudPositionFromJson(const std::string& a_payload);
 
 		[[nodiscard]] std::string GetUIHotkeyName() const;
 		[[nodiscard]] std::string GetBindHotkeyName() const;
@@ -105,12 +143,18 @@ namespace SBIND
 		struct RuntimeState
 		{
 			bool wasAttacking{ false };
+			bool attackChainActive{ false };
 			bool menuBlocked{ false };
+			bool hudDragModeActive{ false };
 			float worldTimeSec{ 0.0f };
+			float lastAttackTriggerWorldTimeSec{ -1000.0f };
+			AttackSlot lastResolvedAttackSlot{ AttackSlot::kLight };
 			std::optional<BindingKey> rightWeapon{};
 			std::optional<BindingKey> leftWeapon{};
 			std::optional<BindingKey> unarmedKey{};
 			std::unordered_map<std::string, float> powerCooldownUntil{};
+			std::unordered_map<std::string, float> powerCooldownGameDayUntil{};
+			std::unordered_map<BindingKey, float, BindingKeyHash> weaponCooldownReadyAt{};
 			std::string lastTriggerWeapon{};
 			std::string lastTriggerSpell{};
 			std::string lastError{};
@@ -132,21 +176,36 @@ namespace SBIND
 		[[nodiscard]] static RE::SpellItem* ResolveSpell(std::string_view a_formKey);
 		[[nodiscard]] static std::optional<RE::FormID> ResolveSelectedSpellFormIDFromMagicMenu();
 
-		bool TryTriggerOnAttackStart(RE::PlayerCharacter* a_player);
-		bool TryTriggerBoundSpellLocked(RE::PlayerCharacter* a_player, const BindingKey& a_key, bool a_isPowerAttack);
+		[[nodiscard]] AttackSlot ResolveAttackSlot(std::string_view a_tag, std::string_view a_payload, RE::PlayerCharacter* a_player) const;
+		bool TryTriggerBoundSpellLocked(RE::PlayerCharacter* a_player, const BindingKey& a_key, AttackSlot a_slot, bool a_isPowerAttack);
+		[[nodiscard]] WeaponBindingProfile& EnsureProfileLocked(const BindingKey& a_key);
+		[[nodiscard]] SlotBinding* GetSlotBinding(WeaponBindingProfile& a_profile, AttackSlot a_slot);
+		[[nodiscard]] const SlotBinding* GetSlotBinding(const WeaponBindingProfile& a_profile, AttackSlot a_slot) const;
+		[[nodiscard]] bool IsMountedBlocked(RE::PlayerCharacter* a_player) const;
+		[[nodiscard]] bool IsKillmoveBlocked(RE::PlayerCharacter* a_player) const;
+		[[nodiscard]] bool IsDialogueBlocked() const;
+		[[nodiscard]] bool IsBlacklisted(std::string_view a_spellFormKey) const;
+		void PlayCueSuccess() const;
+		void PlayCueBlocked() const;
 
 		[[nodiscard]] static bool IsSupportedSpell(const RE::SpellItem* a_spell);
+		[[nodiscard]] static float GetGameDaysPassed();
+		[[nodiscard]] std::string BuildSpellMetricLocked(const SlotBinding& a_spellData, RE::SpellItem* a_spell, RE::PlayerCharacter* a_player) const;
+		[[nodiscard]] static std::string SpellTypeLabel(std::uint32_t a_spellType);
+		[[nodiscard]] static std::string AttackSlotLabel(AttackSlot a_slot);
 		[[nodiscard]] static std::string GetKeyboardKeyName(std::uint32_t a_keyCode);
 		[[nodiscard]] static bool IsLikelyLeftHandAttack(RE::PlayerCharacter* a_player);
 
 		[[nodiscard]] std::string BuildSnapshotJsonLocked() const;
+		[[nodiscard]] std::string BuildHUDSnapshotJsonLocked() const;
 		void Notify(const std::string& a_message) const;
 		void SetLastErrorLocked(std::string a_error);
 
 	private:
 		mutable std::mutex m_lock;
 		SpellBindingConfig m_config{};
-		std::unordered_map<BindingKey, BoundSpell, BindingKeyHash> m_bindings{};
+		std::unordered_map<BindingKey, WeaponBindingProfile, BindingKeyHash> m_bindings{};
 		RuntimeState m_runtime{};
 	};
 }
+
