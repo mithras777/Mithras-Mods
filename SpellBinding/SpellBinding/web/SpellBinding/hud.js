@@ -23,6 +23,9 @@
 
     donut.style.left = Number(state.x || 48) + 'px'
     donut.style.top = Number(state.y || 48) + 'px'
+    const size = Math.max(48, Math.min(220, Number(state.size || 88)))
+    donut.style.width = size + 'px'
+    donut.style.height = size + 'px'
     donut.style.pointerEvents = dragMode ? 'auto' : 'none'
   }
 

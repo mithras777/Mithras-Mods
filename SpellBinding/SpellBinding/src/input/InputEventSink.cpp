@@ -1,6 +1,7 @@
-#include "input/InputEventSink.h"
+﻿#include "input/InputEventSink.h"
 
 #include "spellbinding/SpellBindingManager.h"
+#include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
 
 #include <Windows.h>
@@ -20,6 +21,21 @@ namespace SB_INPUT
 
 			return ui->IsMenuOpen(RE::MainMenu::MENU_NAME) ||
 			       ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+		}
+
+		bool IsModifierDown(std::uint32_t a_keyCode)
+		{
+			switch (a_keyCode) {
+				case 0x2A:
+				case 0x36:
+					return (::GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+				case 0x1D:
+					return (::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+				case 0x38:
+					return (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+				default:
+					return false;
+			}
 		}
 	}
 
@@ -50,7 +66,11 @@ namespace SB_INPUT
 		auto* manager = SBIND::Manager::GetSingleton();
 		const auto config = manager->GetConfig();
 		auto* ui = RE::UI::GetSingleton();
+		auto* prismaBridge = UI::PRISMA::Bridge::GetSingleton();
 		const bool magicMenuOpen = ui && ui->IsMenuOpen(RE::MagicMenu::MENU_NAME);
+		const bool prismaMenuOpen = prismaBridge->IsMenuOpen();
+		const bool prismaMenuFocused = prismaBridge->IsMenuFocused();
+		bool consumeEvent = false;
 
 		for (auto* input = *a_event; input; input = input->next) {
 			if (input->GetEventType() != RE::INPUT_EVENT_TYPE::kButton) {
@@ -63,21 +83,38 @@ namespace SB_INPUT
 			}
 
 			const auto keyCode = static_cast<std::uint32_t>(button->GetIDCode());
+			const auto userEvent = input->QUserEvent();
+			if (button->IsDown()) {
+				auto* userEvents = RE::UserEvents::GetSingleton();
+				if (userEvents && userEvent == userEvents->attackPowerStart) {
+					manager->OnPowerAttackInputStart();
+				}
+			}
+
+			if (keyCode == 0x01 && prismaMenuOpen && !prismaMenuFocused && !magicMenuOpen) {
+				manager->ToggleUI();
+				consumeEvent = true;
+				continue;
+			}
+
 			if (keyCode == config.uiToggleKey) {
 				manager->ToggleUI();
 				continue;
 			}
 
-			if (magicMenuOpen && keyCode == config.bindKey) {
-				const bool cycleModifier = (::GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-				if (cycleModifier) {
+			if (keyCode == config.bindKey) {
+				if (IsModifierDown(config.cycleSlotModifierKey) && (magicMenuOpen || prismaMenuOpen)) {
 					manager->CycleBindSlotMode();
-				} else {
+					consumeEvent = magicMenuOpen;
+					continue;
+				}
+				if (magicMenuOpen) {
 					manager->TryBindSelectedMagicMenuSpell();
+					consumeEvent = true;
 				}
 			}
 		}
 
-		return RE::BSEventNotifyControl::kContinue;
+		return consumeEvent ? RE::BSEventNotifyControl::kStop : RE::BSEventNotifyControl::kContinue;
 	}
 }

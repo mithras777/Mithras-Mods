@@ -231,5 +231,20 @@ namespace UI::PRISMA
 		const auto json = std::format("{{\"focused\":{}}}", a_focused ? "true" : "false");
 		m_api->InteropCall(m_view, "sb_setFocusState", json.c_str());
 	}
-}
 
+	bool Bridge::IsMenuOpen() const
+	{
+		if (!m_api || m_view == 0 || !m_api->IsValid(m_view)) {
+			return false;
+		}
+		return !m_api->IsHidden(m_view);
+	}
+
+	bool Bridge::IsMenuFocused() const
+	{
+		if (!m_api || m_view == 0 || !m_api->IsValid(m_view)) {
+			return false;
+		}
+		return m_api->HasFocus(m_view);
+	}
+}

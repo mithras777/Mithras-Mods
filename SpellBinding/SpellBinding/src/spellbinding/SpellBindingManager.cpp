@@ -29,7 +29,8 @@ namespace SBIND
 		constexpr std::uint32_t kConfigVersion = 2;
 
 		constexpr float kDefaultWeaponCooldown = 1.5f;
-		constexpr bool kDefaultOnlyInCombat = true;
+		constexpr bool kDefaultOnlyInCombat = false;
+		constexpr float kPendingLightDelaySec = 0.16f;
 
 		AttackSlot ParseAttackSlot(std::uint32_t a_slot)
 		{
@@ -218,6 +219,12 @@ namespace SBIND
 			const auto id = parsed.value("id", std::string{});
 			if (id == "enabled") {
 				config.enabled = parsed.value("value", config.enabled);
+			} else if (id == "uiToggleKey") {
+				config.uiToggleKey = parsed.value("value", config.uiToggleKey);
+			} else if (id == "bindKey") {
+				config.bindKey = parsed.value("value", config.bindKey);
+			} else if (id == "cycleSlotModifierKey") {
+				config.cycleSlotModifierKey = parsed.value("value", config.cycleSlotModifierKey);
 			} else if (id == "showHudNotifications") {
 				config.showHudNotifications = parsed.value("value", config.showHudNotifications);
 			} else if (id == "fallbackDedupeSec") {
@@ -230,8 +237,12 @@ namespace SBIND
 				config.hudDonutEnabled = parsed.value("value", config.hudDonutEnabled);
 			} else if (id == "hudDonutOnlyUnsheathed") {
 				config.hudDonutOnlyUnsheathed = parsed.value("value", config.hudDonutOnlyUnsheathed);
+			} else if (id == "hudDonutSize") {
+				config.hudDonutSize = parsed.value("value", config.hudDonutSize);
 			} else if (id == "blacklistEnabled") {
 				config.blacklistEnabled = parsed.value("value", config.blacklistEnabled);
+			} else if (id == "currentBindSlotMode") {
+				config.currentBindSlotMode = ParseAttackSlot(parsed.value("value", static_cast<std::uint32_t>(config.currentBindSlotMode)));
 			}
 			SetConfig(config, true);
 		} catch (...) {}
@@ -300,6 +311,7 @@ namespace SBIND
 			m_runtime.wasAttacking = a_player->IsAttacking();
 			if (!m_runtime.wasAttacking) {
 				m_runtime.attackChainActive = false;
+				m_runtime.pendingLightAttack = false;
 			}
 		}
 
@@ -308,9 +320,18 @@ namespace SBIND
 			return;
 		}
 
+		bool triggeredPendingLight = false;
 		{
 			std::scoped_lock lock(m_lock);
 			RefreshEquippedKeysLocked(a_player);
+			if (m_runtime.pendingLightAttack && m_runtime.worldTimeSec >= m_runtime.pendingLightReadyAtWorldTimeSec) {
+				m_runtime.pendingLightAttack = false;
+				const bool shouldPromotePower = a_player->IsPowerAttacking() || (m_runtime.worldTimeSec <= m_runtime.recentPowerInputUntilSec);
+				triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, shouldPromotePower ? AttackSlot::kPower : AttackSlot::kLight, shouldPromotePower);
+			}
+		}
+		if (triggeredPendingLight) {
+			PushUISnapshot();
 		}
 		PushHUDSnapshot();
 	}
@@ -376,6 +397,7 @@ namespace SBIND
 		if (isEndLike) {
 			std::scoped_lock lock(m_lock);
 			m_runtime.attackChainActive = false;
+			m_runtime.pendingLightAttack = false;
 			return;
 		}
 
@@ -392,52 +414,88 @@ namespace SBIND
 			return;
 		}
 
-		std::optional<BindingKey> keyOpt;
-		AttackSlot attackSlot = ResolveAttackSlot(tag, payload, player);
-		const bool isPowerAttack = attackSlot == AttackSlot::kPower;
+		const bool hasAttackStart =
+			tag.find("attackstart") != std::string::npos ||
+			payload.find("attackstart") != std::string::npos;
+		const bool hasPowerStart =
+			tag.find("attackpowerstart") != std::string::npos ||
+			payload.find("attackpowerstart") != std::string::npos ||
+			tag.find("powerattack") != std::string::npos ||
+			payload.find("powerattack") != std::string::npos;
+		const bool hasBashStart =
+			tag.find("bash") != std::string::npos ||
+			payload.find("bash") != std::string::npos;
+
+		bool attemptedTrigger = false;
 		{
 			std::scoped_lock lock(m_lock);
-			if (m_runtime.menuBlocked ||
-			    IsMountedBlocked(player) ||
-			    IsKillmoveBlocked(player) ||
-			    IsDialogueBlocked()) {
+			const bool recentPowerInput = m_runtime.worldTimeSec <= m_runtime.recentPowerInputUntilSec;
+			if (hasPowerStart || ((player->IsPowerAttacking() || recentPowerInput) && hasAttackStart)) {
+				m_runtime.pendingLightAttack = false;
+				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+			} else if (hasBashStart) {
+				m_runtime.pendingLightAttack = false;
+				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kBash, false);
+			} else if (hasAttackStart) {
+				m_runtime.pendingLightAttack = true;
+				m_runtime.pendingLightReadyAtWorldTimeSec = m_runtime.worldTimeSec + kPendingLightDelaySec;
 				return;
-			}
-
-			if (m_runtime.attackChainActive) {
-				return;
-			}
-			if ((m_runtime.worldTimeSec - m_runtime.lastAttackTriggerWorldTimeSec) < config.fallbackDedupeSec) {
-				return;
-			}
-
-			RefreshEquippedKeysLocked(player);
-			if (m_runtime.rightWeapon.has_value() && m_runtime.leftWeapon.has_value()) {
-				if (IsLikelyLeftHandAttack(player)) {
-					keyOpt = m_runtime.leftWeapon;
-				} else {
-					keyOpt = m_runtime.rightWeapon;
-				}
-			} else if (m_runtime.rightWeapon.has_value()) {
-				keyOpt = m_runtime.rightWeapon;
-			} else if (m_runtime.leftWeapon.has_value()) {
-				keyOpt = m_runtime.leftWeapon;
 			} else {
-				keyOpt = m_runtime.unarmedKey;
-			}
-			if (!keyOpt.has_value()) {
-				return;
-			}
-
-			m_runtime.lastResolvedAttackSlot = attackSlot;
-			const bool triggered = TryTriggerBoundSpellLocked(player, *keyOpt, attackSlot, isPowerAttack);
-			if (triggered) {
-				m_runtime.attackChainActive = true;
-				m_runtime.lastAttackTriggerWorldTimeSec = m_runtime.worldTimeSec;
+				const AttackSlot attackSlot = ResolveAttackSlot(tag, payload, player);
+				m_runtime.pendingLightAttack = false;
+				attemptedTrigger = TryTriggerAttackSlotLocked(player, attackSlot, attackSlot == AttackSlot::kPower);
 			}
 		}
-		PushUISnapshot();
+		if (attemptedTrigger) {
+			PushUISnapshot();
+		}
 		PushHUDSnapshot();
+	}
+
+	bool Manager::TryTriggerAttackSlotLocked(RE::PlayerCharacter* a_player, AttackSlot a_slot, bool a_isPowerAttack)
+	{
+		if (!a_player) {
+			return false;
+		}
+		if (m_runtime.menuBlocked ||
+		    IsMountedBlocked(a_player) ||
+		    IsKillmoveBlocked(a_player) ||
+		    IsDialogueBlocked()) {
+			return false;
+		}
+		if (m_runtime.attackChainActive) {
+			return false;
+		}
+		if ((m_runtime.worldTimeSec - m_runtime.lastAttackTriggerWorldTimeSec) < m_config.fallbackDedupeSec) {
+			return false;
+		}
+
+		RefreshEquippedKeysLocked(a_player);
+		std::optional<BindingKey> keyOpt;
+		if (m_runtime.rightWeapon.has_value() && m_runtime.leftWeapon.has_value()) {
+			if (IsLikelyLeftHandAttack(a_player)) {
+				keyOpt = m_runtime.leftWeapon;
+			} else {
+				keyOpt = m_runtime.rightWeapon;
+			}
+		} else if (m_runtime.rightWeapon.has_value()) {
+			keyOpt = m_runtime.rightWeapon;
+		} else if (m_runtime.leftWeapon.has_value()) {
+			keyOpt = m_runtime.leftWeapon;
+		} else {
+			keyOpt = m_runtime.unarmedKey;
+		}
+		if (!keyOpt.has_value()) {
+			return false;
+		}
+
+		m_runtime.lastResolvedAttackSlot = a_slot;
+		const bool triggered = TryTriggerBoundSpellLocked(a_player, *keyOpt, a_slot, a_isPowerAttack);
+		if (triggered) {
+			m_runtime.attackChainActive = true;
+			m_runtime.lastAttackTriggerWorldTimeSec = m_runtime.worldTimeSec;
+		}
+		return triggered;
 	}
 
 	void Manager::ToggleUI()
@@ -540,6 +598,12 @@ namespace SBIND
 		config.currentBindSlotMode = ParseAttackSlot(next);
 		SetConfig(config, true);
 		Notify(std::format("SpellBinding: bind slot -> {}", AttackSlotLabel(config.currentBindSlotMode)));
+	}
+
+	void Manager::OnPowerAttackInputStart()
+	{
+		std::scoped_lock lock(m_lock);
+		m_runtime.recentPowerInputUntilSec = m_runtime.worldTimeSec + 0.35f;
 	}
 
 	bool Manager::BindSpellForSlotFromJson(const std::string& a_payload)
@@ -718,6 +782,7 @@ namespace SBIND
 		m_config.hudAnchor = root.value("hudAnchor", m_config.hudAnchor);
 		m_config.hudPosX = root.value("hudPosX", m_config.hudPosX);
 		m_config.hudPosY = root.value("hudPosY", m_config.hudPosY);
+		m_config.hudDonutSize = root.value("hudDonutSize", m_config.hudDonutSize);
 		m_config.blacklistEnabled = root.value("blacklistEnabled", m_config.blacklistEnabled);
 		m_config.blacklistedSpellKeys = root.value("blacklistedSpellKeys", m_config.blacklistedSpellKeys);
 		m_config.currentBindSlotMode = ParseAttackSlot(root.value("currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode)));
@@ -740,6 +805,7 @@ namespace SBIND
 			{ "hudAnchor", m_config.hudAnchor },
 			{ "hudPosX", m_config.hudPosX },
 			{ "hudPosY", m_config.hudPosY },
+			{ "hudDonutSize", m_config.hudDonutSize },
 			{ "blacklistEnabled", m_config.blacklistEnabled },
 			{ "blacklistedSpellKeys", m_config.blacklistedSpellKeys },
 			{ "currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode) }
@@ -758,6 +824,7 @@ namespace SBIND
 		a_config.version = kConfigVersion;
 		a_config.fallbackDedupeSec = std::clamp(a_config.fallbackDedupeSec, 0.5f, 5.0f);
 		a_config.soundCueVolume = std::clamp(a_config.soundCueVolume, 0.0f, 1.0f);
+		a_config.hudDonutSize = std::clamp(a_config.hudDonutSize, 48.0f, 220.0f);
 		if (a_config.hudAnchor.empty()) {
 			a_config.hudAnchor = "top-right";
 		}
@@ -998,7 +1065,8 @@ namespace SBIND
 		}
 
 		const float magickaCost = std::max(0.0f, spell->CalculateMagickaCost(a_player));
-		if (avOwner->GetActorValue(RE::ActorValue::kMagicka) + 0.001f < magickaCost) {
+		const float preMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+		if (preMagicka + 0.001f < magickaCost) {
 			SetLastErrorLocked("Not enough magicka");
 			PlayCueBlocked();
 			return false;
@@ -1017,6 +1085,18 @@ namespace SBIND
 		const bool castOnSelf = spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf;
 		RE::TESObjectREFR* target = a_player;
 		caster->CastSpellImmediate(spell, castOnSelf, target, 1.0f, false, 0.0f, a_player);
+
+		float spentMagicka = 0.0f;
+		if (spellType == RE::MagicSystem::SpellType::kSpell || spellType == RE::MagicSystem::SpellType::kLesserPower) {
+			const float postMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+			const float engineSpent = std::max(0.0f, preMagicka - postMagicka);
+			const float manualNeeded = std::max(0.0f, magickaCost - engineSpent);
+			if (manualNeeded > 0.001f) {
+				avOwner->DamageActorValue(RE::ActorValue::kMagicka, manualNeeded);
+			}
+			spentMagicka = engineSpent + manualNeeded;
+		}
+
 		slotBinding->spellType = static_cast<std::uint32_t>(spellType);
 		if (spellType == RE::MagicSystem::SpellType::kVoicePower) {
 			float cd = 0.85f;
@@ -1030,7 +1110,7 @@ namespace SBIND
 		m_runtime.weaponCooldownReadyAt[a_key] = m_runtime.worldTimeSec + cdSec;
 		m_runtime.lastTriggerWeapon = a_key.displayName;
 		m_runtime.lastTriggerSpell = slotBinding->displayName;
-		m_runtime.lastMagickaCost = magickaCost;
+		m_runtime.lastMagickaCost = spentMagicka;
 		m_runtime.lastWasPowerAttack = a_isPowerAttack;
 		m_runtime.lastError.clear();
 		PlayCueSuccess();
@@ -1196,7 +1276,10 @@ namespace SBIND
 		root["config"] = {
 			{ "enabled", m_config.enabled },
 			{ "uiToggleKey", GetKeyboardKeyName(m_config.uiToggleKey) },
+			{ "uiToggleKeyCode", m_config.uiToggleKey },
 			{ "bindKey", GetKeyboardKeyName(m_config.bindKey) },
+			{ "bindKeyCode", m_config.bindKey },
+			{ "cycleSlotModifierKey", m_config.cycleSlotModifierKey },
 			{ "fallbackDedupeSec", m_config.fallbackDedupeSec },
 			{ "showHudNotifications", m_config.showHudNotifications },
 			{ "enableSoundCues", m_config.enableSoundCues },
@@ -1205,6 +1288,7 @@ namespace SBIND
 			{ "hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed },
 			{ "hudPosX", m_config.hudPosX },
 			{ "hudPosY", m_config.hudPosY },
+			{ "hudDonutSize", m_config.hudDonutSize },
 			{ "blacklistEnabled", m_config.blacklistEnabled }
 		};
 		root["bindMode"] = {
@@ -1345,6 +1429,7 @@ namespace SBIND
 		root["remainingSec"] = remaining;
 		root["x"] = m_config.hudPosX;
 		root["y"] = m_config.hudPosY;
+		root["size"] = m_config.hudDonutSize;
 		root["anchor"] = m_config.hudAnchor;
 		root["dragMode"] = m_runtime.hudDragModeActive;
 		return root.dump();

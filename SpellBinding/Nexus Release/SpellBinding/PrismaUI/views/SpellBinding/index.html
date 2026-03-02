@@ -7,8 +7,27 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="drag-banner" class="drag-banner hidden">Drag widget to save position <button id="drag-save-btn">Save</button></div>
-  <div class="app">
+  <div id="drag-overlay" class="drag-overlay hidden">
+    <div class="drag-head">Drag widget to save position</div>
+    <div class="drag-controls">
+      <label class="slider-row">
+        <span class="slider-title">Donut Size</span>
+        <div class="slider-wrap">
+          <input id="drag-size-slider" type="range" min="48" max="220" step="2" />
+          <span id="drag-size-label" class="slider-pill">88px</span>
+        </div>
+      </label>
+    </div>
+    <div id="drag-widget" class="drag-widget">
+      <svg viewBox="0 0 100 100">
+        <circle class="track" cx="50" cy="50" r="42"></circle>
+        <circle class="progress" cx="50" cy="50" r="42"></circle>
+      </svg>
+    </div>
+    <button id="drag-save-btn" class="drag-save">Save</button>
+  </div>
+
+  <div class="app" id="main-app">
     <aside class="panel list-panel">
       <div class="list-head">
         <h2>Bound Weapons</h2>
@@ -39,32 +58,25 @@
         </article>
 
         <article class="info-card">
-          <p class="label">Current Slot Spell</p>
+          <div class="card-head">
+            <p class="label">Current Slot Spell</p>
+            <button id="current-slot-unbind" class="ghost-x" title="Unbind current slot">X</button>
+          </div>
           <h3 id="current-spell">None</h3>
           <p id="current-metric" class="muted">Cost: -</p>
         </article>
       </section>
 
       <section class="panel inline-panel">
-        <div class="slot-tabs">
-          <button data-slot="0" class="slot-tab active">Light</button>
-          <button data-slot="1" class="slot-tab">Power</button>
-          <button data-slot="2" class="slot-tab">Bash</button>
-          <button id="cycle-slot-btn" class="slot-cycle">Cycle (Shift+G)</button>
-        </div>
         <div class="inline-grid">
-          <div class="spell-picker">
-            <input id="spell-search" type="text" placeholder="Search known spells" />
-            <div id="spell-list" class="spell-list"></div>
-            <div class="inline-actions">
-              <button id="bind-selected">Bind Selected</button>
-              <button id="unbind-selected" class="danger-lite">Unbind Slot</button>
-              <button id="bind-magicmenu" class="ghost">Bind from MagicMenu (G)</button>
-            </div>
-          </div>
+          <div class="spell-picker"></div>
           <div class="weapon-settings">
-            <label class="slider-row">Internal Cooldown <span id="cooldown-label">1.5s</span>
-              <input id="cooldown-slider" type="range" min="0.5" max="5" step="0.5" />
+            <label class="slider-row">
+              <span class="slider-title">Internal Cooldown</span>
+              <div class="slider-wrap">
+                <input id="cooldown-slider" type="range" min="0.5" max="5" step="0.5" />
+                <span id="cooldown-label" class="slider-pill">1.5s</span>
+              </div>
             </label>
             <label class="setting-row check"><span>Only In Combat</span><input id="only-combat" type="checkbox" /></label>
           </div>
@@ -83,15 +95,22 @@
     <div class="modal-card">
       <div class="modal-head"><h3>Settings</h3><button id="settings-close" class="icon-btn danger">X</button></div>
       <div class="settings-grid">
-        <div class="setting-row"><span>Menu Hotkey</span><strong id="ui-hotkey">F2</strong></div>
-        <div class="setting-row"><span>Bind Hotkey</span><strong id="bind-hotkey">G</strong></div>
+        <div class="setting-row"><span>Menu Hotkey</span><button id="ui-hotkey-btn" class="small-btn">F2</button></div>
+        <div class="setting-row"><span>Bind Hotkey</span><button id="bind-hotkey-btn" class="small-btn">G</button></div>
+        <div class="setting-row"><span>Cycle Modifier</span><select id="modifier-select"><option value="42">Shift</option><option value="29">Ctrl</option><option value="56">Alt</option></select></div>
         <label class="setting-row check"><span>Enabled</span><input id="enabled" type="checkbox" /></label>
         <label class="setting-row check"><span>HUD Notifications</span><input id="hud-notify" type="checkbox" /></label>
         <label class="setting-row check"><span>Sound Cues</span><input id="sound-cues" type="checkbox" /></label>
         <label class="setting-row check"><span>Cooldown Donut</span><input id="hud-donut" type="checkbox" /></label>
         <label class="setting-row check"><span>Only Unsheathed</span><input id="hud-unsheathed" type="checkbox" /></label>
         <label class="setting-row check"><span>Blacklist Enabled</span><input id="blacklist-enabled" type="checkbox" /></label>
-        <label class="slider-row">Dedupe <span id="dedupe-label">1.5s</span><input id="dedupe-slider" type="range" min="0.5" max="5" step="0.5" /></label>
+        <label class="slider-row">
+          <span class="slider-title">Dedupe</span>
+          <div class="slider-wrap">
+            <input id="dedupe-slider" type="range" min="0.5" max="5" step="0.5" />
+            <span id="dedupe-label" class="slider-pill">1.5s</span>
+          </div>
+        </label>
       </div>
     </div>
   </div>
@@ -100,8 +119,16 @@
     <div class="modal-card">
       <div class="modal-head"><h3>Blacklist</h3><button id="blacklist-close" class="icon-btn danger">X</button></div>
       <input id="blacklist-search" type="text" placeholder="Search spell" />
-      <div id="blacklist-list" class="spell-list"></div>
-      <div class="inline-actions"><button id="blacklist-save">Save Blacklist</button></div>
+      <div class="blacklist-grid">
+        <section>
+          <h4>Blacklisted</h4>
+          <div id="blacklist-list-blocked" class="spell-list"></div>
+        </section>
+        <section>
+          <h4>Available</h4>
+          <div id="blacklist-list-available" class="spell-list"></div>
+        </section>
+      </div>
     </div>
   </div>
 

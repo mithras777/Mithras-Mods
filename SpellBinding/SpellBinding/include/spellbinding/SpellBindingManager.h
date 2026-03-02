@@ -71,7 +71,7 @@ namespace SBIND
 		SlotBinding power{};
 		SlotBinding bash{};
 		float triggerCooldownSec{ 1.5f };
-		bool onlyInCombat{ true };
+		bool onlyInCombat{ false };
 	};
 
 	struct SpellBindingConfig
@@ -90,6 +90,7 @@ namespace SBIND
 		std::string hudAnchor{ "top-right" };
 		float hudPosX{ 48.0f };
 		float hudPosY{ 48.0f };
+		float hudDonutSize{ 88.0f };
 		bool blacklistEnabled{ true };
 		std::vector<std::string> blacklistedSpellKeys{};
 		AttackSlot currentBindSlotMode{ AttackSlot::kLight };
@@ -130,6 +131,7 @@ namespace SBIND
 
 		bool TryBindSelectedMagicMenuSpell();
 		void CycleBindSlotMode();
+		void OnPowerAttackInputStart();
 		bool BindSpellForSlotFromJson(const std::string& a_payload);
 		bool UnbindSlotFromJson(const std::string& a_payload);
 		bool UnbindWeaponFromSerializedKey(const std::string& a_key);
@@ -144,10 +146,13 @@ namespace SBIND
 		{
 			bool wasAttacking{ false };
 			bool attackChainActive{ false };
+			bool pendingLightAttack{ false };
 			bool menuBlocked{ false };
 			bool hudDragModeActive{ false };
 			float worldTimeSec{ 0.0f };
 			float lastAttackTriggerWorldTimeSec{ -1000.0f };
+			float pendingLightReadyAtWorldTimeSec{ 0.0f };
+			float recentPowerInputUntilSec{ 0.0f };
 			AttackSlot lastResolvedAttackSlot{ AttackSlot::kLight };
 			std::optional<BindingKey> rightWeapon{};
 			std::optional<BindingKey> leftWeapon{};
@@ -177,6 +182,7 @@ namespace SBIND
 		[[nodiscard]] static std::optional<RE::FormID> ResolveSelectedSpellFormIDFromMagicMenu();
 
 		[[nodiscard]] AttackSlot ResolveAttackSlot(std::string_view a_tag, std::string_view a_payload, RE::PlayerCharacter* a_player) const;
+		bool TryTriggerAttackSlotLocked(RE::PlayerCharacter* a_player, AttackSlot a_slot, bool a_isPowerAttack);
 		bool TryTriggerBoundSpellLocked(RE::PlayerCharacter* a_player, const BindingKey& a_key, AttackSlot a_slot, bool a_isPowerAttack);
 		[[nodiscard]] WeaponBindingProfile& EnsureProfileLocked(const BindingKey& a_key);
 		[[nodiscard]] SlotBinding* GetSlotBinding(WeaponBindingProfile& a_profile, AttackSlot a_slot);
@@ -208,4 +214,3 @@ namespace SBIND
 		RuntimeState m_runtime{};
 	};
 }
-

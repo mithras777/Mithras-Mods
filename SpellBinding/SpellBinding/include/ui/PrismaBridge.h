@@ -15,6 +15,8 @@ namespace UI::PRISMA
 		void PushHUDSnapshot(const std::string& a_json);
 		void ShowToast(const std::string& a_text);
 		void SetFocusState(bool a_focused);
+		[[nodiscard]] bool IsMenuOpen() const;
+		[[nodiscard]] bool IsMenuFocused() const;
 
 		[[nodiscard]] bool IsAvailable() const noexcept { return m_api != nullptr; }
 
