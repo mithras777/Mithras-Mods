@@ -69,7 +69,6 @@ namespace SB_INPUT
 		auto* prismaBridge = UI::PRISMA::Bridge::GetSingleton();
 		const bool magicMenuOpen = ui && ui->IsMenuOpen(RE::MagicMenu::MENU_NAME);
 		const bool prismaMenuOpen = prismaBridge->IsMenuOpen();
-		const bool prismaMenuFocused = prismaBridge->IsMenuFocused();
 		bool consumeEvent = false;
 
 		for (auto* input = *a_event; input; input = input->next) {
@@ -91,13 +90,18 @@ namespace SB_INPUT
 				}
 			}
 
-			if (keyCode == 0x01 && prismaMenuOpen && !prismaMenuFocused && !magicMenuOpen) {
-				manager->ToggleUI();
+			if (keyCode == 0x01 && prismaMenuOpen && !magicMenuOpen) {
+				prismaBridge->SendEscapeToMenu();
 				consumeEvent = true;
 				continue;
 			}
 
 			if (keyCode == config.uiToggleKey) {
+				if (prismaMenuOpen && !magicMenuOpen) {
+					prismaBridge->SendCloseRequestToMenu();
+					consumeEvent = true;
+					continue;
+				}
 				manager->ToggleUI();
 				continue;
 			}

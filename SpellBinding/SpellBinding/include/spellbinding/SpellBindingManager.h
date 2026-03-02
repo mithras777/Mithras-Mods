@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cctype>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -35,11 +36,17 @@ namespace SBIND
 
 		[[nodiscard]] bool operator==(const BindingKey& a_rhs) const noexcept
 		{
-			return pluginName == a_rhs.pluginName &&
-			       localFormID == a_rhs.localFormID &&
-			       uniqueID == a_rhs.uniqueID &&
-			       handSlot == a_rhs.handSlot &&
-			       isUnarmed == a_rhs.isUnarmed;
+			auto normalize = [](const std::string& text) {
+				std::string out = text;
+				for (auto& ch : out) {
+					ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+				}
+				return out;
+			};
+			if (isUnarmed || a_rhs.isUnarmed) {
+				return isUnarmed == a_rhs.isUnarmed;
+			}
+			return normalize(displayName) == normalize(a_rhs.displayName);
 		}
 	};
 
@@ -47,11 +54,17 @@ namespace SBIND
 	{
 		[[nodiscard]] std::size_t operator()(const BindingKey& a_key) const noexcept
 		{
-			std::size_t hash = std::hash<std::string>{}(a_key.pluginName);
-			hash ^= static_cast<std::size_t>(a_key.localFormID) << 1;
-			hash ^= static_cast<std::size_t>(a_key.uniqueID) << 5;
-			hash ^= static_cast<std::size_t>(a_key.handSlot) << 10;
-			hash ^= static_cast<std::size_t>(a_key.isUnarmed) << 14;
+			auto normalize = [](const std::string& text) {
+				std::string out = text;
+				for (auto& ch : out) {
+					ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+				}
+				return out;
+			};
+			std::size_t hash = std::hash<bool>{}(a_key.isUnarmed);
+			if (!a_key.isUnarmed) {
+				hash ^= std::hash<std::string>{}(normalize(a_key.displayName)) << 1;
+			}
 			return hash;
 		}
 	};
@@ -87,6 +100,7 @@ namespace SBIND
 		float soundCueVolume{ 0.45f };
 		bool hudDonutEnabled{ true };
 		bool hudDonutOnlyUnsheathed{ true };
+		bool hudShowCooldownSeconds{ true };
 		std::string hudAnchor{ "top-right" };
 		float hudPosX{ 48.0f };
 		float hudPosY{ 48.0f };

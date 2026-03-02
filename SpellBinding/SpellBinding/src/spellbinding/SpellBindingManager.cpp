@@ -237,6 +237,8 @@ namespace SBIND
 				config.hudDonutEnabled = parsed.value("value", config.hudDonutEnabled);
 			} else if (id == "hudDonutOnlyUnsheathed") {
 				config.hudDonutOnlyUnsheathed = parsed.value("value", config.hudDonutOnlyUnsheathed);
+			} else if (id == "hudShowCooldownSeconds") {
+				config.hudShowCooldownSeconds = parsed.value("value", config.hudShowCooldownSeconds);
 			} else if (id == "hudDonutSize") {
 				config.hudDonutSize = parsed.value("value", config.hudDonutSize);
 			} else if (id == "blacklistEnabled") {
@@ -779,6 +781,7 @@ namespace SBIND
 		m_config.soundCueVolume = root.value("soundCueVolume", m_config.soundCueVolume);
 		m_config.hudDonutEnabled = root.value("hudDonutEnabled", m_config.hudDonutEnabled);
 		m_config.hudDonutOnlyUnsheathed = root.value("hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed);
+		m_config.hudShowCooldownSeconds = root.value("hudShowCooldownSeconds", m_config.hudShowCooldownSeconds);
 		m_config.hudAnchor = root.value("hudAnchor", m_config.hudAnchor);
 		m_config.hudPosX = root.value("hudPosX", m_config.hudPosX);
 		m_config.hudPosY = root.value("hudPosY", m_config.hudPosY);
@@ -802,6 +805,7 @@ namespace SBIND
 			{ "soundCueVolume", m_config.soundCueVolume },
 			{ "hudDonutEnabled", m_config.hudDonutEnabled },
 			{ "hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed },
+			{ "hudShowCooldownSeconds", m_config.hudShowCooldownSeconds },
 			{ "hudAnchor", m_config.hudAnchor },
 			{ "hudPosX", m_config.hudPosX },
 			{ "hudPosY", m_config.hudPosY },
@@ -888,6 +892,9 @@ namespace SBIND
 		key.handSlot = a_slot;
 		key.isUnarmed = false;
 		key.displayName = weapon->GetName() ? weapon->GetName() : "";
+		if (key.displayName.empty()) {
+			key.displayName = std::format("{}|0x{:08X}", key.pluginName, key.localFormID);
+		}
 		return key;
 	}
 
@@ -1286,6 +1293,7 @@ namespace SBIND
 			{ "soundCueVolume", m_config.soundCueVolume },
 			{ "hudDonutEnabled", m_config.hudDonutEnabled },
 			{ "hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed },
+			{ "hudShowCooldownSeconds", m_config.hudShowCooldownSeconds },
 			{ "hudPosX", m_config.hudPosX },
 			{ "hudPosY", m_config.hudPosY },
 			{ "hudDonutSize", m_config.hudDonutSize },
@@ -1424,13 +1432,14 @@ namespace SBIND
 			visible = false;
 		}
 
-		root["visible"] = visible || m_runtime.hudDragModeActive;
+		root["visible"] = visible && !m_runtime.hudDragModeActive;
 		root["progress"] = total <= 0.01f ? 0.0f : std::clamp(remaining / total, 0.0f, 1.0f);
 		root["remainingSec"] = remaining;
 		root["x"] = m_config.hudPosX;
 		root["y"] = m_config.hudPosY;
 		root["size"] = m_config.hudDonutSize;
 		root["anchor"] = m_config.hudAnchor;
+		root["showSeconds"] = m_config.hudShowCooldownSeconds;
 		root["dragMode"] = m_runtime.hudDragModeActive;
 		return root.dump();
 	}

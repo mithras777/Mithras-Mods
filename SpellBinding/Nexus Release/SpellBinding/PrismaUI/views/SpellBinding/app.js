@@ -13,9 +13,9 @@
     mainApp: byId('main-app'),
     dragOverlay: byId('drag-overlay'),
     dragWidget: byId('drag-widget'),
-    dragSaveBtn: byId('drag-save-btn'),
     dragSizeSlider: byId('drag-size-slider'),
     dragSizeLabel: byId('drag-size-label'),
+    dragShowSeconds: byId('drag-show-seconds'),
 
     search: byId('search'),
     bindingList: byId('binding-list'),
@@ -241,6 +241,7 @@
     if (els.soundCues) els.soundCues.checked = !!cfg.enableSoundCues
     if (els.hudDonut) els.hudDonut.checked = !!cfg.hudDonutEnabled
     if (els.hudUnsheathed) els.hudUnsheathed.checked = !!cfg.hudDonutOnlyUnsheathed
+    if (els.dragShowSeconds) els.dragShowSeconds.checked = !!cfg.hudShowCooldownSeconds
     if (els.blacklistEnabled) els.blacklistEnabled.checked = !!cfg.blacklistEnabled
 
     const dedupe = Number(cfg.fallbackDedupeSec || 1.5)
@@ -372,26 +373,27 @@
     skse('sb_enter_hud_drag_mode', '')
   }
 
-  function closeDragOverlay(save) {
+  function closeDragOverlay() {
     if (!els.dragOverlay || !els.mainApp || !els.dragWidget) return
-    if (save) {
-      const x = els.dragWidget.offsetLeft
-      const y = els.dragWidget.offsetTop
-      state.dragPos.x = x
-      state.dragPos.y = y
-      skse('sb_save_hud_position', JSON.stringify({ x, y, commit: true }))
-    } else {
-      skse('sb_save_hud_position', JSON.stringify({ x: state.dragPos.x, y: state.dragPos.y, commit: true }))
-    }
+    const x = els.dragWidget.offsetLeft
+    const y = els.dragWidget.offsetTop
+    state.dragPos.x = x
+    state.dragPos.y = y
+    skse('sb_save_hud_position', JSON.stringify({ x, y, commit: true }))
     els.dragOverlay.classList.add('hidden')
     els.mainApp.classList.remove('hidden')
   }
 
   function closeTopmostLayer() {
-    if (!els.dragOverlay?.classList.contains('hidden')) { closeDragOverlay(false); return true }
+    if (!els.dragOverlay?.classList.contains('hidden')) { closeDragOverlay(); return true }
     if (!els.settingsModal?.classList.contains('hidden')) { els.settingsModal.classList.add('hidden'); return true }
     if (!els.blacklistModal?.classList.contains('hidden')) { els.blacklistModal.classList.add('hidden'); return true }
     return false
+  }
+
+  function handleEscape() {
+    if (closeTopmostLayer()) return
+    skse('sb_toggle_ui', '')
   }
 
   window.sb_renderSnapshot = function (payload) {
@@ -405,6 +407,15 @@
   }
   window.sb_showToast = showToast
   window.sb_setFocusState = function () {}
+  window.sb_native_escape = function () { handleEscape() }
+  window.sb_close_ui = function () {
+    if (!els.dragOverlay?.classList.contains('hidden')) {
+      closeDragOverlay()
+    }
+    els.settingsModal?.classList.add('hidden')
+    els.blacklistModal?.classList.add('hidden')
+    skse('sb_toggle_ui', '')
+  }
 
   els.search?.addEventListener('input', renderBindings)
   els.blacklistSearch?.addEventListener('input', renderBlacklist)
@@ -448,12 +459,14 @@
 
   els.closeBtn?.addEventListener('click', () => skse('sb_toggle_ui', ''))
   els.cooldownEditBtn?.addEventListener('click', openDragOverlay)
-  els.dragSaveBtn?.addEventListener('click', () => closeDragOverlay(true))
   els.dragSizeSlider?.addEventListener('input', () => {
     applyDragWidgetSize(Number(els.dragSizeSlider.value))
   })
   els.dragSizeSlider?.addEventListener('change', () => {
     setSetting('hudDonutSize', Number(els.dragSizeSlider.value))
+  })
+  els.dragShowSeconds?.addEventListener('change', () => {
+    setSetting('hudShowCooldownSeconds', !!els.dragShowSeconds.checked)
   })
 
   els.enabled?.addEventListener('change', () => setSetting('enabled', !!els.enabled.checked))
@@ -531,8 +544,7 @@
     }
 
     if (e.key !== 'Escape') return
-    if (closeTopmostLayer()) return
-    skse('sb_toggle_ui', '')
+    handleEscape()
   })
 
   skse('sb_request_snapshot', '')

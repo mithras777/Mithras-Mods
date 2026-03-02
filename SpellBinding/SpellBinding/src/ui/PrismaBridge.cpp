@@ -219,6 +219,30 @@ namespace UI::PRISMA
 		m_api->InteropCall(m_view, "sb_showToast", a_text.c_str());
 	}
 
+	void Bridge::SendEscapeToMenu()
+	{
+		if (!m_api) {
+			return;
+		}
+		EnsureViewCreated();
+		if (m_view == 0 || !m_api->IsValid(m_view) || m_api->IsHidden(m_view)) {
+			return;
+		}
+		m_api->InteropCall(m_view, "sb_native_escape", "");
+	}
+
+	void Bridge::SendCloseRequestToMenu()
+	{
+		if (!m_api) {
+			return;
+		}
+		EnsureViewCreated();
+		if (m_view == 0 || !m_api->IsValid(m_view) || m_api->IsHidden(m_view)) {
+			return;
+		}
+		m_api->InteropCall(m_view, "sb_close_ui", "");
+	}
+
 	void Bridge::SetFocusState(bool a_focused)
 	{
 		if (!m_api) {

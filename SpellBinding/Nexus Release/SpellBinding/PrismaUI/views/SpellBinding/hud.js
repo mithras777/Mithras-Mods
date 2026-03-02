@@ -19,6 +19,8 @@
 
     const p = Math.max(0, Math.min(1, Number(state.progress || 0)))
     progress.style.strokeDashoffset = String(circumference * p)
+    const showSeconds = state.showSeconds !== false
+    label.style.display = showSeconds ? 'grid' : 'none'
     label.textContent = Number(state.remainingSec || 0).toFixed(1) + 's'
 
     donut.style.left = Number(state.x || 48) + 'px'
