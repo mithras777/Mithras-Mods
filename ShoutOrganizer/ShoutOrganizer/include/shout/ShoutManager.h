@@ -41,6 +41,7 @@ namespace MITHRAS::SHOUT_ORGANIZER
 		[[nodiscard]] static std::string GetKeyboardKeyName(std::uint32_t a_keyCode);
 
 		[[nodiscard]] std::vector<PowerShoutEntry> GetHiddenEntries() const;
+		[[nodiscard]] bool IsEntryHidden(RE::FormID a_formID) const;
 		static void RegisterSerialization();
 		void SaveHiddenToCosave(SKSE::SerializationInterface* a_serialization) const;
 		void LoadHiddenFromCosave(SKSE::SerializationInterface* a_serialization);

@@ -103,6 +103,24 @@ namespace MITHRAS::SHOUT_ORGANIZER
 			return a_player->AddSpell(a_spell);
 		}
 
+		bool RemovePlayerSpell(RE::PlayerCharacter* a_player, RE::SpellItem* a_spell)
+		{
+			if (!a_player || !a_spell) {
+				return false;
+			}
+
+			bool removed = false;
+			if (a_player->HasSpell(a_spell)) {
+				removed = a_player->RemoveSpell(a_spell) || removed;
+			}
+
+			if (auto* spellList = GetPlayerSpellList(a_player)) {
+				removed = spellList->RemoveSpell(a_spell) || removed;
+			}
+
+			return removed || !a_player->HasSpell(a_spell);
+		}
+
 		bool AddPlayerShout(RE::PlayerCharacter* a_player, RE::TESShout* a_shout)
 		{
 			if (!a_player || !a_shout) {
@@ -270,6 +288,16 @@ namespace MITHRAS::SHOUT_ORGANIZER
 		return hidden;
 	}
 
+	bool Manager::IsEntryHidden(RE::FormID a_formID) const
+	{
+		if (a_formID == 0) {
+			return false;
+		}
+
+		std::scoped_lock lock(m_lock);
+		return IsFormIDHidden(m_hiddenPowerShoutFormIDs, a_formID);
+	}
+
 	bool Manager::HideEntry(RE::FormID a_formID)
 	{
 		auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(a_formID);
@@ -299,7 +327,7 @@ namespace MITHRAS::SHOUT_ORGANIZER
 		if (enabled) {
 			auto* player = RE::PlayerCharacter::GetSingleton();
 			if (player && isPower && player->HasSpell(spell)) {
-				player->RemoveSpell(spell);
+				RemovePlayerSpell(player, spell);
 			}
 			if (player && isShout && player->HasShout(shout)) {
 				RemovePlayerShout(player, shout);
@@ -628,9 +656,7 @@ namespace MITHRAS::SHOUT_ORGANIZER
 			auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formID);
 			if (spell && IsOrganizerPower(spell)) {
 				if (cfg.enabled) {
-					if (player->HasSpell(spell)) {
-						player->RemoveSpell(spell);
-					}
+					RemovePlayerSpell(player, spell);
 				} else {
 					AddPlayerSpell(player, spell);
 				}
@@ -671,6 +697,71 @@ namespace MITHRAS::SHOUT_ORGANIZER
 
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		runtime.itemList->Update(player);
+
+		OrganizerConfig cfg{};
+		std::vector<RE::FormID> hiddenFormIDs;
+		{
+			std::scoped_lock lock(m_lock);
+			cfg = m_config;
+			hiddenFormIDs = m_hiddenPowerShoutFormIDs;
+		}
+
+		if (!cfg.enabled || hiddenFormIDs.empty()) {
+			return;
+		}
+
+		auto& items = runtime.itemList->items;
+		for (std::uint32_t i = items.size(); i > 0; --i) {
+			const auto idx = i - 1;
+			const auto* item = items[idx];
+			if (!item) {
+				continue;
+			}
+
+			const auto* baseForm = item->data.baseForm;
+			if (!baseForm) {
+				continue;
+			}
+
+			const auto formID = baseForm->GetFormID();
+			if (formID == 0 || !IsFormIDHidden(hiddenFormIDs, formID)) {
+				continue;
+			}
+
+			bool shouldHide = false;
+			if (const auto* spell = baseForm->As<RE::SpellItem>()) {
+				shouldHide = IsOrganizerPower(spell);
+			} else if (baseForm->As<RE::TESShout>()) {
+				shouldHide = true;
+			}
+
+			if (shouldHide) {
+				items.erase(items.begin() + idx);
+			}
+		}
+
+		auto& entryList = runtime.itemList->entryList;
+		const auto arraySize = entryList.GetArraySize();
+		for (std::uint32_t i = arraySize; i > 0; --i) {
+			const auto idx = i - 1;
+			RE::GFxValue entry{};
+			if (!entryList.GetElement(idx, &entry) || !entry.IsObject()) {
+				continue;
+			}
+
+			RE::GFxValue formIdVal{};
+			if (!entry.GetMember("formId", &formIdVal) || !formIdVal.IsNumber()) {
+				continue;
+			}
+
+			const auto raw = static_cast<std::uint64_t>(formIdVal.GetNumber());
+			const auto formID = static_cast<RE::FormID>(raw & 0xFFFFFFFFu);
+			if (formID == 0 || !IsFormIDHidden(hiddenFormIDs, formID)) {
+				continue;
+			}
+
+			entryList.RemoveElements(idx, 1);
+		}
 	}
 
 	bool Manager::IsFormIDHidden(const std::vector<RE::FormID>& a_hidden, RE::FormID a_formID)
