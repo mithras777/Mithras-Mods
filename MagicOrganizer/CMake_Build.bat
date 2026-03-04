@@ -522,8 +522,8 @@ set GitIgnore_Line6=/%PROJECT_NAME%/extern/
 :: Auto-copy shared dependencies (assume no download)
 :: =================================
 echo.
-echo [INFO] Auto-copying shared dependencies from SpellMastery...
-set "SHARED_EXTERN_SOURCE=%~dp0..\SpellMastery\SpellMastery\extern"
+echo [INFO] Auto-copying shared dependencies from SpellBinding...
+set "SHARED_EXTERN_SOURCE=%~dp0..\SpellBinding\SpellBinding\extern"
 set "PROJECT_EXTERN_TARGET=%PROJECT_NAME%\extern"
 
 if not exist "%SHARED_EXTERN_SOURCE%" (

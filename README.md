@@ -13,16 +13,16 @@ This folder contains Skyrim SE/AE SKSE plugins built from the **SkyrimSE-Plugin-
 ### First-time setup (new mod, dependency-reuse flow)
 
 1. Keep at least one working mod folder that already has dependencies prepared, including:
-   - `SpellMastery/SpellMastery/extern/CommonLibSSE`
-   - `SpellMastery/SpellMastery/extern/CommonLibSSE/extern/openvr`
-   - `SpellMastery/SpellMastery/extern/CommonLibSSE/extern/spdlog`
-   - `SpellMastery/SpellMastery/extern/CommonLibSSE/extern/DirectXTK`
-   - `SpellMastery/SpellMastery/extern/SKSEMenuFramework` (if the mod needs menu UI)
+   - `SpellBinding/SpellBinding/extern/CommonLibSSE`
+   - `SpellBinding/SpellBinding/extern/CommonLibSSE/extern/openvr`
+   - `SpellBinding/SpellBinding/extern/CommonLibSSE/extern/spdlog`
+   - `SpellBinding/SpellBinding/extern/CommonLibSSE/extern/DirectXTK`
+   - `SpellBinding/SpellBinding/extern/SKSEMenuFramework` (if the mod needs menu UI)
 2. Unzip template and run **`CMake_Build.bat`**.
 3. Choose **2 (alandtse / NG)**.
 4. Enter project metadata (name, author, template).
 5. The script now assumes **no dependency download** and automatically copies shared dependencies from:
-   - `SpellMastery/SpellMastery/extern/` to `<NewMod>/<NewMod>/extern/`
+   - `SpellBinding/SpellBinding/extern/` to `<NewMod>/<NewMod>/extern/`
 6. Run configure manually from the new mod root:
    - `cmake --preset vs2022-ng`
 7. Build manually:
@@ -249,8 +249,8 @@ This keeps JSON writes clean and avoids unnecessary file churn.
 
 For this repo workflow, do not rely on a fresh dependency download for every new project.
 
-1. Use `SpellMastery/SpellMastery/extern/` as the source of truth.
-2. Create new mod with `CMake_Build.bat` (it auto-skips dependency downloads and auto-copies extern from `SpellMastery`).
+1. Use `SpellBinding/SpellBinding/extern/` as the source of truth.
+2. Create new mod with `CMake_Build.bat` (it auto-skips dependency downloads and auto-copies extern from `SpellBinding`).
 3. Verify `NewMod/NewMod/extern/` contains dependencies.
 4. Run:
    - `cmake --preset vs2022-ng`
@@ -286,7 +286,7 @@ Builds are also mirrored automatically to:
 
 | Task | Action |
 |------|--------|
-| New mod from scratch | Run `CMake_Build.bat` -> choose NG (2) -> script auto-copies `extern/` from `SpellMastery/SpellMastery/extern` -> run `cmake --preset vs2022-ng` and `cmake --build --preset vs2022-ng-rel`. |
+| New mod from scratch | Run `CMake_Build.bat` -> choose NG (2) -> script auto-copies `extern/` from `SpellBinding/SpellBinding/extern` -> run `cmake --preset vs2022-ng` and `cmake --build --preset vs2022-ng-rel`. |
 | Edit plugin code | Edit under `ModName/ModName/include/` and `ModName/ModName/src/`. |
 | Rebuild | Run `CMake_Build.bat`; choose build type (e.g. RelWithDebInfo). |
 | Output | `.bin/x64-release/ModName.dll` (or `x64-debug` for debug). |

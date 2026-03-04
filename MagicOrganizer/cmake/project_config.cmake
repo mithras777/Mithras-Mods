@@ -12,7 +12,7 @@ set(PROJECT_PCH_ROOT_DIR      "${PROJECT_ROOT_DIR}/pch")
 set(PROJECT_RESOURCE_ROOT_DIR "${PROJECT_ROOT_DIR}/resource")
 set(PROJECT_EXTERN_ROOT_DIR   "${PROJECT_ROOT_DIR}/extern")
 # Shared extern source used by Mithras workflow (contains SKSEMenuFramework and reusable deps)
-set(MITHRAS_SHARED_EXTERN_ROOT_DIR "${PROJECT_SOURCE_DIR}/../SpellMastery/SpellMastery/extern")
+set(MITHRAS_SHARED_EXTERN_ROOT_DIR "${PROJECT_SOURCE_DIR}/../SpellBinding/SpellBinding/extern")
 # Set defaults for version components if not defined
 set(VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(VERSION_MINOR ${PROJECT_VERSION_MINOR})
