@@ -2,8 +2,11 @@
 
 #include "buff/QuickBuffManager.h"
 #include "mastery_shout/MasteryManager.h"
+#include "mastery_shout/MasteryData.h"
 #include "mastery_spell/MasteryManager.h"
+#include "mastery_spell/MasteryData.h"
 #include "mastery_weapon/MasteryManager.h"
+#include "mastery_weapon/MasteryData.h"
 #include "smartcast/SmartCastController.h"
 #include "spellbinding/SpellBindingManager.h"
 #include "ui/PrismaBridge.h"
@@ -13,6 +16,7 @@
 
 #include <algorithm>
 #include <format>
+#include <unordered_set>
 
 namespace SB_OVERHAUL
 {
@@ -91,7 +95,8 @@ namespace SB_OVERHAUL
 				{ "spellFormID", a_step.spellFormID },
 				{ "type", static_cast<std::uint32_t>(a_step.type) },
 				{ "castOn", static_cast<std::uint32_t>(a_step.castOn) },
-				{ "holdSec", a_step.holdSec }
+				{ "holdSec", a_step.holdSec },
+				{ "castCount", a_step.castCount }
 			};
 		}
 
@@ -114,7 +119,9 @@ namespace SB_OVERHAUL
 			return json{
 				{ "name", a_spell.name },
 				{ "formKey", a_spell.formKey },
-				{ "formID", a_spell.formID }
+				{ "formID", a_spell.formID },
+				{ "magickaCost", a_spell.magickaCost },
+				{ "concentration", a_spell.concentration }
 			};
 		}
 
@@ -157,6 +164,108 @@ namespace SB_OVERHAUL
 				{ "blocks", a_stats.blocks },
 				{ "secondsEquipped", a_stats.secondsEquipped },
 				{ "level", a_stats.level }
+			};
+		}
+
+		[[nodiscard]] std::pair<std::uint32_t, std::uint32_t> ProgressMeta(const std::vector<std::uint32_t>& a_thresholds, std::uint32_t a_points)
+		{
+			if (a_thresholds.empty()) {
+				return { a_points, a_points == 0 ? 1u : a_points };
+			}
+			for (const auto threshold : a_thresholds) {
+				if (a_points < threshold) {
+					return { a_points, threshold };
+				}
+			}
+			return { a_points, a_thresholds.back() };
+		}
+
+		[[nodiscard]] json BuildSpellRow(const SBO::MASTERY_SPELL::SpellKey& a_key,
+			const SBO::MASTERY_SPELL::MasteryStats& a_stats,
+			const SBO::MASTERY_SPELL::MasteryConfig& a_cfg)
+		{
+			const auto schoolIdx = static_cast<std::size_t>(a_key.school);
+			const auto& progression = a_cfg.schools[schoolIdx].progression;
+			float points = 0.0f;
+			if (progression.gainFromKills) points += static_cast<float>(a_stats.kills);
+			if (progression.gainFromUses) points += static_cast<float>(a_stats.uses);
+			if (progression.gainFromSummons) points += static_cast<float>(a_stats.summons);
+			if (progression.gainFromHits) points += static_cast<float>(a_stats.hits);
+			if (progression.gainFromEquipTime) {
+				points += a_stats.equippedSeconds / std::max(0.1f, progression.equipSecondsPerPoint);
+			}
+			points *= std::max(0.0f, a_cfg.gainMultiplier);
+			const auto progressPoints = static_cast<std::uint32_t>(std::max(0.0f, points));
+			const auto [cur, next] = ProgressMeta(a_cfg.thresholds, progressPoints);
+			const float pct = next == 0 ? 1.0f : std::clamp(static_cast<float>(cur) / static_cast<float>(next), 0.0f, 1.0f);
+
+			return {
+				{ "name", a_key.name },
+				{ "formID", a_key.formID },
+				{ "type", std::string(SBO::MASTERY_SPELL::SchoolName(a_key.school)) },
+				{ "school", static_cast<std::uint32_t>(a_key.school) },
+				{ "uses", a_stats.uses },
+				{ "kills", a_stats.kills },
+				{ "summons", a_stats.summons },
+				{ "hits", a_stats.hits },
+				{ "equippedSeconds", a_stats.equippedSeconds },
+				{ "level", a_stats.level },
+				{ "progressPoints", cur },
+				{ "nextThreshold", next },
+				{ "progressPct", pct }
+			};
+		}
+
+		[[nodiscard]] json BuildShoutRow(const SBO::MASTERY_SHOUT::ShoutKey& a_key,
+			const SBO::MASTERY_SHOUT::MasteryStats& a_stats,
+			const SBO::MASTERY_SHOUT::MasteryConfig& a_cfg)
+		{
+			const float rawPoints = a_cfg.gainFromUses ? static_cast<float>(a_stats.uses) : 0.0f;
+			const auto progressPoints = static_cast<std::uint32_t>(std::max(0.0f, rawPoints * std::max(0.0f, a_cfg.gainMultiplier)));
+			const auto [cur, next] = ProgressMeta(a_cfg.thresholds, progressPoints);
+			const float pct = next == 0 ? 1.0f : std::clamp(static_cast<float>(cur) / static_cast<float>(next), 0.0f, 1.0f);
+			return {
+				{ "name", a_key.name },
+				{ "formID", a_key.formID },
+				{ "type", "Shout" },
+				{ "uses", a_stats.uses },
+				{ "level", a_stats.level },
+				{ "progressPoints", cur },
+				{ "nextThreshold", next },
+				{ "progressPct", pct }
+			};
+		}
+
+		[[nodiscard]] json BuildWeaponRow(const SBO::MASTERY_WEAPON::ItemKey& a_key,
+			const SBO::MASTERY_WEAPON::MasteryStats& a_stats,
+			const SBO::MASTERY_WEAPON::MasteryConfig& a_cfg)
+		{
+			float points = 0.0f;
+			if (a_cfg.gainFromKills) points += static_cast<float>(a_stats.kills);
+			if (a_cfg.gainFromHits) points += static_cast<float>(a_stats.hits);
+			if (a_cfg.gainFromPowerHits) points += static_cast<float>(a_stats.powerHits);
+			if (a_cfg.gainFromBlocks) points += static_cast<float>(a_stats.blocks);
+			if (a_cfg.timeBasedLeveling) points += a_stats.secondsEquipped / 5.0f;
+			points *= std::max(0.0f, a_cfg.gainMultiplier);
+			const auto progressPoints = static_cast<std::uint32_t>(std::max(0.0f, points));
+			const auto [cur, next] = ProgressMeta(a_cfg.thresholds, progressPoints);
+			const float pct = next == 0 ? 1.0f : std::clamp(static_cast<float>(cur) / static_cast<float>(next), 0.0f, 1.0f);
+			return {
+				{ "name", a_key.baseName },
+				{ "uniqueID", a_key.uniqueID },
+				{ "type", std::string(SBO::MASTERY_WEAPON::WeaponTypeName(a_key.weaponType)) },
+				{ "weaponType", static_cast<std::uint32_t>(a_key.weaponType) },
+				{ "leftHand", a_key.leftHand },
+				{ "shield", a_key.shield },
+				{ "kills", a_stats.kills },
+				{ "hits", a_stats.hits },
+				{ "powerHits", a_stats.powerHits },
+				{ "blocks", a_stats.blocks },
+				{ "secondsEquipped", a_stats.secondsEquipped },
+				{ "level", a_stats.level },
+				{ "progressPoints", cur },
+				{ "nextThreshold", next },
+				{ "progressPct", pct }
 			};
 		}
 
@@ -459,8 +568,10 @@ namespace SB_OVERHAUL
 					chainName = candidate;
 				}
 			}
-			SBIND::Manager::GetSingleton()->NotifyChainSwitch(activeChain, chainName);
-			PushHUDSnapshot();
+			if (!UI::PRISMA::Bridge::GetSingleton()->IsMenuOpen()) {
+				SBIND::Manager::GetSingleton()->NotifyChainSwitch(activeChain, chainName);
+				PushHUDSnapshot();
+			}
 			m_lastActiveChainIndex = activeChain;
 		}
 		(void)a_deltaTime;
@@ -534,7 +645,7 @@ namespace SB_OVERHAUL
 						{ "playback", {
 							{ "playKey", cfg.global.playback.playKey },
 							{ "cancelKey", cfg.global.playback.cancelKey },
-							{ "defaultChainIndex", cfg.global.playback.defaultChainIndex },
+							{ "cycleModifierKey", cfg.global.playback.cycleModifierKey },
 							{ "stepDelaySec", cfg.global.playback.stepDelaySec }
 						} }
 					} },
@@ -581,34 +692,120 @@ namespace SB_OVERHAUL
 		{
 			const auto spellCfg = SBO::MASTERY_SPELL::Manager::GetSingleton()->GetConfig();
 			json spellRows = json::array();
+			std::unordered_map<std::uint32_t, SBO::MASTERY_SPELL::MasteryStats> spellStatsByForm{};
 			for (const auto& [key, stats] : SBO::MASTERY_SPELL::Manager::GetSingleton()->GetMasteryData()) {
-				spellRows.push_back(ToJson(key, stats));
+				spellRows.push_back(BuildSpellRow(key, stats, spellCfg));
+				spellStatsByForm[key.formID] = stats;
+			}
+			json spellKnownRows = spellRows;
+			std::unordered_set<std::uint32_t> spellSeen{};
+			for (const auto& row : spellKnownRows) {
+				spellSeen.insert(row.value("formID", 0u));
+			}
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				struct SpellVisitor final : RE::Actor::ForEachSpellVisitor {
+					SpellVisitor(json& a_rows,
+						std::unordered_set<std::uint32_t>& a_seen,
+						const std::unordered_map<std::uint32_t, SBO::MASTERY_SPELL::MasteryStats>& a_statsByForm,
+						const SBO::MASTERY_SPELL::MasteryConfig& a_cfg) :
+						rows(a_rows), seen(a_seen), statsByForm(a_statsByForm), cfg(a_cfg)
+					{}
+					RE::BSContainer::ForEachResult Visit(RE::SpellItem* a_spell) override
+					{
+						if (!a_spell) {
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+						const auto school = SBO::MASTERY_SPELL::ActorValueToSchool(a_spell->GetAssociatedSkill());
+						if (!school.has_value()) {
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+						const auto formID = a_spell->GetFormID();
+						if (seen.contains(formID)) {
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+						seen.insert(formID);
+						SBO::MASTERY_SPELL::SpellKey key{};
+						key.formID = formID;
+						key.school = *school;
+						key.name = a_spell->GetName() ? a_spell->GetName() : std::format("Spell {:08X}", formID);
+						const auto it = statsByForm.find(formID);
+						const SBO::MASTERY_SPELL::MasteryStats stats = it != statsByForm.end() ? it->second : SBO::MASTERY_SPELL::MasteryStats{};
+						rows.push_back(BuildSpellRow(key, stats, cfg));
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+					json& rows;
+					std::unordered_set<std::uint32_t>& seen;
+					const std::unordered_map<std::uint32_t, SBO::MASTERY_SPELL::MasteryStats>& statsByForm;
+					const SBO::MASTERY_SPELL::MasteryConfig& cfg;
+				} spellVisitor(spellKnownRows, spellSeen, spellStatsByForm, spellCfg);
+				player->VisitSpells(spellVisitor);
 			}
 
 			const auto shoutCfg = SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetConfig();
 			json shoutRows = json::array();
+			std::unordered_map<std::uint32_t, SBO::MASTERY_SHOUT::MasteryStats> shoutStatsByForm{};
 			for (const auto& [key, stats] : SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetMasteryData()) {
-				shoutRows.push_back(ToJson(key, stats));
+				shoutRows.push_back(BuildShoutRow(key, stats, shoutCfg));
+				shoutStatsByForm[key.formID] = stats;
+			}
+			json shoutKnownRows = shoutRows;
+			if (const auto currentShout = SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetCurrentShoutKey(); currentShout.has_value()) {
+				bool exists = false;
+				for (const auto& row : shoutKnownRows) {
+					if (row.value("formID", 0u) == currentShout->formID) {
+						exists = true;
+						break;
+					}
+				}
+				if (!exists) {
+					const auto it = shoutStatsByForm.find(currentShout->formID);
+					const SBO::MASTERY_SHOUT::MasteryStats stats = it != shoutStatsByForm.end() ? it->second : SBO::MASTERY_SHOUT::MasteryStats{};
+					shoutKnownRows.push_back(BuildShoutRow(*currentShout, stats, shoutCfg));
+				}
 			}
 
 			const auto weaponCfg = SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetConfig();
 			json weaponRows = json::array();
+			std::unordered_map<std::string, SBO::MASTERY_WEAPON::MasteryStats> weaponStatsByKey{};
+			std::unordered_set<std::string> weaponSeenKeys{};
 			for (const auto& [key, stats] : SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetMasteryData()) {
-				weaponRows.push_back(ToJson(key, stats));
+				weaponRows.push_back(BuildWeaponRow(key, stats, weaponCfg));
+				const auto keyString = SBO::MASTERY_WEAPON::ToString(key);
+				weaponStatsByKey[keyString] = stats;
+				weaponSeenKeys.insert(keyString);
 			}
+			json weaponKnownRows = weaponRows;
+			auto pushKnownWeapon = [&](const std::optional<SBO::MASTERY_WEAPON::ItemKey>& maybeKey) {
+				if (!maybeKey.has_value()) {
+					return;
+				}
+				const auto keyString = SBO::MASTERY_WEAPON::ToString(*maybeKey);
+				if (weaponSeenKeys.contains(keyString)) {
+					return;
+				}
+				weaponSeenKeys.insert(keyString);
+				const auto it = weaponStatsByKey.find(keyString);
+				const SBO::MASTERY_WEAPON::MasteryStats stats = it != weaponStatsByKey.end() ? it->second : SBO::MASTERY_WEAPON::MasteryStats{};
+				weaponKnownRows.push_back(BuildWeaponRow(*maybeKey, stats, weaponCfg));
+			};
+			pushKnownWeapon(SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetCurrentWeaponKey());
+			pushKnownWeapon(SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetCurrentShieldKey());
 
 			root["mastery"] = {
 				{ "spell", {
 					{ "config", ToJson(spellCfg) },
-					{ "rows", std::move(spellRows) }
+					{ "rows", std::move(spellRows) },
+					{ "knownRows", std::move(spellKnownRows) }
 				} },
 				{ "shout", {
 					{ "config", ToJson(shoutCfg) },
-					{ "rows", std::move(shoutRows) }
+					{ "rows", std::move(shoutRows) },
+					{ "knownRows", std::move(shoutKnownRows) }
 				} },
 				{ "weapon", {
 					{ "config", ToJson(weaponCfg) },
-					{ "rows", std::move(weaponRows) }
+					{ "rows", std::move(weaponRows) },
+					{ "knownRows", std::move(weaponKnownRows) }
 				} }
 			};
 		}
@@ -654,8 +851,8 @@ namespace SB_OVERHAUL
 				auto cfg = SMART_CAST::Controller::GetSingleton()->GetConfig();
 				if (id == "record.toggleKey") cfg.global.record.toggleKey = payload.value("value", cfg.global.record.toggleKey);
 				else if (id == "playback.playKey") cfg.global.playback.playKey = payload.value("value", cfg.global.playback.playKey);
+				else if (id == "playback.cycleModifierKey") cfg.global.playback.cycleModifierKey = payload.value("value", cfg.global.playback.cycleModifierKey);
 				else if (id == "global.maxChains") cfg.global.maxChains = payload.value("value", cfg.global.maxChains);
-				else if (id == "playback.defaultChainIndex") cfg.global.playback.defaultChainIndex = payload.value("value", cfg.global.playback.defaultChainIndex);
 				else if (id == "playback.stepDelaySec") cfg.global.playback.stepDelaySec = payload.value("value", cfg.global.playback.stepDelaySec);
 				else if (id == "hud.alwaysShowInCombat") {
 					auto sbCfg = SBIND::Manager::GetSingleton()->GetConfig();
@@ -668,7 +865,28 @@ namespace SB_OVERHAUL
 					if (idx0 < static_cast<int>(cfg.chains.size())) {
 						cfg.chains[static_cast<std::size_t>(idx0)].name = payload.value("value", cfg.chains[static_cast<std::size_t>(idx0)].name);
 					}
-				}
+					} else if (id == "chain.hotkey") {
+						const auto index = payload.value("index", 1);
+						const auto idx0 = std::max(0, index - 1);
+						if (idx0 < static_cast<int>(cfg.chains.size())) {
+							cfg.chains[static_cast<std::size_t>(idx0)].hotkey = payload.value("value", cfg.chains[static_cast<std::size_t>(idx0)].hotkey);
+						}
+					} else if (id == "chain.step.holdSec" || id == "chain.step.castCount") {
+						const auto index = payload.value("index", 1);
+						const auto step = payload.value("step", 0);
+						const auto idx0 = std::max(0, index - 1);
+						if (idx0 < static_cast<int>(cfg.chains.size())) {
+							auto& steps = cfg.chains[static_cast<std::size_t>(idx0)].steps;
+							if (step >= 0 && step < static_cast<int>(steps.size())) {
+								auto& entry = steps[static_cast<std::size_t>(step)];
+								if (id == "chain.step.holdSec") {
+									entry.holdSec = payload.value("value", entry.holdSec);
+								} else {
+									entry.castCount = payload.value("value", entry.castCount);
+								}
+							}
+						}
+					}
 				SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
 				PushUISnapshot();
 				PushHUDSnapshot();
@@ -766,12 +984,6 @@ namespace SB_OVERHAUL
 			}
 
 			if (module == "smartCast") {
-				if (action == "chainSelected") {
-					const auto index = payload.value("index", 1);
-					const auto name = payload.value("name", std::string{});
-					SBIND::Manager::GetSingleton()->NotifyChainSwitch(index, name);
-					PushHUDSnapshot();
-				}
 				if (action == "startRecording") SMART_CAST::Controller::GetSingleton()->StartRecording(payload.value("index", 1));
 				else if (action == "stopRecording") SMART_CAST::Controller::GetSingleton()->StopRecording();
 				else if (action == "startPlayback") SMART_CAST::Controller::GetSingleton()->StartPlayback(payload.value("index", 1));
@@ -789,10 +1001,6 @@ namespace SB_OVERHAUL
 					if (idx < static_cast<int>(cfg.chains.size())) {
 						cfg.chains.erase(cfg.chains.begin() + idx);
 						cfg.global.maxChains = std::max(1, static_cast<int>(cfg.chains.size()));
-						cfg.global.playback.defaultChainIndex = std::clamp(
-							cfg.global.playback.defaultChainIndex,
-							1,
-							cfg.global.maxChains);
 						SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
 					}
 				}

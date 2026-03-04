@@ -107,7 +107,7 @@ namespace SB_INPUT
 			}
 
 			if (keyCode == config.bindKey) {
-				if (IsModifierDown(config.cycleSlotModifierKey) && (magicMenuOpen || prismaMenuOpen)) {
+				if (IsModifierDown(config.cycleSlotModifierKey) && magicMenuOpen) {
 					manager->CycleBindSlotMode();
 					consumeEvent = magicMenuOpen;
 					continue;

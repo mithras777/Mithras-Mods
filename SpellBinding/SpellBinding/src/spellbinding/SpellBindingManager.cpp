@@ -815,6 +815,22 @@ namespace SBIND
 		}
 	}
 
+	void Manager::NotifyChainRecordingState(std::int32_t a_chainIndex1Based, std::string_view a_chainName, bool a_recording)
+	{
+		std::scoped_lock lock(m_lock);
+		const auto chainName = std::string(a_chainName);
+		if (!chainName.empty()) {
+			m_runtime.lastChainHudText = chainName;
+		} else {
+			const auto safeIndex = std::max(1, a_chainIndex1Based);
+			m_runtime.lastChainHudText = std::format("Chain {}", safeIndex);
+		}
+		m_runtime.chainRecordingActive = a_recording;
+		if (!a_recording) {
+			m_runtime.lastChainSwitchWorldTimeSec = m_runtime.worldTimeSec;
+		}
+	}
+
 	std::string Manager::GetUIHotkeyName() const
 	{
 		std::scoped_lock lock(m_lock);
@@ -1595,7 +1611,7 @@ namespace SBIND
 		const bool cycleVisible = (m_runtime.worldTimeSec - m_runtime.lastCycleSwitchWorldTimeSec) <= 2.0f;
 		const bool inCombat = player ? player->IsInCombat() : false;
 		const bool chainPopupVisible = (m_runtime.worldTimeSec - m_runtime.lastChainSwitchWorldTimeSec) <= 2.0f;
-		const bool chainVisible = chainPopupVisible || (m_config.hudChainAlwaysShowInCombat && inCombat);
+		const bool chainVisible = m_runtime.chainRecordingActive || chainPopupVisible || (m_config.hudChainAlwaysShowInCombat && inCombat);
 
 		root["donut"] = {
 			{ "visible", donutVisible && !m_runtime.hudDragModeActive },
@@ -1623,7 +1639,9 @@ namespace SBIND
 			{ "y", m_config.hudChainPosY },
 			{ "size", m_config.hudChainSize },
 			{ "dragMode", m_runtime.hudDragModeActive },
-			{ "alwaysShowInCombat", m_config.hudChainAlwaysShowInCombat }
+			{ "alwaysShowInCombat", m_config.hudChainAlwaysShowInCombat },
+			{ "isRecording", m_runtime.chainRecordingActive },
+			{ "recordingChainText", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText }
 		};
 
 		// Legacy donut fields for compatibility while web HUD parser migrates.

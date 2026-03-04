@@ -250,7 +250,12 @@ namespace SBO::MASTERY_SPELL
 
 		const auto* form = RE::TESForm::LookupByID(a_event.spell);
 		const auto* spell = GetSpellFromForm(form);
-		const auto keyOpt = BuildSpellKey(spell);
+		OnDirectSpellCast(spell);
+	}
+
+	void Manager::OnDirectSpellCast(const RE::SpellItem* a_spell)
+	{
+		const auto keyOpt = BuildSpellKey(a_spell);
 		if (!keyOpt.has_value()) {
 			return;
 		}
@@ -266,7 +271,7 @@ namespace SBO::MASTERY_SPELL
 
 			const std::uint32_t gain = std::max(1u, static_cast<std::uint32_t>(std::round(m_config.gainMultiplier)));
 			stats.uses += gain;
-			if (IsSummonLikeSpell(spell)) {
+			if (IsSummonLikeSpell(a_spell)) {
 				stats.summons += gain;
 			}
 

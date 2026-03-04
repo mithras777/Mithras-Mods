@@ -170,6 +170,7 @@ namespace SBIND
 		void EnterHudDragMode();
 		void SaveHudPositionFromJson(const std::string& a_payload);
 		void NotifyChainSwitch(std::int32_t a_chainIndex1Based, std::string_view a_chainName);
+		void NotifyChainRecordingState(std::int32_t a_chainIndex1Based, std::string_view a_chainName, bool a_recording);
 
 		[[nodiscard]] std::string GetUIHotkeyName() const;
 		[[nodiscard]] std::string GetBindHotkeyName() const;
@@ -201,6 +202,7 @@ namespace SBIND
 			float lastCycleSwitchWorldTimeSec{ -1000.0f };
 			float lastChainSwitchWorldTimeSec{ -1000.0f };
 			std::string lastChainHudText{ "Chain 1" };
+			bool chainRecordingActive{ false };
 		};
 
 		void LoadConfig();

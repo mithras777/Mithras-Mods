@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Eraser, LoaderCircle, Plus, Settings, Maximize2, Minimize2, Trash2, X } from 'lucide-react';
+import { ArrowUpDown, Eraser, Filter, LoaderCircle, Plus, Settings, Maximize2, Minimize2, Trash2, X } from 'lucide-react';
 
 const triggerOrder = ['combatStart', 'combatEnd', 'healthBelow70', 'healthBelow50', 'healthBelow30', 'crouchStart', 'sprintStart', 'weaponDraw', 'powerAttackStart', 'shoutStart'];
 const triggerLabels = {
@@ -26,8 +26,7 @@ const settingsTabs = [
 const masteryTabs = [
   { id: 'spells', label: 'Spells' },
   { id: 'shouts', label: 'Shouts' },
-  { id: 'weapons', label: 'Weapons' },
-  { id: 'overview', label: 'Overview' }
+  { id: 'weapons', label: 'Weapons' }
 ];
 const HUD_TARGETS = ['donut', 'cycle', 'chain'];
 const WINDOW_MIN_WIDTH = 960;
@@ -236,6 +235,19 @@ function normalizeMetric(metric) {
   return raw.replace(/^cost\s*:\s*/i, '').replace(/^cd\s*:\s*/i, '').replace(/^cooldown\s*:\s*/i, '');
 }
 
+function compactChainInputWidth(name) {
+  const len = String(name || '').trim().length || 7;
+  return `${Math.max(10, Math.min(24, len + 2))}ch`;
+}
+
+function formatCostLabel(step, baseCost) {
+  const cost = Math.max(0, Number(baseCost || 0));
+  const isConc = Number(step.type || 0) === 1;
+  if (isConc) return `${cost.toFixed(0)}/s`;
+  const casts = Math.max(1, Number(step.castCount || 1));
+  return `${(cost * casts).toFixed(0)}`;
+}
+
 function isCooldownSpellType(spellType) {
   const t = String(spellType || '').toLowerCase();
   return t.includes('power') || t.includes('shout');
@@ -249,8 +261,12 @@ function formatScanCode(scan) {
   return code;
 }
 
-function toSmartCastToken(event) {
+function toSmartCastToken(event, options = {}) {
   const code = normalizeEventCode(event);
+  if (options.allowModifiers) {
+    if (code === 'ShiftLeft' || code === 'ShiftRight') return 'Shift';
+    if (code === 'ControlLeft' || code === 'ControlRight') return 'Ctrl';
+  }
   if (code.startsWith('Key') && code.length === 4) return code.slice(3).toUpperCase();
   if (code.startsWith('Digit') && code.length === 6) return code.slice(5);
   if (/^F([1-9]|1[0-2])$/.test(code)) return code;
@@ -261,6 +277,9 @@ function App() {
   const [snapshot, setSnapshot] = useState({ spellBinding: {}, smartCast: {}, quickBuff: {}, mastery: {}, ui: {} });
   const [tab, setTab] = useState('spellBinding');
   const [masteryTab, setMasteryTab] = useState('spells');
+  const [masterySearch, setMasterySearch] = useState('');
+  const [masteryTypeFilter, setMasteryTypeFilter] = useState('all');
+  const [masterySort, setMasterySort] = useState({ key: 'name', dir: 'asc' });
   const [smartCastActiveChain, setSmartCastActiveChain] = useState(1);
   const [sbSearch, setSbSearch] = useState('');
   const [blacklistSearch, setBlacklistSearch] = useState('');
@@ -654,6 +673,13 @@ function App() {
 
   const chains = byPath(sc, ['config', 'chains'], []);
   const selectedChain = chains[Math.max(0, smartCastActiveChain - 1)] || { name: `Chain ${smartCastActiveChain}`, steps: [] };
+  const smartCastKnownSpellMap = useMemo(() => {
+    const map = new Map();
+    (sc.knownSpells || []).forEach((spell) => {
+      map.set(String(spell.formKey || ''), spell);
+    });
+    return map;
+  }, [sc.knownSpells]);
   const weaponMasteryRows = byPath(mastery, ['weapon', 'rows'], []);
   const weaponMasteryLevel = useMemo(() => {
     const uniqueID = Number(byPath(sb, ['currentWeapon', 'key', 'uniqueID'], 0));
@@ -664,6 +690,48 @@ function App() {
     if (byName) return Number(byName.level || 1);
     return 1;
   }, [weaponMasteryRows, sb]);
+
+  const masteryRowsRaw = useMemo(() => {
+    if (masteryTab === 'spells') return byPath(mastery, ['spell', 'knownRows'], byPath(mastery, ['spell', 'rows'], []));
+    if (masteryTab === 'shouts') return byPath(mastery, ['shout', 'knownRows'], byPath(mastery, ['shout', 'rows'], []));
+    return byPath(mastery, ['weapon', 'knownRows'], byPath(mastery, ['weapon', 'rows'], []));
+  }, [mastery, masteryTab]);
+
+  const masteryTypes = useMemo(() => {
+    const set = new Set();
+    masteryRowsRaw.forEach((row) => set.add(String(row.type || 'Unknown')));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [masteryRowsRaw]);
+
+  const masteryRows = useMemo(() => {
+    const query = masterySearch.toLowerCase().trim();
+    const filtered = masteryRowsRaw.filter((row) => {
+      const type = String(row.type || 'Unknown');
+      const name = String(row.name || '');
+      const passesType = masteryTypeFilter === 'all' || type === masteryTypeFilter;
+      const hay = `${name} ${type}`.toLowerCase();
+      const passesSearch = !query || hay.includes(query);
+      return passesType && passesSearch;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      const dir = masterySort.dir === 'asc' ? 1 : -1;
+      if (masterySort.key === 'level') return (Number(a.level || 0) - Number(b.level || 0)) * dir;
+      if (masterySort.key === 'type') return String(a.type || '').localeCompare(String(b.type || '')) * dir;
+      if (masterySort.key === 'progress') return (Number(a.progressPct || 0) - Number(b.progressPct || 0)) * dir;
+      return String(a.name || '').localeCompare(String(b.name || '')) * dir;
+    });
+    return sorted;
+  }, [masteryRowsRaw, masterySearch, masteryTypeFilter, masterySort]);
+
+  const toggleMasterySort = (key) => {
+    setMasterySort((prev) => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, dir: 'asc' };
+    });
+  };
 
   useEffect(() => {
     if (chains.length === 0) {
@@ -696,6 +764,11 @@ function App() {
     if (field === 'sb.cycleSlotModifierKey') return formatScanCode(Number(byPath(sb, ['config', 'cycleSlotModifierKey'], 0)));
     if (field === 'sc.record.toggleKey') return String(byPath(sc, ['config', 'global', 'record', 'toggleKey'], 'Unset'));
     if (field === 'sc.playback.playKey') return String(byPath(sc, ['config', 'global', 'playback', 'playKey'], 'Unset'));
+    if (field === 'sc.playback.cycleModifierKey') return String(byPath(sc, ['config', 'global', 'playback', 'cycleModifierKey'], 'None'));
+    if (field.startsWith('sc.chain.hotkey.')) {
+      const idx = Math.max(0, Number(field.split('.').pop() || 1) - 1);
+      return String(byPath(sc, ['config', 'chains', idx, 'hotkey'], 'None'));
+    }
     return 'Unset';
   };
 
@@ -721,14 +794,22 @@ function App() {
         return;
       }
 
-      if (captureField === 'sc.record.toggleKey' || captureField === 'sc.playback.playKey') {
-        const token = toSmartCastToken(event);
+      if (captureField === 'sc.record.toggleKey' || captureField === 'sc.playback.playKey' || captureField === 'sc.playback.cycleModifierKey' || captureField.startsWith('sc.chain.hotkey.')) {
+        const token = toSmartCastToken(event, { allowModifiers: captureField === 'sc.playback.cycleModifierKey' });
         if (!token) {
-          showToast('Use letters, digits, or F1-F12');
+          showToast(captureField === 'sc.playback.cycleModifierKey' ? 'Use Shift or Ctrl' : 'Use letters, digits, or F1-F12');
           return;
         }
-        const id = captureField === 'sc.record.toggleKey' ? 'record.toggleKey' : 'playback.playKey';
-        setSetting('smartCast', id, token);
+        if (captureField === 'sc.record.toggleKey') {
+          setSetting('smartCast', 'record.toggleKey', token);
+        } else if (captureField === 'sc.playback.playKey') {
+          setSetting('smartCast', 'playback.playKey', token);
+        } else if (captureField === 'sc.playback.cycleModifierKey') {
+          setSetting('smartCast', 'playback.cycleModifierKey', token);
+        } else {
+          const index = Number(captureField.split('.').pop() || smartCastActiveChain);
+          setSetting('smartCast', 'chain.hotkey', token, { index });
+        }
         setCaptureField(null);
       }
     };
@@ -885,11 +966,7 @@ function App() {
                     <button
                       key={`chain-${i + 1}`}
                       className={smartCastActiveChain === i + 1 ? 'subtab active' : 'subtab'}
-                      onClick={() => {
-                        const nextIndex = i + 1;
-                        setSmartCastActiveChain(nextIndex);
-                        doAction('smartCast', 'chainSelected', { index: nextIndex, name: chain.name || `Chain ${nextIndex}` });
-                      }}
+                      onClick={() => setSmartCastActiveChain(i + 1)}
                     >
                       {chain.name || `Chain ${i + 1}`}
                     </button>
@@ -906,27 +983,90 @@ function App() {
                     <Plus size={14} strokeWidth={2.25} />
                   </button>
                 </div>
-                <div className="row">
-                  <input className="grow" id="sc-chain-name" defaultValue={selectedChain.name || `Chain ${smartCastActiveChain}`} onBlur={(e) => setSetting('smartCast', 'chain.name', e.target.value, { index: smartCastActiveChain })} />
-                  <button className="ghost-x-btn" onClick={() => doAction('smartCast', 'clearChain', { index: smartCastActiveChain })} aria-label={`Clear ${selectedChain.name || `Chain ${smartCastActiveChain}`}`}>
-                    <Eraser size={14} strokeWidth={2.25} />
-                  </button>
-                  <button
-                    className="ghost-x-btn ghost-danger-btn"
-                    onClick={() => doAction('smartCast', 'deleteChain', { index: smartCastActiveChain })}
-                    disabled={chains.length <= 1}
-                    aria-label={`Delete ${selectedChain.name || `Chain ${smartCastActiveChain}`}`}
-                  >
-                    <Trash2 size={14} strokeWidth={2.25} />
-                  </button>
+                <div className="row chain-title-row">
+                  <textarea
+                    className="chain-name-input"
+                    id="sc-chain-name"
+                    key={`sc-chain-name-${smartCastActiveChain}-${selectedChain.name || ''}`}
+                    defaultValue={selectedChain.name || `Chain ${smartCastActiveChain}`}
+                    style={{ width: compactChainInputWidth(selectedChain.name || `Chain ${smartCastActiveChain}`) }}
+                    rows={1}
+                    onBlur={(e) => setSetting('smartCast', 'chain.name', e.target.value, { index: smartCastActiveChain })}
+                  />
+                  <div className="chain-actions-right">
+                    <button
+                      className="btn hotkey-btn compact-hotkey-btn"
+                      onClick={() => setCaptureField(`sc.chain.hotkey.${smartCastActiveChain}`)}
+                    >
+                      {captureLabel(`sc.chain.hotkey.${smartCastActiveChain}`)}
+                    </button>
+                    <button className="ghost-x-btn" onClick={() => doAction('smartCast', 'clearChain', { index: smartCastActiveChain })} aria-label={`Clear ${selectedChain.name || `Chain ${smartCastActiveChain}`}`}>
+                      <Eraser size={14} strokeWidth={2.25} />
+                    </button>
+                    <button
+                      className="ghost-x-btn ghost-danger-btn"
+                      onClick={() => doAction('smartCast', 'deleteChain', { index: smartCastActiveChain })}
+                      disabled={chains.length <= 1}
+                      aria-label={`Delete ${selectedChain.name || `Chain ${smartCastActiveChain}`}`}
+                    >
+                      <Trash2 size={14} strokeWidth={2.25} />
+                    </button>
+                  </div>
                 </div>
                 <div className="scroll">
                   {(selectedChain.steps || []).length === 0 && <p className="meta">No recorded steps for this chain.</p>}
-                  {(selectedChain.steps || []).map((step, idx) => (
-                    <div className="item single" key={`step-${idx}`}>
-                      {idx + 1}. {step.spellFormID || 'Unknown'} | {spellTypeLabel(step.type)} | {castOnLabel(step.castOn)} | Hold {Number(step.holdSec || 0).toFixed(2)}s
-                    </div>
-                  ))}
+                  {(selectedChain.steps || []).length > 0 && (
+                    <table className="chain-step-table">
+                      <thead>
+                        <tr>
+                          <th>Spell</th>
+                          <th>Cost</th>
+                          <th>Adjust</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(selectedChain.steps || []).map((step, idx) => {
+                          const spell = smartCastKnownSpellMap.get(String(step.spellFormID || '')) || {};
+                          const isConc = Number(step.type || 0) === 1;
+                          const spellName = spell.name || step.spellFormID || 'Unknown';
+                          const baseCost = Number(spell.magickaCost || 0);
+                          return (
+                            <tr key={`step-${idx}`}>
+                              <td>{spellName}</td>
+                              <td>{formatCostLabel(step, baseCost)}</td>
+                              <td>
+                                {isConc ? (
+                                  <label className="inline chain-step-slider">
+                                    <span>{Number(step.holdSec || 0.15).toFixed(2)}s</span>
+                                    <input
+                                      type="range"
+                                      min="0.10"
+                                      max="10.0"
+                                      step="0.05"
+                                      value={Number(step.holdSec || 0.15)}
+                                      onChange={(e) => setSetting('smartCast', 'chain.step.holdSec', Number(e.target.value || 0.15), { index: smartCastActiveChain, step: idx })}
+                                    />
+                                  </label>
+                                ) : (
+                                  <label className="inline chain-step-slider">
+                                    <span>x{Math.max(1, Number(step.castCount || 1))}</span>
+                                    <input
+                                      type="range"
+                                      min="1"
+                                      max="10"
+                                      step="1"
+                                      value={Math.max(1, Number(step.castCount || 1))}
+                                      onChange={(e) => setSetting('smartCast', 'chain.step.castCount', Math.max(1, Number(e.target.value || 1)), { index: smartCastActiveChain, step: idx })}
+                                    />
+                                  </label>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </article>
             </section>
@@ -996,25 +1136,82 @@ function App() {
                     <button key={id} className={masteryTab === id ? 'subtab active' : 'subtab'} onClick={() => setMasteryTab(id)}>{label}</button>
                   ))}
                 </div>
-                {masteryTab === 'overview' && (
-                  <div className="scroll">
-                    <div className="item"><div>Spell Mastery Entries</div><div>{Number(byPath(mastery, ['spell', 'rows'], []).length)}</div></div>
-                    <div className="item"><div>Shout Mastery Entries</div><div>{Number(byPath(mastery, ['shout', 'rows'], []).length)}</div></div>
-                    <div className="item"><div>Weapon Mastery Entries</div><div>{Number(byPath(mastery, ['weapon', 'rows'], []).length)}</div></div>
+                <div className="mastery-controls">
+                  <input
+                    placeholder="Search name or type..."
+                    value={masterySearch}
+                    onChange={(e) => setMasterySearch(e.target.value)}
+                  />
+                  <div className="mastery-filter-wrap">
+                    <Filter size={14} strokeWidth={2} />
+                    <select value={masteryTypeFilter} onChange={(e) => setMasteryTypeFilter(e.target.value)}>
+                      <option value="all">All Types</option>
+                      {masteryTypes.map((type) => (
+                        <option key={`mastery-type-${type}`} value={type}>{type}</option>
+                      ))}
+                    </select>
                   </div>
-                )}
-                {masteryTab !== 'overview' && (
-                  <div className="scroll">
-                    {(masteryTab === 'spells' ? byPath(mastery, ['spell', 'rows'], []) : masteryTab === 'shouts' ? byPath(mastery, ['shout', 'rows'], []) : byPath(mastery, ['weapon', 'rows'], [])).map((row, idx) => (
-                      <div className="item" key={`m-${idx}`}>
-                        <div>
-                          <div>{row.name || 'Unknown'}</div>
-                          <div className="meta">Level {Number(row.level || 0)} | Uses {Number(row.uses || row.hits || 0)}</div>
-                        </div>
-                      </div>
-                    ))}
+                </div>
+                <div className="scroll mastery-table-wrap">
+                  <table className="mastery-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <button className="table-sort-btn" onClick={() => toggleMasterySort('name')}>
+                            Name <ArrowUpDown size={13} strokeWidth={2} />
+                          </button>
+                        </th>
+                        <th>
+                          <button className="table-sort-btn" onClick={() => toggleMasterySort('type')}>
+                            Type <ArrowUpDown size={13} strokeWidth={2} />
+                          </button>
+                        </th>
+                        <th>Uses</th>
+                        <th>
+                          <button className="table-sort-btn" onClick={() => toggleMasterySort('progress')}>
+                            Progression <ArrowUpDown size={13} strokeWidth={2} />
+                          </button>
+                        </th>
+                        <th>
+                          <button className="table-sort-btn" onClick={() => toggleMasterySort('level')}>
+                            Level <ArrowUpDown size={13} strokeWidth={2} />
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {masteryRows.map((row, idx) => {
+                        const uses = Number(row.uses || 0);
+                        const hits = Number(row.hits || 0);
+                        const progressPoints = Number(row.progressPoints || 0);
+                        const nextThreshold = Math.max(1, Number(row.nextThreshold || 1));
+                        const progressPct = Math.max(0, Math.min(100, Number(row.progressPct || 0)));
+                        const usesCell = masteryTab === 'weapons' ? `${uses} / ${hits}` : `${uses}`;
+                        return (
+                          <tr key={`m-${masteryTab}-${idx}-${row.name || 'unknown'}`}>
+                            <td>{row.name || 'Unknown'}</td>
+                            <td>{row.type || 'Unknown'}</td>
+                            <td>{usesCell}</td>
+                            <td>
+                              <div className="mastery-progress">
+                                <div className="mastery-progress-meta">{progressPoints} / {nextThreshold} ({progressPct.toFixed(0)}%)</div>
+                                <div className="mastery-progress-bar">
+                                  <span style={{ width: `${progressPct}%` }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td>{Number(row.level || 1)}</td>
+                          </tr>
+                        );
+                      })}
+                      {masteryRows.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="meta">No entries for current filters.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                   </div>
-                )}
               </article>
             </section>
           )}
@@ -1054,17 +1251,7 @@ function App() {
                 <div className="setting-grid">
                   <label>Record Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.record.toggleKey')}>{captureLabel('sc.record.toggleKey')}</button></label>
                   <label>Play Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.playback.playKey')}>{captureLabel('sc.playback.playKey')}</button></label>
-                  <label>
-                    Default Chain
-                    <select
-                      value={Number(byPath(sc, ['config', 'global', 'playback', 'defaultChainIndex'], 1))}
-                      onChange={(e) => setSetting('smartCast', 'playback.defaultChainIndex', Number(e.target.value || 1))}
-                    >
-                      {chains.map((_, i) => (
-                        <option key={`default-chain-${i + 1}`} value={i + 1}>{`Chain ${i + 1}`}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <label>Cycle Modifier <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.playback.cycleModifierKey')}>{captureLabel('sc.playback.cycleModifierKey')}</button></label>
                   <label>Step Delay (s) <input type="number" min="0" max="2" step="0.01" value={Number(byPath(sc, ['config', 'global', 'playback', 'stepDelaySec'], 0.1)).toFixed(2)} onChange={(e) => setSetting('smartCast', 'playback.stepDelaySec', Number(e.target.value || 0.1))} /></label>
                   <label className="checkbox-inline">
                     <input

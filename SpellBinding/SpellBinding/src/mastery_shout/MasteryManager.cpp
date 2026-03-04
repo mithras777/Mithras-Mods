@@ -137,10 +137,14 @@ namespace SBO::MASTERY_SHOUT
 		if (!caster || !caster->IsPlayerRef()) {
 			return;
 		}
+		OnDirectSpellCast(a_event.spell);
+	}
 
+	void Manager::OnDirectSpellCast(RE::FormID a_spellFormID)
+	{
 		std::scoped_lock lock(m_lock);
 		RefreshCurrentShoutLocked();
-		const auto key = TryMapSpellToCurrentShoutLocked(a_event.spell);
+		const auto key = TryMapSpellToCurrentShoutLocked(a_spellFormID);
 		if (key.has_value()) {
 			GainUseLocked(*key);
 		}

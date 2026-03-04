@@ -57,7 +57,9 @@ function Hud() {
     x: Number(raw.x || fallbackX),
     y: Number(raw.y || fallbackY),
     size: Math.max(36, Math.min(200, Number(raw.size || 56))),
-    dragMode: !!raw.dragMode
+    dragMode: !!raw.dragMode,
+    isRecording: !!raw.isRecording,
+    recordingChainText: String(raw.recordingChainText || '')
   });
 
   useEffect(() => {
@@ -144,14 +146,14 @@ function Hud() {
       )}
       {state.chainHud.visible && (
         <div
-          className="mini-hud"
+          className={state.chainHud.isRecording ? 'mini-hud recording' : 'mini-hud'}
           style={{ left: `${state.chainHud.x}px`, top: `${state.chainHud.y}px`, width: `${state.chainHud.size}px`, height: `${state.chainHud.size}px`, pointerEvents: state.chainHud.dragMode ? 'auto' : 'none' }}
           onMouseDown={(e) => {
             if (!state.chainHud.dragMode) return;
             setDrag({ target: 'chainHud', x: e.clientX, y: e.clientY, left: state.chainHud.x, top: state.chainHud.y });
           }}
         >
-          <span>{state.chainHud.text || 'Chain 1'}</span>
+          <span>{(state.chainHud.isRecording ? state.chainHud.recordingChainText : state.chainHud.text) || 'Chain 1'}</span>
         </div>
       )}
     </div>

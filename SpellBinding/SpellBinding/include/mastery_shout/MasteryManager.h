@@ -14,6 +14,7 @@ namespace SBO::MASTERY_SHOUT
 		void Initialize();
 		void OnRevert();
 		void OnSpellCastEvent(const RE::TESSpellCastEvent& a_event);
+		void OnDirectSpellCast(RE::FormID a_spellFormID);
 		void OnHitEvent(const RE::TESHitEvent& a_event);
 		void OnShoutAttack(const RE::ShoutAttack::Event& a_event);
 

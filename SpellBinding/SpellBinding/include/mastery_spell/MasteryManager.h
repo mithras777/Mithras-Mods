@@ -18,6 +18,7 @@ namespace SBO::MASTERY_SPELL
 		void OnRevert();
 		void OnEquipEvent(const RE::TESEquipEvent& a_event);
 		void OnSpellCastEvent(const RE::TESSpellCastEvent& a_event);
+		void OnDirectSpellCast(const RE::SpellItem* a_spell);
 		void OnHitEvent(const RE::TESHitEvent& a_event);
 		void OnDeathEvent(const RE::TESDeathEvent& a_event);
 

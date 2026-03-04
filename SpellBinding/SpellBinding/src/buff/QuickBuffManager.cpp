@@ -1,6 +1,8 @@
 #include "buff/QuickBuffManager.h"
 
 #include "event/GameEventManager.h"
+#include "mastery_shout/MasteryManager.h"
+#include "mastery_spell/MasteryManager.h"
 #include "util/LogUtil.h"
 #include "RE/C/CrosshairPickData.h"
 
@@ -37,6 +39,15 @@ namespace QUICK_BUFF
 		float Clamp01(float a_value)
 		{
 			return std::clamp(a_value, 0.0f, 1.0f);
+		}
+
+		void NotifyMasteryCast(RE::SpellItem* a_spell)
+		{
+			if (!a_spell) {
+				return;
+			}
+			SBO::MASTERY_SPELL::Manager::GetSingleton()->OnDirectSpellCast(a_spell);
+			SBO::MASTERY_SHOUT::Manager::GetSingleton()->OnDirectSpellCast(a_spell->GetFormID());
 		}
 	}
 
@@ -723,9 +734,10 @@ namespace QUICK_BUFF
 				continue;
 			}
 
-			caster->CastSpellImmediate(spell, pending.castOnSelf, target, 1.0f, false, 0.0f, a_player);
-			pending.tickTimer = kConcentrationTick;
-		}
+				caster->CastSpellImmediate(spell, pending.castOnSelf, target, 1.0f, false, 0.0f, a_player);
+				NotifyMasteryCast(spell);
+				pending.tickTimer = kConcentrationTick;
+			}
 
 		m_pendingConcentration.erase(
 			std::remove_if(
@@ -849,6 +861,7 @@ namespace QUICK_BUFF
 		}
 
 		caster->CastSpellImmediate(a_spell, a_castOnSelf, a_target, 1.0f, false, 0.0f, a_player);
+		NotifyMasteryCast(a_spell);
 		return true;
 	}
 

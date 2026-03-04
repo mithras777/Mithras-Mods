@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace SMART_CAST
@@ -34,6 +35,7 @@ namespace SMART_CAST
 		StepType type{ StepType::kFireAndForget };
 		CastOn castOn{ CastOn::kSelf };
 		float holdSec{ 0.0f };
+		std::uint32_t castCount{ 1 };
 	};
 
 	struct ChainConfig
@@ -60,6 +62,7 @@ namespace SMART_CAST
 		std::string playKey{ "G" };
 		std::string cancelKey{ "G" };
 		std::int32_t defaultChainIndex{ 1 };
+		std::string cycleModifierKey{ "None" };
 		float stepDelaySec{ 0.10f };
 		bool abortOnFail{ false };
 		bool skipOnFail{ true };
@@ -115,6 +118,8 @@ namespace SMART_CAST
 		std::string name{};
 		std::string formKey{};
 		RE::FormID formID{ 0 };
+		float magickaCost{ 0.0f };
+		bool concentration{ false };
 	};
 
 	class Controller final : public REX::Singleton<Controller>
@@ -166,6 +171,7 @@ namespace SMART_CAST
 			bool wasAttacking{ false };
 			bool wasBlocking{ false };
 			std::array<bool, 8> keyWasDown{};
+			std::unordered_map<std::string, bool> chainKeyWasDown{};
 			RE::ObjectRefHandle playbackTarget{};
 			bool playbackCastOnSelf{ true };
 			bool wasPowerOrShoutCasting{ false };
