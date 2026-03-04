@@ -568,27 +568,8 @@ namespace SBO::MASTERY_SPELL
 			}
 		}
 
-		json db = json::array();
-		{
-			std::scoped_lock lock(m_lock);
-			for (const auto& [key, stats] : m_mastery) {
-				db.push_back({
-					{ "formID", key.formID },
-					{ "school", static_cast<std::uint32_t>(key.school) },
-					{ "name", key.name },
-					{ "kills", stats.kills },
-					{ "uses", stats.uses },
-					{ "summons", stats.summons },
-					{ "hits", stats.hits },
-					{ "equippedSeconds", stats.equippedSeconds },
-					{ "level", stats.level }
-				});
-			}
-		}
-
 		root[kConfigSection] = {
-			{ "config", ToJson(config) },
-			{ "db", std::move(db) }
+			{ "config", ToJson(config) }
 		};
 
 		std::ofstream file(path, std::ios::trunc);
@@ -628,33 +609,6 @@ namespace SBO::MASTERY_SPELL
 		const auto configNode = section.contains("config") && section["config"].is_object() ? section["config"] : section;
 		FromJson(configNode, cfg);
 		SetConfig(cfg, false);
-
-		if (section.contains("db") && section["db"].is_array()) {
-			std::unordered_map<SpellKey, MasteryStats, SpellKeyHash> loaded{};
-			for (const auto& row : section["db"]) {
-				if (!row.is_object()) {
-					continue;
-				}
-				SpellKey key{};
-				key.formID = row.value("formID", 0u);
-				key.school = static_cast<SpellSchool>(row.value("school", 0u));
-				key.name = row.value("name", std::string{});
-				if (key.formID == 0 || key.name.empty()) {
-					continue;
-				}
-				MasteryStats stats{};
-				stats.kills = row.value("kills", 0u);
-				stats.uses = row.value("uses", 0u);
-				stats.summons = row.value("summons", 0u);
-				stats.hits = row.value("hits", 0u);
-				stats.equippedSeconds = row.value("equippedSeconds", 0.0f);
-				stats.level = row.value("level", 0u);
-				loaded.emplace(std::move(key), stats);
-			}
-			std::scoped_lock lock(m_lock);
-			m_mastery = std::move(loaded);
-			ReapplyBonusesLocked();
-		}
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const

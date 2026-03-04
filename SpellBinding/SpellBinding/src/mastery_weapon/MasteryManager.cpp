@@ -527,29 +527,8 @@ namespace SBO::MASTERY_WEAPON
 			}
 		}
 
-		json db = json::array();
-		{
-			std::scoped_lock lock(m_lock);
-			for (const auto& [key, stats] : m_mastery) {
-				db.push_back({
-					{ "baseName", key.baseName },
-					{ "uniqueID", key.uniqueID },
-					{ "weaponType", static_cast<std::uint32_t>(key.weaponType) },
-					{ "leftHand", key.leftHand },
-					{ "shield", key.shield },
-					{ "kills", stats.kills },
-					{ "hits", stats.hits },
-					{ "powerHits", stats.powerHits },
-					{ "blocks", stats.blocks },
-					{ "secondsEquipped", stats.secondsEquipped },
-					{ "level", stats.level }
-				});
-			}
-		}
-
 		root[kConfigSection] = {
-			{ "config", ToJson(config) },
-			{ "db", std::move(db) }
+			{ "config", ToJson(config) }
 		};
 
 		std::ofstream file(path, std::ios::trunc);
@@ -589,35 +568,6 @@ namespace SBO::MASTERY_WEAPON
 		const auto configNode = section.contains("config") && section["config"].is_object() ? section["config"] : section;
 		FromJson(configNode, cfg);
 		SetConfig(cfg, false);
-
-		if (section.contains("db") && section["db"].is_array()) {
-			std::unordered_map<ItemKey, MasteryStats, ItemKeyHash> loaded{};
-			for (const auto& row : section["db"]) {
-				if (!row.is_object()) {
-					continue;
-				}
-				ItemKey key{};
-				key.baseName = row.value("baseName", std::string{});
-				key.uniqueID = row.value("uniqueID", static_cast<std::uint16_t>(0));
-				key.weaponType = static_cast<RE::WEAPON_TYPE>(row.value("weaponType", 0u));
-				key.leftHand = row.value("leftHand", false);
-				key.shield = row.value("shield", false);
-				if (key.baseName.empty()) {
-					continue;
-				}
-				MasteryStats stats{};
-				stats.kills = row.value("kills", 0u);
-				stats.hits = row.value("hits", 0u);
-				stats.powerHits = row.value("powerHits", 0u);
-				stats.blocks = row.value("blocks", 0u);
-				stats.secondsEquipped = row.value("secondsEquipped", 0.0f);
-				stats.level = row.value("level", 0u);
-				loaded.emplace(std::move(key), stats);
-			}
-			std::scoped_lock lock(m_lock);
-			m_mastery = std::move(loaded);
-			ReapplyBonuses();
-		}
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const

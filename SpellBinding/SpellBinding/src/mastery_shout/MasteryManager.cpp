@@ -354,22 +354,8 @@ namespace SBO::MASTERY_SHOUT
 			}
 		}
 
-		json db = json::array();
-		{
-			std::scoped_lock lock(m_lock);
-			for (const auto& [key, stats] : m_mastery) {
-				db.push_back({
-					{ "formID", key.formID },
-					{ "name", key.name },
-					{ "uses", stats.uses },
-					{ "level", stats.level }
-				});
-			}
-		}
-
 		root[kConfigSection] = {
-			{ "config", ToJson(cfg) },
-			{ "db", std::move(db) }
+			{ "config", ToJson(cfg) }
 		};
 
 		std::ofstream file(path, std::ios::trunc);
@@ -409,28 +395,6 @@ namespace SBO::MASTERY_SHOUT
 		const auto configNode = section.contains("config") && section["config"].is_object() ? section["config"] : section;
 		FromJson(configNode, cfg);
 		SetConfig(cfg, false);
-
-		if (section.contains("db") && section["db"].is_array()) {
-			std::unordered_map<ShoutKey, MasteryStats, ShoutKeyHash> loaded{};
-			for (const auto& row : section["db"]) {
-				if (!row.is_object()) {
-					continue;
-				}
-				ShoutKey key{};
-				key.formID = row.value("formID", 0u);
-				key.name = row.value("name", std::string{});
-				if (key.formID == 0 || key.name.empty()) {
-					continue;
-				}
-				MasteryStats stats{};
-				stats.uses = row.value("uses", 0u);
-				stats.level = row.value("level", 0u);
-				loaded.emplace(std::move(key), stats);
-			}
-			std::scoped_lock lock(m_lock);
-			m_mastery = std::move(loaded);
-			ReapplyBonusesLocked();
-		}
 	}
 
 	std::filesystem::path Manager::GetConfigPath() const
