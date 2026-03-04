@@ -1,6 +1,9 @@
 #include "overhaul/SpellbladeOverhaulManager.h"
 
 #include "buff/QuickBuffManager.h"
+#include "mastery_shout/MasteryManager.h"
+#include "mastery_spell/MasteryManager.h"
+#include "mastery_weapon/MasteryManager.h"
 #include "smartcast/SmartCastController.h"
 #include "spellbinding/SpellBindingManager.h"
 #include "ui/PrismaBridge.h"
@@ -114,6 +117,295 @@ namespace SB_OVERHAUL
 			};
 		}
 
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SPELL::SpellKey& a_key, const SBO::MASTERY_SPELL::MasteryStats& a_stats)
+		{
+			return {
+				{ "name", a_key.name },
+				{ "formID", a_key.formID },
+				{ "school", static_cast<std::uint32_t>(a_key.school) },
+				{ "kills", a_stats.kills },
+				{ "uses", a_stats.uses },
+				{ "summons", a_stats.summons },
+				{ "hits", a_stats.hits },
+				{ "equippedSeconds", a_stats.equippedSeconds },
+				{ "level", a_stats.level }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SHOUT::ShoutKey& a_key, const SBO::MASTERY_SHOUT::MasteryStats& a_stats)
+		{
+			return {
+				{ "name", a_key.name },
+				{ "formID", a_key.formID },
+				{ "uses", a_stats.uses },
+				{ "level", a_stats.level }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_WEAPON::ItemKey& a_key, const SBO::MASTERY_WEAPON::MasteryStats& a_stats)
+		{
+			return {
+				{ "name", a_key.baseName },
+				{ "uniqueID", a_key.uniqueID },
+				{ "weaponType", static_cast<std::uint32_t>(a_key.weaponType) },
+				{ "leftHand", a_key.leftHand },
+				{ "shield", a_key.shield },
+				{ "kills", a_stats.kills },
+				{ "hits", a_stats.hits },
+				{ "powerHits", a_stats.powerHits },
+				{ "blocks", a_stats.blocks },
+				{ "secondsEquipped", a_stats.secondsEquipped },
+				{ "level", a_stats.level }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SPELL::MasteryConfig::BonusTuning& b)
+		{
+			return {
+				{ "skillBonusPerLevel", b.skillBonusPerLevel },
+				{ "skillBonusCap", b.skillBonusCap },
+				{ "skillAdvancePerLevel", b.skillAdvancePerLevel },
+				{ "skillAdvanceCap", b.skillAdvanceCap },
+				{ "powerBonusPerLevel", b.powerBonusPerLevel },
+				{ "powerBonusCap", b.powerBonusCap },
+				{ "costReductionPerLevel", b.costReductionPerLevel },
+				{ "costReductionCap", b.costReductionCap },
+				{ "magickaRatePerLevel", b.magickaRatePerLevel },
+				{ "magickaRateCap", b.magickaRateCap },
+				{ "magickaFlatPerLevel", b.magickaFlatPerLevel },
+				{ "magickaFlatCap", b.magickaFlatCap }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SPELL::MasteryConfig::ProgressionTuning& p)
+		{
+			return {
+				{ "gainFromKills", p.gainFromKills },
+				{ "gainFromUses", p.gainFromUses },
+				{ "gainFromSummons", p.gainFromSummons },
+				{ "gainFromHits", p.gainFromHits },
+				{ "gainFromEquipTime", p.gainFromEquipTime },
+				{ "equipSecondsPerPoint", p.equipSecondsPerPoint }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SPELL::MasteryConfig::SchoolConfig& s)
+		{
+			return {
+				{ "progression", ToJson(s.progression) },
+				{ "useBonusOverride", s.useBonusOverride },
+				{ "bonus", ToJson(s.bonus) }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SPELL::MasteryConfig& cfg)
+		{
+			json schools = json::array();
+			for (const auto& school : cfg.schools) {
+				schools.push_back(ToJson(school));
+			}
+			return {
+				{ "enabled", cfg.enabled },
+				{ "gainMultiplier", cfg.gainMultiplier },
+				{ "thresholds", cfg.thresholds },
+				{ "generalBonuses", ToJson(cfg.generalBonuses) },
+				{ "schools", std::move(schools) }
+			};
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_SPELL::MasteryConfig::BonusTuning& b)
+		{
+			b.skillBonusPerLevel = node.value("skillBonusPerLevel", b.skillBonusPerLevel);
+			b.skillBonusCap = node.value("skillBonusCap", b.skillBonusCap);
+			b.skillAdvancePerLevel = node.value("skillAdvancePerLevel", b.skillAdvancePerLevel);
+			b.skillAdvanceCap = node.value("skillAdvanceCap", b.skillAdvanceCap);
+			b.powerBonusPerLevel = node.value("powerBonusPerLevel", b.powerBonusPerLevel);
+			b.powerBonusCap = node.value("powerBonusCap", b.powerBonusCap);
+			b.costReductionPerLevel = node.value("costReductionPerLevel", b.costReductionPerLevel);
+			b.costReductionCap = node.value("costReductionCap", b.costReductionCap);
+			b.magickaRatePerLevel = node.value("magickaRatePerLevel", b.magickaRatePerLevel);
+			b.magickaRateCap = node.value("magickaRateCap", b.magickaRateCap);
+			b.magickaFlatPerLevel = node.value("magickaFlatPerLevel", b.magickaFlatPerLevel);
+			b.magickaFlatCap = node.value("magickaFlatCap", b.magickaFlatCap);
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_SPELL::MasteryConfig::ProgressionTuning& p)
+		{
+			p.gainFromKills = node.value("gainFromKills", p.gainFromKills);
+			p.gainFromUses = node.value("gainFromUses", p.gainFromUses);
+			p.gainFromSummons = node.value("gainFromSummons", p.gainFromSummons);
+			p.gainFromHits = node.value("gainFromHits", p.gainFromHits);
+			p.gainFromEquipTime = node.value("gainFromEquipTime", p.gainFromEquipTime);
+			p.equipSecondsPerPoint = node.value("equipSecondsPerPoint", p.equipSecondsPerPoint);
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_SPELL::MasteryConfig::SchoolConfig& s)
+		{
+			if (node.contains("progression") && node["progression"].is_object()) {
+				FromJson(node["progression"], s.progression);
+			}
+			s.useBonusOverride = node.value("useBonusOverride", s.useBonusOverride);
+			if (node.contains("bonus") && node["bonus"].is_object()) {
+				FromJson(node["bonus"], s.bonus);
+			}
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_SPELL::MasteryConfig& cfg)
+		{
+			cfg.enabled = node.value("enabled", cfg.enabled);
+			cfg.gainMultiplier = node.value("gainMultiplier", cfg.gainMultiplier);
+			if (node.contains("thresholds") && node["thresholds"].is_array()) {
+				cfg.thresholds = node["thresholds"].get<std::vector<std::uint32_t>>();
+			}
+			if (node.contains("generalBonuses") && node["generalBonuses"].is_object()) {
+				FromJson(node["generalBonuses"], cfg.generalBonuses);
+			}
+			if (node.contains("schools") && node["schools"].is_array()) {
+				const auto& arr = node["schools"];
+				for (std::size_t i = 0; i < cfg.schools.size() && i < arr.size(); ++i) {
+					if (arr[i].is_object()) {
+						FromJson(arr[i], cfg.schools[i]);
+					}
+				}
+			}
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SHOUT::MasteryConfig::BonusTuning& b)
+		{
+			return {
+				{ "shoutRecoveryPerLevel", b.shoutRecoveryPerLevel },
+				{ "shoutRecoveryCap", b.shoutRecoveryCap },
+				{ "shoutPowerPerLevel", b.shoutPowerPerLevel },
+				{ "shoutPowerCap", b.shoutPowerCap },
+				{ "voiceRatePerLevel", b.voiceRatePerLevel },
+				{ "voiceRateCap", b.voiceRateCap },
+				{ "voicePointsPerLevel", b.voicePointsPerLevel },
+				{ "voicePointsCap", b.voicePointsCap },
+				{ "staminaRatePerLevel", b.staminaRatePerLevel },
+				{ "staminaRateCap", b.staminaRateCap }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_SHOUT::MasteryConfig& cfg)
+		{
+			return {
+				{ "enabled", cfg.enabled },
+				{ "gainMultiplier", cfg.gainMultiplier },
+				{ "gainFromUses", cfg.gainFromUses },
+				{ "thresholds", cfg.thresholds },
+				{ "bonuses", ToJson(cfg.bonuses) }
+			};
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_SHOUT::MasteryConfig::BonusTuning& b)
+		{
+			b.shoutRecoveryPerLevel = node.value("shoutRecoveryPerLevel", b.shoutRecoveryPerLevel);
+			b.shoutRecoveryCap = node.value("shoutRecoveryCap", b.shoutRecoveryCap);
+			b.shoutPowerPerLevel = node.value("shoutPowerPerLevel", b.shoutPowerPerLevel);
+			b.shoutPowerCap = node.value("shoutPowerCap", b.shoutPowerCap);
+			b.voiceRatePerLevel = node.value("voiceRatePerLevel", b.voiceRatePerLevel);
+			b.voiceRateCap = node.value("voiceRateCap", b.voiceRateCap);
+			b.voicePointsPerLevel = node.value("voicePointsPerLevel", b.voicePointsPerLevel);
+			b.voicePointsCap = node.value("voicePointsCap", b.voicePointsCap);
+			b.staminaRatePerLevel = node.value("staminaRatePerLevel", b.staminaRatePerLevel);
+			b.staminaRateCap = node.value("staminaRateCap", b.staminaRateCap);
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_SHOUT::MasteryConfig& cfg)
+		{
+			cfg.enabled = node.value("enabled", cfg.enabled);
+			cfg.gainMultiplier = node.value("gainMultiplier", cfg.gainMultiplier);
+			cfg.gainFromUses = node.value("gainFromUses", cfg.gainFromUses);
+			if (node.contains("thresholds") && node["thresholds"].is_array()) {
+				cfg.thresholds = node["thresholds"].get<std::vector<std::uint32_t>>();
+			}
+			if (node.contains("bonuses") && node["bonuses"].is_object()) {
+				FromJson(node["bonuses"], cfg.bonuses);
+			}
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_WEAPON::MasteryConfig::BonusTuning& b)
+		{
+			return {
+				{ "damagePerLevel", b.damagePerLevel },
+				{ "attackSpeedPerLevel", b.attackSpeedPerLevel },
+				{ "critChancePerLevel", b.critChancePerLevel },
+				{ "powerAttackStaminaReductionPerLevel", b.powerAttackStaminaReductionPerLevel },
+				{ "blockStaminaReductionPerLevel", b.blockStaminaReductionPerLevel },
+				{ "damageCap", b.damageCap },
+				{ "attackSpeedCap", b.attackSpeedCap },
+				{ "critChanceCap", b.critChanceCap },
+				{ "powerAttackStaminaFloor", b.powerAttackStaminaFloor },
+				{ "blockStaminaFloor", b.blockStaminaFloor }
+			};
+		}
+
+		[[nodiscard]] json ToJson(const SBO::MASTERY_WEAPON::MasteryConfig& cfg)
+		{
+			json typeBonuses = json::array();
+			for (const auto& typeCfg : cfg.weaponTypeBonuses) {
+				typeBonuses.push_back({
+					{ "enabled", typeCfg.enabled },
+					{ "tuning", ToJson(typeCfg.tuning) }
+				});
+			}
+			return {
+				{ "enabled", cfg.enabled },
+				{ "gainMultiplier", cfg.gainMultiplier },
+				{ "thresholds", cfg.thresholds },
+				{ "gainFromKills", cfg.gainFromKills },
+				{ "gainFromHits", cfg.gainFromHits },
+				{ "gainFromPowerHits", cfg.gainFromPowerHits },
+				{ "gainFromBlocks", cfg.gainFromBlocks },
+				{ "timeBasedLeveling", cfg.timeBasedLeveling },
+				{ "generalBonuses", ToJson(cfg.generalBonuses) },
+				{ "weaponTypeBonuses", std::move(typeBonuses) }
+			};
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_WEAPON::MasteryConfig::BonusTuning& b)
+		{
+			b.damagePerLevel = node.value("damagePerLevel", b.damagePerLevel);
+			b.attackSpeedPerLevel = node.value("attackSpeedPerLevel", b.attackSpeedPerLevel);
+			b.critChancePerLevel = node.value("critChancePerLevel", b.critChancePerLevel);
+			b.powerAttackStaminaReductionPerLevel = node.value("powerAttackStaminaReductionPerLevel", b.powerAttackStaminaReductionPerLevel);
+			b.blockStaminaReductionPerLevel = node.value("blockStaminaReductionPerLevel", b.blockStaminaReductionPerLevel);
+			b.damageCap = node.value("damageCap", b.damageCap);
+			b.attackSpeedCap = node.value("attackSpeedCap", b.attackSpeedCap);
+			b.critChanceCap = node.value("critChanceCap", b.critChanceCap);
+			b.powerAttackStaminaFloor = node.value("powerAttackStaminaFloor", b.powerAttackStaminaFloor);
+			b.blockStaminaFloor = node.value("blockStaminaFloor", b.blockStaminaFloor);
+		}
+
+		void FromJson(const json& node, SBO::MASTERY_WEAPON::MasteryConfig& cfg)
+		{
+			cfg.enabled = node.value("enabled", cfg.enabled);
+			cfg.gainMultiplier = node.value("gainMultiplier", cfg.gainMultiplier);
+			if (node.contains("thresholds") && node["thresholds"].is_array()) {
+				cfg.thresholds = node["thresholds"].get<std::vector<std::uint32_t>>();
+			}
+			cfg.gainFromKills = node.value("gainFromKills", cfg.gainFromKills);
+			cfg.gainFromHits = node.value("gainFromHits", cfg.gainFromHits);
+			cfg.gainFromPowerHits = node.value("gainFromPowerHits", cfg.gainFromPowerHits);
+			cfg.gainFromBlocks = node.value("gainFromBlocks", cfg.gainFromBlocks);
+			cfg.timeBasedLeveling = node.value("timeBasedLeveling", cfg.timeBasedLeveling);
+			if (node.contains("generalBonuses") && node["generalBonuses"].is_object()) {
+				FromJson(node["generalBonuses"], cfg.generalBonuses);
+			}
+			if (node.contains("weaponTypeBonuses") && node["weaponTypeBonuses"].is_array()) {
+				const auto& arr = node["weaponTypeBonuses"];
+				for (std::size_t i = 0; i < cfg.weaponTypeBonuses.size() && i < arr.size(); ++i) {
+					if (!arr[i].is_object()) {
+						continue;
+					}
+					cfg.weaponTypeBonuses[i].enabled = arr[i].value("enabled", cfg.weaponTypeBonuses[i].enabled);
+					if (arr[i].contains("tuning") && arr[i]["tuning"].is_object()) {
+						FromJson(arr[i]["tuning"], cfg.weaponTypeBonuses[i].tuning);
+					}
+				}
+			}
+		}
+
 		void ForceEnabledFlags(bool a_save)
 		{
 			auto* sb = SBIND::Manager::GetSingleton();
@@ -144,6 +436,9 @@ namespace SB_OVERHAUL
 		SBIND::Manager::GetSingleton()->Initialize();
 		SMART_CAST::Controller::GetSingleton()->Initialize();
 		QUICK_BUFF::Manager::GetSingleton()->Initialize();
+		SBO::MASTERY_SPELL::Manager::GetSingleton()->Initialize();
+		SBO::MASTERY_SHOUT::Manager::GetSingleton()->Initialize();
+		SBO::MASTERY_WEAPON::Manager::GetSingleton()->Initialize();
 		ForceEnabledFlags(true);
 	}
 
@@ -152,6 +447,7 @@ namespace SB_OVERHAUL
 		SBIND::Manager::GetSingleton()->Update(a_player, a_deltaTime);
 		SMART_CAST::Controller::GetSingleton()->Update(a_player, a_deltaTime);
 		QUICK_BUFF::Manager::GetSingleton()->Update(a_player, a_deltaTime);
+		(void)a_deltaTime;
 	}
 
 	void Manager::Serialize(SKSE::SerializationInterface* a_intfc) const
@@ -159,6 +455,9 @@ namespace SB_OVERHAUL
 		SBIND::Manager::GetSingleton()->Serialize(a_intfc);
 		SMART_CAST::Controller::GetSingleton()->Serialize(a_intfc);
 		QUICK_BUFF::Manager::GetSingleton()->Serialize(a_intfc);
+		SBO::MASTERY_SPELL::Manager::GetSingleton()->Serialize(a_intfc);
+		SBO::MASTERY_SHOUT::Manager::GetSingleton()->Serialize(a_intfc);
+		SBO::MASTERY_WEAPON::Manager::GetSingleton()->Serialize(a_intfc);
 	}
 
 	void Manager::Deserialize(SKSE::SerializationInterface* a_intfc)
@@ -166,6 +465,9 @@ namespace SB_OVERHAUL
 		SBIND::Manager::GetSingleton()->Deserialize(a_intfc);
 		SMART_CAST::Controller::GetSingleton()->Deserialize(a_intfc);
 		QUICK_BUFF::Manager::GetSingleton()->Deserialize(a_intfc);
+		SBO::MASTERY_SPELL::Manager::GetSingleton()->Deserialize(a_intfc);
+		SBO::MASTERY_SHOUT::Manager::GetSingleton()->Deserialize(a_intfc);
+		SBO::MASTERY_WEAPON::Manager::GetSingleton()->Deserialize(a_intfc);
 		ForceEnabledFlags(false);
 	}
 
@@ -174,6 +476,9 @@ namespace SB_OVERHAUL
 		SBIND::Manager::GetSingleton()->OnRevert();
 		SMART_CAST::Controller::GetSingleton()->OnRevert();
 		QUICK_BUFF::Manager::GetSingleton()->OnRevert();
+		SBO::MASTERY_SPELL::Manager::GetSingleton()->OnRevert();
+		SBO::MASTERY_SHOUT::Manager::GetSingleton()->OnRevert();
+		SBO::MASTERY_WEAPON::Manager::GetSingleton()->OnRevert();
 		ForceEnabledFlags(false);
 	}
 
@@ -255,6 +560,41 @@ namespace SB_OVERHAUL
 			};
 		}
 
+		{
+			const auto spellCfg = SBO::MASTERY_SPELL::Manager::GetSingleton()->GetConfig();
+			json spellRows = json::array();
+			for (const auto& [key, stats] : SBO::MASTERY_SPELL::Manager::GetSingleton()->GetMasteryData()) {
+				spellRows.push_back(ToJson(key, stats));
+			}
+
+			const auto shoutCfg = SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetConfig();
+			json shoutRows = json::array();
+			for (const auto& [key, stats] : SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetMasteryData()) {
+				shoutRows.push_back(ToJson(key, stats));
+			}
+
+			const auto weaponCfg = SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetConfig();
+			json weaponRows = json::array();
+			for (const auto& [key, stats] : SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetMasteryData()) {
+				weaponRows.push_back(ToJson(key, stats));
+			}
+
+			root["mastery"] = {
+				{ "spell", {
+					{ "config", ToJson(spellCfg) },
+					{ "rows", std::move(spellRows) }
+				} },
+				{ "shout", {
+					{ "config", ToJson(shoutCfg) },
+					{ "rows", std::move(shoutRows) }
+				} },
+				{ "weapon", {
+					{ "config", ToJson(weaponCfg) },
+					{ "rows", std::move(weaponRows) }
+				} }
+			};
+		}
+
 		return root.dump();
 	}
 
@@ -323,6 +663,45 @@ namespace SB_OVERHAUL
 				}
 				QUICK_BUFF::Manager::GetSingleton()->SetConfig(cfg, true);
 				PushUISnapshot();
+				return;
+			}
+
+			if (module == "mastery") {
+				if (id == "masterySpell.config") {
+					auto cfg = SBO::MASTERY_SPELL::Manager::GetSingleton()->GetConfig();
+					if (payload.contains("value") && payload["value"].is_object()) {
+						FromJson(payload["value"], cfg);
+						SBO::MASTERY_SPELL::Manager::GetSingleton()->SetConfig(cfg, true);
+					}
+				} else if (id == "masterySpell.enabled" || id == "masterySpell.gainMultiplier") {
+					auto cfg = SBO::MASTERY_SPELL::Manager::GetSingleton()->GetConfig();
+					if (id == "masterySpell.enabled") cfg.enabled = payload.value("value", cfg.enabled);
+					if (id == "masterySpell.gainMultiplier") cfg.gainMultiplier = payload.value("value", cfg.gainMultiplier);
+					SBO::MASTERY_SPELL::Manager::GetSingleton()->SetConfig(cfg, true);
+				} else if (id == "masteryShout.config") {
+					auto cfg = SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetConfig();
+					if (payload.contains("value") && payload["value"].is_object()) {
+						FromJson(payload["value"], cfg);
+						SBO::MASTERY_SHOUT::Manager::GetSingleton()->SetConfig(cfg, true);
+					}
+				} else if (id == "masteryShout.enabled" || id == "masteryShout.gainMultiplier") {
+					auto cfg = SBO::MASTERY_SHOUT::Manager::GetSingleton()->GetConfig();
+					if (id == "masteryShout.enabled") cfg.enabled = payload.value("value", cfg.enabled);
+					if (id == "masteryShout.gainMultiplier") cfg.gainMultiplier = payload.value("value", cfg.gainMultiplier);
+					SBO::MASTERY_SHOUT::Manager::GetSingleton()->SetConfig(cfg, true);
+				} else if (id == "masteryWeapon.config") {
+					auto cfg = SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetConfig();
+					if (payload.contains("value") && payload["value"].is_object()) {
+						FromJson(payload["value"], cfg);
+						SBO::MASTERY_WEAPON::Manager::GetSingleton()->SetConfig(cfg, true);
+					}
+				} else if (id == "masteryWeapon.enabled" || id == "masteryWeapon.gainMultiplier") {
+					auto cfg = SBO::MASTERY_WEAPON::Manager::GetSingleton()->GetConfig();
+					if (id == "masteryWeapon.enabled") cfg.enabled = payload.value("value", cfg.enabled);
+					if (id == "masteryWeapon.gainMultiplier") cfg.gainMultiplier = payload.value("value", cfg.gainMultiplier);
+					SBO::MASTERY_WEAPON::Manager::GetSingleton()->SetConfig(cfg, true);
+				}
+				PushUISnapshot();
 			}
 		} catch (const std::exception& e) {
 			LOG_WARN("SpellbladeOverhaul: HandleSetSetting parse failed - {}", e.what());
@@ -375,6 +754,17 @@ namespace SB_OVERHAUL
 					const auto trigger = ParseTriggerID(payload.value("trigger", std::string{ "combatStart" }));
 					QUICK_BUFF::Manager::GetSingleton()->TryTestCast(trigger);
 				}
+				PushUISnapshot();
+				return;
+			}
+
+			if (module == "mastery") {
+				if (action == "masterySpell.clearDatabase") SBO::MASTERY_SPELL::Manager::GetSingleton()->ClearDatabase();
+				else if (action == "masterySpell.resetDefaults") SBO::MASTERY_SPELL::Manager::GetSingleton()->ResetAllConfigToDefault(true);
+				else if (action == "masteryShout.clearDatabase") SBO::MASTERY_SHOUT::Manager::GetSingleton()->ClearDatabase();
+				else if (action == "masteryShout.resetDefaults") SBO::MASTERY_SHOUT::Manager::GetSingleton()->ResetAllConfigToDefault(true);
+				else if (action == "masteryWeapon.clearDatabase") SBO::MASTERY_WEAPON::Manager::GetSingleton()->ClearDatabase();
+				else if (action == "masteryWeapon.resetDefaults") SBO::MASTERY_WEAPON::Manager::GetSingleton()->ResetAllConfigToDefault(true);
 				PushUISnapshot();
 			}
 		} catch (const std::exception& e) {

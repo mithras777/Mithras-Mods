@@ -1,8 +1,9 @@
 (function () {
   const state = {
-    snapshot: { spellBinding: {}, smartCast: {}, quickBuff: {} },
+    snapshot: { spellBinding: {}, smartCast: {}, quickBuff: {}, mastery: {} },
     blacklistSet: new Set(),
     tab: "spellBinding",
+    masteryTab: "spells",
     smartCastActiveChain: 1,
     drag: null,
     dragPos: { x: 48, y: 48 }
@@ -294,11 +295,109 @@
     })
   }
 
+  function renderMastery() {
+    const m = state.snapshot.mastery || {}
+    const panel = byId("mastery-panel")
+    if (!panel) return
+
+    document.querySelectorAll("[data-mastery-tab]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.masteryTab === state.masteryTab)
+    })
+
+    const section = state.masteryTab === "spells" ? (m.spell || {}) :
+      state.masteryTab === "shouts" ? (m.shout || {}) :
+      state.masteryTab === "weapons" ? (m.weapon || {}) : null
+
+    if (state.masteryTab === "overview") {
+      panel.innerHTML = ""
+      const summary = document.createElement("div")
+      summary.className = "mastery-table"
+      summary.innerHTML =
+        "<div class='item'><div><div>Spell Mastery Entries</div><div class='meta'>" + Number(m.spell?.rows?.length || 0) + "</div></div></div>" +
+        "<div class='item'><div><div>Shout Mastery Entries</div><div class='meta'>" + Number(m.shout?.rows?.length || 0) + "</div></div></div>" +
+        "<div class='item'><div><div>Weapon Mastery Entries</div><div class='meta'>" + Number(m.weapon?.rows?.length || 0) + "</div></div></div>"
+      panel.appendChild(summary)
+      return
+    }
+
+    const prefix = state.masteryTab === "spells" ? "masterySpell" :
+      state.masteryTab === "shouts" ? "masteryShout" : "masteryWeapon"
+    const rows = section?.rows || []
+    const cfg = section?.config || {}
+
+    panel.innerHTML = ""
+    const controls = document.createElement("div")
+    controls.className = "row"
+    controls.innerHTML = "<label><input id='m-enabled' type='checkbox' " + (cfg.enabled ? "checked" : "") + " /> Enabled</label>" +
+      "<label>Gain x <input id='m-gain' type='number' step='0.1' min='0.1' value='" + Number(cfg.gainMultiplier || 1).toFixed(1) + "' /></label>"
+    const saveBtn = document.createElement("button")
+    saveBtn.className = "btn"
+    saveBtn.textContent = "Save"
+    saveBtn.addEventListener("click", () => {
+      setSetting("mastery", prefix + ".enabled", !!byId("m-enabled").checked)
+      setSetting("mastery", prefix + ".gainMultiplier", Number(byId("m-gain").value || 1))
+    })
+    const resetBtn = document.createElement("button")
+    resetBtn.className = "btn"
+    resetBtn.textContent = "Reset Defaults"
+    resetBtn.addEventListener("click", () => doAction("mastery", prefix + ".resetDefaults"))
+    const clearBtn = document.createElement("button")
+    clearBtn.className = "btn"
+    clearBtn.textContent = "Clear DB"
+    clearBtn.addEventListener("click", () => doAction("mastery", prefix + ".clearDatabase"))
+    const saveAllBtn = document.createElement("button")
+    saveAllBtn.className = "btn"
+    saveAllBtn.textContent = "Save All Settings"
+    saveAllBtn.addEventListener("click", () => {
+      try {
+        const parsed = JSON.parse(byId("m-config-json").value || "{}")
+        setSetting("mastery", prefix + ".config", parsed)
+      } catch (_) {
+        toast("Invalid mastery JSON")
+      }
+    })
+    controls.appendChild(saveBtn)
+    controls.appendChild(saveAllBtn)
+    controls.appendChild(resetBtn)
+    controls.appendChild(clearBtn)
+
+    const info = document.createElement("div")
+    info.className = "muted"
+    info.textContent = "Entries: " + Number(rows.length)
+
+    const jsonWrap = document.createElement("div")
+    jsonWrap.className = "row"
+    jsonWrap.innerHTML = "<label style='display:grid;gap:6px;width:100%'>All Settings JSON<textarea id='m-config-json' style='width:100%;min-height:210px;resize:vertical;font-family:Consolas,monospace'></textarea></label>"
+
+    const table = document.createElement("div")
+    table.className = "mastery-table"
+    if (!rows.length) {
+      table.innerHTML = "<p class='muted'>No mastery data yet.</p>"
+    } else {
+      rows.forEach((row) => {
+        const item = document.createElement("div")
+        item.className = "item"
+        item.innerHTML = "<div><div>" + (row.name || "Unknown") + "</div><div class='meta'>Level " + Number(row.level || 0) + " | Uses " + Number(row.uses || row.hits || 0) + "</div></div>"
+        table.appendChild(item)
+      })
+    }
+
+    panel.appendChild(controls)
+    panel.appendChild(info)
+    panel.appendChild(jsonWrap)
+    panel.appendChild(table)
+    const editor = byId("m-config-json")
+    if (editor) {
+      editor.value = JSON.stringify(cfg || {}, null, 2)
+    }
+  }
+
   function renderAll() {
     renderTabs()
     renderSpellBinding()
     renderSmartCast()
     renderQuickBuff()
+    renderMastery()
 
     const sbCfg = state.snapshot.spellBinding?.config || {}
     state.dragPos.x = Number(sbCfg.hudPosX || 48)
@@ -338,6 +437,12 @@
     tab.addEventListener("click", () => {
       state.tab = tab.dataset.tab
       renderTabs()
+    })
+  })
+  document.querySelectorAll("[data-mastery-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      state.masteryTab = tab.dataset.masteryTab
+      renderMastery()
     })
   })
 

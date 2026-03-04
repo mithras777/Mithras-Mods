@@ -33,6 +33,7 @@
       <button class="tab active" data-tab="spellBinding">Spell Binding</button>
       <button class="tab" data-tab="smartCast">Smart Cast</button>
       <button class="tab" data-tab="quickBuff">Quick Buff</button>
+      <button class="tab" data-tab="mastery">Mastery</button>
     </nav>
 
     <main class="content">
@@ -112,6 +113,20 @@
           <article class="card glass qb-main">
             <h3>Triggers</h3>
             <div id="qb-trigger-grid" class="trigger-grid"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="mastery">
+        <div class="panel-grid mastery-grid">
+          <article class="card glass mastery-main">
+            <nav id="mastery-subtabs" class="subtabs" aria-label="Mastery tabs">
+              <button class="subtab active" data-mastery-tab="spells">Spells</button>
+              <button class="subtab" data-mastery-tab="shouts">Shouts</button>
+              <button class="subtab" data-mastery-tab="weapons">Weapons</button>
+              <button class="subtab" data-mastery-tab="overview">Overview</button>
+            </nav>
+            <div id="mastery-panel" class="mastery-panel"></div>
           </article>
         </div>
       </section>

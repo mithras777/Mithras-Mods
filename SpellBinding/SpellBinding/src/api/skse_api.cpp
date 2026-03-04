@@ -5,6 +5,7 @@
 #include "event/AttackAnimationEventSink.h"
 #include "event/EquipEventSink.h"
 #include "event/GameEventManager.h"
+#include "event/mastery/MasteryEventSinks.h"
 #include "input/InputEventSink.h"
 #include "overhaul/SpellbladeOverhaulManager.h"
 #include "serialization/Serialization.h"
@@ -56,6 +57,7 @@ namespace SKSE {
 				GAME_EVENT::Manager::Register();
 				SB_EVENT::EquipEventSink::Register();
 				SB_EVENT::AttackAnimationEventSink::Register();
+				SBO::EVENT::MASTERY::Register();
 				UI::PRISMA::Bridge::GetSingleton()->Initialize();
 				SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
 				SB_OVERHAUL::Manager::GetSingleton()->PushHUDSnapshot();
