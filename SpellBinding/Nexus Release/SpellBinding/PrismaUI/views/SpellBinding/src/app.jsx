@@ -1,11 +1,41 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Settings, Maximize2, X } from 'lucide-react';
 
 const triggerOrder = ['combatStart', 'combatEnd', 'healthBelow70', 'healthBelow50', 'healthBelow30', 'crouchStart', 'sprintStart', 'weaponDraw', 'powerAttackStart', 'shoutStart'];
 const WINDOW_MIN_WIDTH = 960;
 const WINDOW_MIN_HEIGHT = 620;
 const WINDOW_MARGIN = 8;
+const SPELLBIND_SCAN_BY_CODE = {
+  Escape: 1,
+  Digit1: 2, Digit2: 3, Digit3: 4, Digit4: 5, Digit5: 6, Digit6: 7, Digit7: 8, Digit8: 9, Digit9: 10, Digit0: 11,
+  Minus: 12, Equal: 13, Backspace: 14,
+  Tab: 15,
+  KeyQ: 16, KeyW: 17, KeyE: 18, KeyR: 19, KeyT: 20, KeyY: 21, KeyU: 22, KeyI: 23, KeyO: 24, KeyP: 25,
+  BracketLeft: 26, BracketRight: 27, Enter: 28,
+  ControlLeft: 29,
+  KeyA: 30, KeyS: 31, KeyD: 32, KeyF: 33, KeyG: 34, KeyH: 35, KeyJ: 36, KeyK: 37, KeyL: 38,
+  Semicolon: 39, Quote: 40, Backquote: 41,
+  ShiftLeft: 42, Backslash: 43,
+  KeyZ: 44, KeyX: 45, KeyC: 46, KeyV: 47, KeyB: 48, KeyN: 49, KeyM: 50,
+  Comma: 51, Period: 52, Slash: 53,
+  ShiftRight: 54,
+  NumpadMultiply: 55,
+  AltLeft: 56,
+  Space: 57,
+  CapsLock: 58,
+  F1: 59, F2: 60, F3: 61, F4: 62, F5: 63, F6: 64, F7: 65, F8: 66, F9: 67, F10: 68,
+  NumLock: 69, ScrollLock: 70,
+  Numpad7: 71, Numpad8: 72, Numpad9: 73, NumpadSubtract: 74,
+  Numpad4: 75, Numpad5: 76, Numpad6: 77, NumpadAdd: 78,
+  Numpad1: 79, Numpad2: 80, Numpad3: 81, Numpad0: 82, NumpadDecimal: 83,
+  F11: 87, F12: 88
+};
+const SPELLBIND_CODE_BY_SCAN = Object.entries(SPELLBIND_SCAN_BY_CODE).reduce((out, [code, scan]) => {
+  out[scan] = code;
+  return out;
+}, {});
 
 function byPath(obj, path, fallback) {
   let cur = obj;
@@ -85,28 +115,20 @@ function castOnLabel(castOn) {
   return 'Self';
 }
 
-function IconCog() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M10.85 2.6c.36-1.2 2.04-1.2 2.4 0l.33 1.1a7.77 7.77 0 0 1 1.74.72l1-.56c1.08-.61 2.27.58 1.66 1.66l-.56 1a7.77 7.77 0 0 1 .72 1.74l1.1.33c1.2.36 1.2 2.04 0 2.4l-1.1.33a7.77 7.77 0 0 1-.72 1.74l.56 1c.61 1.08-.58 2.27-1.66 1.66l-1-.56a7.77 7.77 0 0 1-1.74.72l-.33 1.1c-.36 1.2-2.04 1.2-2.4 0l-.33-1.1a7.77 7.77 0 0 1-1.74-.72l-1 .56c-1.08.61-2.27-.58-1.66-1.66l.56-1a7.77 7.77 0 0 1-.72-1.74l-1.1-.33c-1.2-.36-1.2-2.04 0-2.4l1.1-.33c.16-.61.4-1.19.72-1.74l-.56-1c-.61-1.08.58-2.27 1.66-1.66l1 .56c.55-.32 1.13-.56 1.74-.72l.33-1.1zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" />
-    </svg>
-  );
+function formatScanCode(scan) {
+  const code = SPELLBIND_CODE_BY_SCAN[Number(scan)];
+  if (!code) return `Key ${scan}`;
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  return code;
 }
 
-function IconFullscreen() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z" />
-    </svg>
-  );
-}
-
-function IconClose() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+function toSmartCastToken(event) {
+  const code = event.code || '';
+  if (code.startsWith('Key') && code.length === 4) return code.slice(3).toUpperCase();
+  if (code.startsWith('Digit') && code.length === 6) return code.slice(5);
+  if (/^F([1-9]|1[0-2])$/.test(code)) return code;
+  return null;
 }
 
 function App() {
@@ -120,6 +142,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('spellBinding');
   const [hudAdjustOpen, setHudAdjustOpen] = useState(false);
+  const [hudDragPos, setHudDragPos] = useState({ x: 48, y: 48 });
+  const [captureField, setCaptureField] = useState(null);
   const [windowState, setWindowState] = useState(defaultCenteredRect());
 
   const dragRef = useRef(null);
@@ -129,6 +153,10 @@ function App() {
   const settingsOpenRef = useRef(false);
   const hudAdjustOpenRef = useRef(false);
   const hudConfigRef = useRef({ x: 48, y: 48 });
+  const hudDragRef = useRef(null);
+  const hudDragPosRef = useRef({ x: 48, y: 48 });
+  const hudSizeRef = useRef(88);
+  const captureFieldRef = useRef(null);
 
   const sb = snapshot.spellBinding || {};
   const sc = snapshot.smartCast || {};
@@ -173,19 +201,46 @@ function App() {
   }, [hudAdjustOpen]);
 
   useEffect(() => {
+    hudDragPosRef.current = hudDragPos;
+  }, [hudDragPos]);
+
+  useEffect(() => {
+    hudSizeRef.current = Number(byPath(sb, ['config', 'hudDonutSize'], 88));
+  }, [sb]);
+
+  useEffect(() => {
+    captureFieldRef.current = captureField;
+  }, [captureField]);
+
+  useEffect(() => {
     hudConfigRef.current = {
       x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
       y: Number(byPath(sb, ['config', 'hudPosY'], 48))
     };
+    if (!hudAdjustOpenRef.current) {
+      setHudDragPos({ x: Number(byPath(sb, ['config', 'hudPosX'], 48)), y: Number(byPath(sb, ['config', 'hudPosY'], 48)) });
+    }
   }, [sb]);
 
-  const closeHudAdjust = () => {
+  const clampHudPos = (x, y, size) => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const nextX = Math.max(0, Math.min(width - size, x));
+    const nextY = Math.max(0, Math.min(height - size, y));
+    return { x: nextX, y: nextY };
+  };
+
+  const finalizeHudAdjust = (closeMenuAfter) => {
+    const clamped = clampHudPos(hudDragPosRef.current.x, hudDragPosRef.current.y, hudSizeRef.current);
     hudAction('saveHudPosition', {
-      x: hudConfigRef.current.x,
-      y: hudConfigRef.current.y,
+      x: clamped.x,
+      y: clamped.y,
       commit: true
     });
     setHudAdjustOpen(false);
+    if (closeMenuAfter) {
+      callNative('sbo_toggle_ui', '');
+    }
   };
 
   useEffect(() => {
@@ -201,7 +256,11 @@ function App() {
     window.sbo_setFocusState = () => {};
     window.sbo_native_escape = () => {
       if (hudAdjustOpenRef.current) {
-        closeHudAdjust();
+        finalizeHudAdjust(false);
+        return;
+      }
+      if (captureFieldRef.current) {
+        setCaptureField(null);
         return;
       }
       if (settingsOpenRef.current) {
@@ -210,7 +269,13 @@ function App() {
       }
       callNative('sbo_toggle_ui', '');
     };
-    window.sbo_close_ui = () => callNative('sbo_toggle_ui', '');
+    window.sbo_close_ui = () => {
+      if (hudAdjustOpenRef.current) {
+        finalizeHudAdjust(true);
+        return;
+      }
+      callNative('sbo_toggle_ui', '');
+    };
 
     const keyHandler = (e) => {
       if (e.key === 'Escape') window.sbo_native_escape();
@@ -291,7 +356,6 @@ function App() {
 
   const startResize = (event) => {
     if (windowState.isFullscreen) return;
-    document.body.classList.add('is-resizing');
     resizeRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -328,7 +392,6 @@ function App() {
         setWindowState(next);
         persistWindowState(next);
       }
-      document.body.classList.remove('is-resizing');
       dragRef.current = null;
       resizeRef.current = null;
     };
@@ -340,6 +403,26 @@ function App() {
       window.removeEventListener('mouseup', onUp);
     };
   }, [windowState]);
+
+  useEffect(() => {
+    const onMove = (event) => {
+      if (!hudDragRef.current || !hudAdjustOpenRef.current) return;
+      const drag = hudDragRef.current;
+      const size = Number(byPath(sb, ['config', 'hudDonutSize'], 88));
+      const next = clampHudPos(drag.left + (event.clientX - drag.x), drag.top + (event.clientY - drag.y), size);
+      setHudDragPos(next);
+      hudAction('saveHudPosition', { x: next.x, y: next.y, commit: false });
+    };
+    const onUp = () => {
+      hudDragRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [sb]);
 
   const toggleFullscreen = () => {
     if (windowState.isFullscreen) {
@@ -405,18 +488,66 @@ function App() {
         height: `${windowState.height}px`
       };
 
+  const captureLabel = (field) => {
+    if (captureField === field) return 'Press key to define...';
+    if (field === 'sb.uiToggleKey') return String(byPath(sb, ['config', 'uiToggleKey'], 'Unset'));
+    if (field === 'sb.bindKey') return String(byPath(sb, ['config', 'bindKey'], 'Unset'));
+    if (field === 'sb.cycleSlotModifierKey') return formatScanCode(Number(byPath(sb, ['config', 'cycleSlotModifierKey'], 0)));
+    if (field === 'sc.record.toggleKey') return String(byPath(sc, ['config', 'global', 'record', 'toggleKey'], 'Unset'));
+    if (field === 'sc.playback.playKey') return String(byPath(sc, ['config', 'global', 'playback', 'playKey'], 'Unset'));
+    return 'Unset';
+  };
+
+  useEffect(() => {
+    if (!captureField) return;
+    const onCapture = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        setCaptureField(null);
+        return;
+      }
+
+      if (captureField === 'sb.uiToggleKey' || captureField === 'sb.bindKey' || captureField === 'sb.cycleSlotModifierKey') {
+        const scan = SPELLBIND_SCAN_BY_CODE[event.code || ''];
+        if (scan == null) {
+          showToast('Unsupported key for this binding');
+          return;
+        }
+        const id = captureField === 'sb.uiToggleKey' ? 'uiToggleKey' : captureField === 'sb.bindKey' ? 'bindKey' : 'cycleSlotModifierKey';
+        setSetting('spellBinding', id, Number(scan));
+        setCaptureField(null);
+        return;
+      }
+
+      if (captureField === 'sc.record.toggleKey' || captureField === 'sc.playback.playKey') {
+        const token = toSmartCastToken(event);
+        if (!token) {
+          showToast('Use letters, digits, or F1-F12');
+          return;
+        }
+        const id = captureField === 'sc.record.toggleKey' ? 'record.toggleKey' : 'playback.playKey';
+        setSetting('smartCast', id, token);
+        setCaptureField(null);
+      }
+    };
+
+    window.addEventListener('keydown', onCapture, true);
+    return () => window.removeEventListener('keydown', onCapture, true);
+  }, [captureField, sb, sc]);
+
   return (
     <>
-      <div className="window" style={panelStyle}>
+      {!hudAdjustOpen && <div className="window" style={panelStyle}>
         <header className="window-header" onMouseDown={startDrag}>
           <div className="title-wrap">
             <h1>Spell Binding</h1>
             <p>A Spellblade Overhaul Control Panel</p>
           </div>
           <div className="window-actions" onMouseDown={(e) => e.stopPropagation()}>
-            <button className="icon-btn" onClick={() => setSettingsOpen(true)} aria-label="Settings"><IconCog /></button>
-            <button className="icon-btn" onClick={toggleFullscreen} aria-label="Fullscreen"><IconFullscreen /></button>
-            <button className="icon-btn danger" onClick={() => callNative('sbo_toggle_ui', '')} aria-label="Close"><IconClose /></button>
+            <button className="icon-btn" onClick={() => setSettingsOpen(true)} aria-label="Settings"><Settings size={16} strokeWidth={2} /></button>
+            <button className="icon-btn" onClick={toggleFullscreen} aria-label="Fullscreen"><Maximize2 size={16} strokeWidth={2} /></button>
+            <button className="icon-btn danger" onClick={() => callNative('sbo_toggle_ui', '')} aria-label="Close"><X size={16} strokeWidth={2} /></button>
           </div>
         </header>
 
@@ -436,10 +567,36 @@ function App() {
                 <p><strong>Slot:</strong> {slotLabel(currentSlot)}</p>
                 <p><strong>Spell:</strong> {slotSpell.enabled ? slotSpell.displayName || 'Unknown' : 'None'}</p>
                 <p><strong>Cost:</strong> {slotSpell.enabled ? slotSpell.metric || '-' : '-'}</p>
+                <div className="preview-grid">
+                  <div className="preview-window">
+                    <div className="preview-title">Weapon Preview</div>
+                    <div className="preview-body">
+                      <div className="preview-name">{byPath(sb, ['currentWeapon', 'displayName'], 'None')}</div>
+                      <div className="preview-meta">{byPath(sb, ['currentWeapon', 'key', 'pluginName'], '')}</div>
+                    </div>
+                  </div>
+                  <div className="preview-window">
+                    <div className="preview-title">Spell Preview</div>
+                    <div className="preview-body">
+                      <div className="preview-name">{slotSpell.enabled ? slotSpell.displayName || 'Unknown' : 'None'}</div>
+                      <div className="preview-meta">{slotSpell.enabled ? slotSpell.spellFormKey || '' : ''}</div>
+                    </div>
+                  </div>
+                </div>
                 <div className="row">
                   <button className="btn" onClick={() => doAction('spellBinding', 'cycleBindSlot')}>Cycle Slot</button>
                   <button className="btn" onClick={() => currentWeapon.key && doAction('spellBinding', 'unbindSlot', { key: currentWeapon.key, slot: currentSlot })}>Unbind Slot</button>
-                  <button className="btn" onClick={() => { setHudAdjustOpen(true); hudAction('enterDragMode'); }}>Adjust HUD Donut</button>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setHudDragPos({ x: Number(byPath(sb, ['config', 'hudPosX'], 48)), y: Number(byPath(sb, ['config', 'hudPosY'], 48)) });
+                      setHudAdjustOpen(true);
+                      hudAction('enterDragMode');
+                    }}
+                  >
+                    Adjust HUD Donut
+                  </button>
                 </div>
                 <div className="row">
                   <label className="inline">
@@ -634,14 +791,14 @@ function App() {
         </main>
 
         {!windowState.isFullscreen && <div className="resize-handle" onMouseDown={startResize} />}
-      </div>
+      </div>}
 
       {settingsOpen && (
         <div className="modal-overlay" onMouseDown={() => setSettingsOpen(false)}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <header className="modal-header">
               <h2>Settings</h2>
-              <button className="icon-btn danger" onClick={() => setSettingsOpen(false)}><IconClose /></button>
+              <button className="icon-btn danger" onClick={() => setSettingsOpen(false)}><X size={16} strokeWidth={2} /></button>
             </header>
             <nav className="settings-tabs">
               {['spellBinding', 'smartCast', 'quickBuff', 'mastery', 'uiHud'].map((id) => (
@@ -652,9 +809,9 @@ function App() {
               {settingsTab === 'spellBinding' && (
                 <div className="setting-grid">
                   <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'enabled'], true)} onChange={(e) => setSetting('spellBinding', 'enabled', e.target.checked)} /> Enabled</label>
-                  <label>UI Toggle Key Code <input type="number" value={Number(byPath(sb, ['config', 'uiToggleKeyCode'], 0))} onChange={(e) => setSetting('spellBinding', 'uiToggleKey', Number(e.target.value || 0))} /></label>
-                  <label>Bind Key Code <input type="number" value={Number(byPath(sb, ['config', 'bindKeyCode'], 0))} onChange={(e) => setSetting('spellBinding', 'bindKey', Number(e.target.value || 0))} /></label>
-                  <label>Cycle Modifier Key Code <input type="number" value={Number(byPath(sb, ['config', 'cycleSlotModifierKey'], 0))} onChange={(e) => setSetting('spellBinding', 'cycleSlotModifierKey', Number(e.target.value || 0))} /></label>
+                  <label>UI Toggle Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.uiToggleKey')}>{captureLabel('sb.uiToggleKey')}</button></label>
+                  <label>Bind Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.bindKey')}>{captureLabel('sb.bindKey')}</button></label>
+                  <label>Cycle Modifier Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.cycleSlotModifierKey')}>{captureLabel('sb.cycleSlotModifierKey')}</button></label>
                   <label>Fallback Dedupe (s) <input type="number" step="0.1" min="0.5" max="5" value={Number(byPath(sb, ['config', 'fallbackDedupeSec'], 1.5)).toFixed(1)} onChange={(e) => setSetting('spellBinding', 'fallbackDedupeSec', Number(e.target.value || 1.5))} /></label>
                   <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'showHudNotifications'], true)} onChange={(e) => setSetting('spellBinding', 'showHudNotifications', e.target.checked)} /> Show HUD Notifications</label>
                   <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'enableSoundCues'], true)} onChange={(e) => setSetting('spellBinding', 'enableSoundCues', e.target.checked)} /> Enable Sound Cues</label>
@@ -665,8 +822,8 @@ function App() {
 
               {settingsTab === 'smartCast' && (
                 <div className="setting-grid">
-                  <label>Record Key <input value={String(byPath(sc, ['config', 'global', 'record', 'toggleKey'], 'R'))} onChange={(e) => setSetting('smartCast', 'record.toggleKey', e.target.value)} /></label>
-                  <label>Play Key <input value={String(byPath(sc, ['config', 'global', 'playback', 'playKey'], 'G'))} onChange={(e) => setSetting('smartCast', 'playback.playKey', e.target.value)} /></label>
+                  <label>Record Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.record.toggleKey')}>{captureLabel('sc.record.toggleKey')}</button></label>
+                  <label>Play Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.playback.playKey')}>{captureLabel('sc.playback.playKey')}</button></label>
                   <label>Default Chain Index <input type="number" min="1" max="5" value={Number(byPath(sc, ['config', 'global', 'playback', 'defaultChainIndex'], 1))} onChange={(e) => setSetting('smartCast', 'playback.defaultChainIndex', Number(e.target.value || 1))} /></label>
                   <label>Step Delay (s) <input type="number" min="0" max="2" step="0.01" value={Number(byPath(sc, ['config', 'global', 'playback', 'stepDelaySec'], 0.1)).toFixed(2)} onChange={(e) => setSetting('smartCast', 'playback.stepDelaySec', Number(e.target.value || 0.1))} /></label>
                 </div>
@@ -731,7 +888,7 @@ function App() {
 
       {hudAdjustOpen && (
         <div className="hud-adjust">
-          <div className="hud-adjust-head">Drag the donut in game view, then click Done.</div>
+          <div className="hud-adjust-head">Drag the donut below, adjust size/seconds, then click Done.</div>
           <div className="hud-adjust-controls">
             <label className="inline">
               Donut Size
@@ -752,8 +909,29 @@ function App() {
               />
               Show cooldown seconds
             </label>
-            <button className="btn" onClick={closeHudAdjust}>Done</button>
+            <button className="btn" onClick={() => finalizeHudAdjust(false)}>Done</button>
           </div>
+        </div>
+      )}
+      {hudAdjustOpen && (
+        <div
+          className="hud-adjust-donut"
+          style={{
+            left: `${hudDragPos.x}px`,
+            top: `${hudDragPos.y}px`,
+            width: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`,
+            height: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`
+          }}
+          onMouseDown={(e) => {
+            hudDragRef.current = { x: e.clientX, y: e.clientY, left: hudDragPos.x, top: hudDragPos.y };
+            e.preventDefault();
+          }}
+        >
+          <svg viewBox="0 0 100 100">
+            <circle className="track" cx="50" cy="50" r="42" />
+            <circle className="progress" cx="50" cy="50" r="42" />
+          </svg>
+          {!!byPath(sb, ['config', 'hudShowCooldownSeconds'], true) && <div className="label">1.5s</div>}
         </div>
       )}
 

@@ -14,7 +14,6 @@
 
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; }
-body.is-resizing, body.is-resizing * { cursor: nwse-resize !important; }
 body {
   font-family: "Segoe UI", Tahoma, sans-serif;
   color: var(--text);
@@ -63,7 +62,8 @@ body {
 .icon-btn svg {
   width: 16px;
   height: 16px;
-  fill: currentColor;
+  stroke: currentColor;
+  fill: none;
 }
 .icon-btn.danger {
   border-color: #97535b;
@@ -123,6 +123,40 @@ body {
 .grow { flex: 1; }
 .inline { display: inline-flex; align-items: center; gap: 8px; }
 .checkbox-inline { display: inline-flex; align-items: center; gap: 6px; }
+.preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.preview-window {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #13202b;
+  overflow: hidden;
+}
+.preview-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid #2f445a;
+}
+.preview-body {
+  min-height: 62px;
+  padding: 8px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+.preview-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.preview-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
 
 input, select, textarea {
   border: 1px solid var(--line);
@@ -137,6 +171,11 @@ input[type='range'] { padding: 0; }
   padding: 7px 10px;
 }
 .btn.block { width: 100%; text-align: left; }
+.scroll .btn.block {
+  align-self: start;
+  padding: 6px 8px;
+  min-height: 0;
+}
 
 .scroll {
   min-height: 0;
@@ -146,6 +185,8 @@ input[type='range'] { padding: 0; }
   background: #111922;
   padding: 6px;
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 6px;
 }
 
@@ -173,6 +214,19 @@ input[type='range'] { padding: 0; }
 .subtabs, .settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .subtab { padding: 6px 10px; }
 .setting-grid { display: grid; gap: 8px; }
+.setting-grid label {
+  display: grid;
+  gap: 6px;
+}
+.setting-grid label.checkbox-inline {
+  display: inline-flex;
+  gap: 6px;
+}
+.hotkey-btn {
+  justify-self: start;
+  min-width: 200px;
+  text-align: left;
+}
 
 .trigger-grid {
   min-height: 0;
@@ -268,6 +322,38 @@ input[type='range'] { padding: 0; }
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+.hud-adjust-donut {
+  position: fixed;
+  border-radius: 50%;
+  cursor: move;
+  z-index: 52;
+}
+.hud-adjust-donut svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.hud-adjust-donut .track {
+  fill: none;
+  stroke: rgba(117, 142, 164, 0.25);
+  stroke-width: 10;
+}
+.hud-adjust-donut .progress {
+  fill: none;
+  stroke: #8eb2d2;
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-dasharray: 263.89;
+  stroke-dashoffset: 131.945;
+}
+.hud-adjust-donut .label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #e6eef6;
+  font: 600 13px "Segoe UI", Tahoma, sans-serif;
 }
 
 .toast {

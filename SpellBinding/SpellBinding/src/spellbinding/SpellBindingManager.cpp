@@ -1513,7 +1513,7 @@ namespace SBIND
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		float total = kDefaultWeaponCooldown;
 		float remaining = 0.0f;
-		bool visible = m_config.hudDonutEnabled || m_runtime.hudDragModeActive;
+		bool visible = m_config.hudDonutEnabled;
 
 		const auto current = m_runtime.rightWeapon.has_value() ? m_runtime.rightWeapon : (m_runtime.leftWeapon.has_value() ? m_runtime.leftWeapon : m_runtime.unarmedKey);
 		if (current.has_value()) {
@@ -1525,7 +1525,7 @@ namespace SBIND
 			}
 		}
 
-		if (m_config.hudDonutOnlyUnsheathed && player && !m_runtime.hudDragModeActive) {
+		if (m_config.hudDonutOnlyUnsheathed && player) {
 			const auto* actorState = player->AsActorState();
 			if (actorState && !actorState->IsWeaponDrawn()) {
 				visible = false;
@@ -1535,7 +1535,7 @@ namespace SBIND
 			visible = false;
 		}
 
-		root["visible"] = visible;
+		root["visible"] = visible && !m_runtime.hudDragModeActive;
 		root["progress"] = total <= 0.01f ? 0.0f : std::clamp(remaining / total, 0.0f, 1.0f);
 		root["remainingSec"] = remaining;
 		root["x"] = m_config.hudPosX;
