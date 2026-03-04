@@ -105,6 +105,13 @@ namespace SBIND
 		float hudPosX{ 48.0f };
 		float hudPosY{ 48.0f };
 		float hudDonutSize{ 88.0f };
+		float hudCyclePosX{ 48.0f };
+		float hudCyclePosY{ 152.0f };
+		float hudCycleSize{ 56.0f };
+		float hudChainPosX{ 48.0f };
+		float hudChainPosY{ 216.0f };
+		float hudChainSize{ 56.0f };
+		bool hudChainAlwaysShowInCombat{ false };
 		bool blacklistEnabled{ true };
 		std::vector<std::string> blacklistedSpellKeys{};
 		AttackSlot currentBindSlotMode{ AttackSlot::kLight };
@@ -162,6 +169,7 @@ namespace SBIND
 		bool UnbindWeaponFromSerializedKey(const std::string& a_key);
 		void EnterHudDragMode();
 		void SaveHudPositionFromJson(const std::string& a_payload);
+		void NotifyChainSwitch(std::int32_t a_chainIndex1Based, std::string_view a_chainName);
 
 		[[nodiscard]] std::string GetUIHotkeyName() const;
 		[[nodiscard]] std::string GetBindHotkeyName() const;
@@ -190,6 +198,9 @@ namespace SBIND
 			std::string lastError{};
 			float lastMagickaCost{ 0.0f };
 			bool lastWasPowerAttack{ false };
+			float lastCycleSwitchWorldTimeSec{ -1000.0f };
+			float lastChainSwitchWorldTimeSec{ -1000.0f };
+			std::string lastChainHudText{ "Chain 1" };
 		};
 
 		void LoadConfig();

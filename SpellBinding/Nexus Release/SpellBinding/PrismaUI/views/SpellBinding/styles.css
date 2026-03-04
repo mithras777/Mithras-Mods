@@ -25,7 +25,7 @@ body {
 .window {
   position: fixed;
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto 1fr;
   border: 2px solid var(--line-strong);
   background: linear-gradient(180deg, var(--bg-window), var(--bg-glass));
   border-radius: 12px;
@@ -36,13 +36,19 @@ body {
 }
 
 .window-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 12px;
   align-items: center;
-  justify-content: space-between;
   padding: 10px 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
   border-bottom: 2px solid var(--line-soft);
   cursor: move;
+}
+.header-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
 }
 
 .title-wrap h1 { margin: 0; font-size: 18px; font-weight: 700; }
@@ -101,7 +107,7 @@ body {
 .tab:active, .subtab:active, .btn:active { background: var(--surface-active); }
 
 .tab {
-  padding: 9px 14px;
+  padding: 8px 12px;
   font-size: 13px;
 }
 .tab.active, .subtab.active {
@@ -116,7 +122,7 @@ body {
 
 .grid { height: 100%; min-height: 0; display: grid; gap: 12px; }
 .sb-grid { grid-template-columns: 1fr 1fr 1.15fr; }
-.sc-grid { grid-template-columns: 2fr 1fr; }
+.sc-grid { grid-template-columns: 1fr; }
 .qb-grid { grid-template-columns: 0.9fr 2.1fr; }
 .mastery-grid { grid-template-columns: 1fr; }
 
@@ -174,10 +180,7 @@ body {
   border-bottom: 0;
 }
 .slot-unbind-btn {
-  width: 24px;
-  height: 24px;
   margin-right: 6px;
-  border-radius: 6px;
 }
 .preview-window {
   border: 1px solid var(--line);
@@ -286,10 +289,37 @@ input[type='checkbox']:checked::before { transform: scale(1); }
 .btn {
   padding: 7px 10px;
 }
-.list-unbind-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+.ghost-x-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.ghost-x-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+.ghost-x-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+.ghost-x-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+}
+.ghost-danger-btn {
+  color: rgba(255, 120, 120, 0.9);
+}
+.ghost-danger-btn:hover {
+  color: #ffcccc;
+  background: rgba(140, 40, 40, 0.35);
 }
 .btn.block { width: 100%; text-align: left; }
 .scroll .btn.block {
@@ -335,6 +365,13 @@ input[type='checkbox']:checked::before { transform: scale(1); }
 .subtabs, .settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .settings-tabs { justify-content: center; }
 .subtab { padding: 6px 10px; }
+.chain-subtabs { align-items: center; }
+.mastery-subtabs { justify-content: center; }
+.chain-add-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
 .setting-grid { display: grid; gap: 6px; }
 .setting-grid label {
   display: grid;
@@ -364,6 +401,18 @@ input[type='checkbox']:checked::before { transform: scale(1); }
   padding: 8px;
   display: grid;
   gap: 7px;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.trigger-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.trigger-card.active {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.2);
 }
 .trigger-title { font-weight: 700; }
 
@@ -481,6 +530,26 @@ input[type='checkbox']:checked::before { transform: scale(1); }
   color: var(--text);
   font: 600 13px "Segoe UI", Tahoma, sans-serif;
 }
+.hud-adjust-chip {
+  position: fixed;
+  z-index: 52;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: move;
+  user-select: none;
+  text-align: center;
+  padding: 0 8px;
+}
+.hud-adjust-chip.active {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(67, 151, 250, 0.45);
+}
 
 .toast {
   position: fixed;
@@ -501,6 +570,7 @@ input[type='checkbox']:checked::before { transform: scale(1); }
 @media (max-width: 980px) {
   .sb-grid { grid-template-columns: 1fr; }
   .attack-slot-grid { grid-template-columns: 1fr; }
+  .header-tabs { display: none; }
   .split { grid-template-columns: 1fr; }
   .trigger-grid { grid-template-columns: 1fr; }
 }

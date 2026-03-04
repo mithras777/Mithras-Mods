@@ -60,7 +60,7 @@ namespace SMART_CAST
 	{
 		Config cfg{};
 		cfg.version = kConfigVersion;
-		cfg.global.maxChains = 6;
+		cfg.global.maxChains = 1;
 		cfg.global.maxStepsPerChain = 0;
 		cfg.global.playback.defaultChainIndex = 1;
 		cfg.global.record.ignorePowers = false;
@@ -349,7 +349,7 @@ namespace SMART_CAST
 	void Controller::ClampConfig(Config& cfg) const
 	{
 		cfg.version = kConfigVersion;
-		cfg.global.maxChains = 6;
+		cfg.global.maxChains = std::clamp(cfg.global.maxChains, 1, 256);
 		cfg.global.maxStepsPerChain = 0;
 		cfg.global.playback.defaultChainIndex = std::clamp(cfg.global.playback.defaultChainIndex, 1, cfg.global.maxChains);
 		cfg.global.minTimeAfterLoadSeconds = std::clamp(cfg.global.minTimeAfterLoadSeconds, 0.0f, 10.0f);
@@ -375,7 +375,7 @@ namespace SMART_CAST
 
 	void Controller::EnsureChainCount(Config& cfg) const
 	{
-		const auto target = static_cast<std::size_t>(6);
+		const auto target = static_cast<std::size_t>(cfg.global.maxChains);
 		if (cfg.chains.size() < target) {
 			const auto old = cfg.chains.size();
 			cfg.chains.resize(target);

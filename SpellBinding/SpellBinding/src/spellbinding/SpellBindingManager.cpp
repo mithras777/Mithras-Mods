@@ -245,6 +245,12 @@ namespace SBIND
 				config.hudShowCooldownSeconds = parsed.value("value", config.hudShowCooldownSeconds);
 			} else if (id == "hudDonutSize") {
 				config.hudDonutSize = parsed.value("value", config.hudDonutSize);
+			} else if (id == "hudCycleSize") {
+				config.hudCycleSize = parsed.value("value", config.hudCycleSize);
+			} else if (id == "hudChainSize") {
+				config.hudChainSize = parsed.value("value", config.hudChainSize);
+			} else if (id == "hudChainAlwaysShowInCombat") {
+				config.hudChainAlwaysShowInCombat = parsed.value("value", config.hudChainAlwaysShowInCombat);
 			} else if (id == "blacklistEnabled") {
 				config.blacklistEnabled = parsed.value("value", config.blacklistEnabled);
 			} else if (id == "currentBindSlotMode") {
@@ -637,6 +643,10 @@ namespace SBIND
 		const auto next = (static_cast<std::uint32_t>(config.currentBindSlotMode) + 1u) % 3u;
 		config.currentBindSlotMode = ParseAttackSlot(next);
 		SetConfig(config, true);
+		{
+			std::scoped_lock lock(m_lock);
+			m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+		}
 		Notify(std::format("SpellBinding: bind slot -> {}", AttackSlotLabel(config.currentBindSlotMode)));
 	}
 
@@ -769,8 +779,19 @@ namespace SBIND
 		try {
 			const auto parsed = json::parse(a_payload);
 			auto cfg = GetConfig();
-			cfg.hudPosX = parsed.value("x", cfg.hudPosX);
-			cfg.hudPosY = parsed.value("y", cfg.hudPosY);
+			const auto target = parsed.value("target", std::string{ "donut" });
+			const auto x = parsed.value("x", cfg.hudPosX);
+			const auto y = parsed.value("y", cfg.hudPosY);
+			if (target == "cycle") {
+				cfg.hudCyclePosX = x;
+				cfg.hudCyclePosY = y;
+			} else if (target == "chain") {
+				cfg.hudChainPosX = x;
+				cfg.hudChainPosY = y;
+			} else {
+				cfg.hudPosX = x;
+				cfg.hudPosY = y;
+			}
 			SetConfig(cfg, true);
 			const bool commit = parsed.value("commit", false);
 			if (commit) {
@@ -779,6 +800,19 @@ namespace SBIND
 			}
 			PushHUDSnapshot();
 		} catch (...) {}
+	}
+
+	void Manager::NotifyChainSwitch(std::int32_t a_chainIndex1Based, std::string_view a_chainName)
+	{
+		std::scoped_lock lock(m_lock);
+		m_runtime.lastChainSwitchWorldTimeSec = m_runtime.worldTimeSec;
+		const auto chainName = std::string(a_chainName);
+		if (!chainName.empty()) {
+			m_runtime.lastChainHudText = chainName;
+		} else {
+			const auto safeIndex = std::max(1, a_chainIndex1Based);
+			m_runtime.lastChainHudText = std::format("Chain {}", safeIndex);
+		}
 	}
 
 	std::string Manager::GetUIHotkeyName() const
@@ -825,6 +859,13 @@ namespace SBIND
 		m_config.hudPosX = cfgNode.value("hudPosX", m_config.hudPosX);
 		m_config.hudPosY = cfgNode.value("hudPosY", m_config.hudPosY);
 		m_config.hudDonutSize = cfgNode.value("hudDonutSize", m_config.hudDonutSize);
+		m_config.hudCyclePosX = cfgNode.value("hudCyclePosX", m_config.hudCyclePosX);
+		m_config.hudCyclePosY = cfgNode.value("hudCyclePosY", m_config.hudCyclePosY);
+		m_config.hudCycleSize = cfgNode.value("hudCycleSize", m_config.hudCycleSize);
+		m_config.hudChainPosX = cfgNode.value("hudChainPosX", m_config.hudChainPosX);
+		m_config.hudChainPosY = cfgNode.value("hudChainPosY", m_config.hudChainPosY);
+		m_config.hudChainSize = cfgNode.value("hudChainSize", m_config.hudChainSize);
+		m_config.hudChainAlwaysShowInCombat = cfgNode.value("hudChainAlwaysShowInCombat", m_config.hudChainAlwaysShowInCombat);
 		m_config.blacklistEnabled = cfgNode.value("blacklistEnabled", m_config.blacklistEnabled);
 		m_config.blacklistedSpellKeys = cfgNode.value("blacklistedSpellKeys", m_config.blacklistedSpellKeys);
 		m_config.currentBindSlotMode = ParseAttackSlot(cfgNode.value("currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode)));
@@ -871,6 +912,13 @@ namespace SBIND
 			{ "hudPosX", cfgCopy.hudPosX },
 			{ "hudPosY", cfgCopy.hudPosY },
 			{ "hudDonutSize", cfgCopy.hudDonutSize },
+			{ "hudCyclePosX", cfgCopy.hudCyclePosX },
+			{ "hudCyclePosY", cfgCopy.hudCyclePosY },
+			{ "hudCycleSize", cfgCopy.hudCycleSize },
+			{ "hudChainPosX", cfgCopy.hudChainPosX },
+			{ "hudChainPosY", cfgCopy.hudChainPosY },
+			{ "hudChainSize", cfgCopy.hudChainSize },
+			{ "hudChainAlwaysShowInCombat", cfgCopy.hudChainAlwaysShowInCombat },
 			{ "blacklistEnabled", cfgCopy.blacklistEnabled },
 			{ "blacklistedSpellKeys", cfgCopy.blacklistedSpellKeys },
 			{ "currentBindSlotMode", static_cast<std::uint32_t>(cfgCopy.currentBindSlotMode) }
@@ -910,6 +958,8 @@ namespace SBIND
 		a_config.fallbackDedupeSec = std::clamp(a_config.fallbackDedupeSec, 0.5f, 5.0f);
 		a_config.soundCueVolume = std::clamp(a_config.soundCueVolume, 0.0f, 1.0f);
 		a_config.hudDonutSize = std::clamp(a_config.hudDonutSize, 48.0f, 220.0f);
+		a_config.hudCycleSize = std::clamp(a_config.hudCycleSize, 36.0f, 200.0f);
+		a_config.hudChainSize = std::clamp(a_config.hudChainSize, 36.0f, 200.0f);
 		if (a_config.hudAnchor.empty()) {
 			a_config.hudAnchor = "top-right";
 		}
@@ -1390,6 +1440,13 @@ namespace SBIND
 			{ "hudPosX", m_config.hudPosX },
 			{ "hudPosY", m_config.hudPosY },
 			{ "hudDonutSize", m_config.hudDonutSize },
+			{ "hudCyclePosX", m_config.hudCyclePosX },
+			{ "hudCyclePosY", m_config.hudCyclePosY },
+			{ "hudCycleSize", m_config.hudCycleSize },
+			{ "hudChainPosX", m_config.hudChainPosX },
+			{ "hudChainPosY", m_config.hudChainPosY },
+			{ "hudChainSize", m_config.hudChainSize },
+			{ "hudChainAlwaysShowInCombat", m_config.hudChainAlwaysShowInCombat },
 			{ "blacklistEnabled", m_config.blacklistEnabled }
 		};
 		root["bindMode"] = {
@@ -1513,7 +1570,7 @@ namespace SBIND
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		float total = kDefaultWeaponCooldown;
 		float remaining = 0.0f;
-		bool visible = m_config.hudDonutEnabled;
+		bool donutVisible = m_config.hudDonutEnabled;
 
 		const auto current = m_runtime.rightWeapon.has_value() ? m_runtime.rightWeapon : (m_runtime.leftWeapon.has_value() ? m_runtime.leftWeapon : m_runtime.unarmedKey);
 		if (current.has_value()) {
@@ -1528,22 +1585,57 @@ namespace SBIND
 		if (m_config.hudDonutOnlyUnsheathed && player) {
 			const auto* actorState = player->AsActorState();
 			if (actorState && !actorState->IsWeaponDrawn()) {
-				visible = false;
+				donutVisible = false;
 			}
 		}
 		if (remaining <= 0.01f && !m_runtime.hudDragModeActive) {
-			visible = false;
+			donutVisible = false;
 		}
 
-		root["visible"] = visible && !m_runtime.hudDragModeActive;
-		root["progress"] = total <= 0.01f ? 0.0f : std::clamp(remaining / total, 0.0f, 1.0f);
-		root["remainingSec"] = remaining;
-		root["x"] = m_config.hudPosX;
-		root["y"] = m_config.hudPosY;
-		root["size"] = m_config.hudDonutSize;
-		root["anchor"] = m_config.hudAnchor;
-		root["showSeconds"] = m_config.hudShowCooldownSeconds;
-		root["dragMode"] = m_runtime.hudDragModeActive;
+		const bool cycleVisible = (m_runtime.worldTimeSec - m_runtime.lastCycleSwitchWorldTimeSec) <= 2.0f;
+		const bool inCombat = player ? player->IsInCombat() : false;
+		const bool chainPopupVisible = (m_runtime.worldTimeSec - m_runtime.lastChainSwitchWorldTimeSec) <= 2.0f;
+		const bool chainVisible = chainPopupVisible || (m_config.hudChainAlwaysShowInCombat && inCombat);
+
+		root["donut"] = {
+			{ "visible", donutVisible && !m_runtime.hudDragModeActive },
+			{ "progress", total <= 0.01f ? 0.0f : std::clamp(remaining / total, 0.0f, 1.0f) },
+			{ "remainingSec", remaining },
+			{ "x", m_config.hudPosX },
+			{ "y", m_config.hudPosY },
+			{ "size", m_config.hudDonutSize },
+			{ "anchor", m_config.hudAnchor },
+			{ "showSeconds", m_config.hudShowCooldownSeconds },
+			{ "dragMode", m_runtime.hudDragModeActive }
+		};
+		root["cycleHud"] = {
+			{ "visible", cycleVisible },
+			{ "text", AttackSlotLabel(m_config.currentBindSlotMode) },
+			{ "x", m_config.hudCyclePosX },
+			{ "y", m_config.hudCyclePosY },
+			{ "size", m_config.hudCycleSize },
+			{ "dragMode", m_runtime.hudDragModeActive }
+		};
+		root["chainHud"] = {
+			{ "visible", chainVisible },
+			{ "text", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText },
+			{ "x", m_config.hudChainPosX },
+			{ "y", m_config.hudChainPosY },
+			{ "size", m_config.hudChainSize },
+			{ "dragMode", m_runtime.hudDragModeActive },
+			{ "alwaysShowInCombat", m_config.hudChainAlwaysShowInCombat }
+		};
+
+		// Legacy donut fields for compatibility while web HUD parser migrates.
+		root["visible"] = root["donut"]["visible"];
+		root["progress"] = root["donut"]["progress"];
+		root["remainingSec"] = root["donut"]["remainingSec"];
+		root["x"] = root["donut"]["x"];
+		root["y"] = root["donut"]["y"];
+		root["size"] = root["donut"]["size"];
+		root["anchor"] = root["donut"]["anchor"];
+		root["showSeconds"] = root["donut"]["showSeconds"];
+		root["dragMode"] = root["donut"]["dragMode"];
 		return root.dump();
 	}
 

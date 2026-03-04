@@ -1,9 +1,21 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { LoaderCircle, Settings, Maximize2, Minimize2, X } from 'lucide-react';
+import { Eraser, LoaderCircle, Plus, Settings, Maximize2, Minimize2, Trash2, X } from 'lucide-react';
 
 const triggerOrder = ['combatStart', 'combatEnd', 'healthBelow70', 'healthBelow50', 'healthBelow30', 'crouchStart', 'sprintStart', 'weaponDraw', 'powerAttackStart', 'shoutStart'];
+const triggerLabels = {
+  combatStart: 'Combat Start',
+  combatEnd: 'Combat End',
+  healthBelow70: 'Health Below 70%',
+  healthBelow50: 'Health Below 50%',
+  healthBelow30: 'Health Below 30%',
+  crouchStart: 'Crouch Start',
+  sprintStart: 'Sprint Start',
+  weaponDraw: 'Weapon Draw',
+  powerAttackStart: 'Power Attack Start',
+  shoutStart: 'Shout Start'
+};
 const settingsTabs = [
   { id: 'spellBinding', label: 'Spell Binding' },
   { id: 'smartCast', label: 'Smart Cast' },
@@ -11,6 +23,13 @@ const settingsTabs = [
   { id: 'mastery', label: 'Mastery' },
   { id: 'uiHud', label: 'UI' }
 ];
+const masteryTabs = [
+  { id: 'spells', label: 'Spells' },
+  { id: 'shouts', label: 'Shouts' },
+  { id: 'weapons', label: 'Weapons' },
+  { id: 'overview', label: 'Overview' }
+];
+const HUD_TARGETS = ['donut', 'cycle', 'chain'];
 const WINDOW_MIN_WIDTH = 960;
 const WINDOW_MIN_HEIGHT = 620;
 const WINDOW_MARGIN = 8;
@@ -197,10 +216,6 @@ function fullscreenRect() {
   };
 }
 
-function slotLabel(slot) {
-  return slot === 1 ? 'Power' : slot === 2 ? 'Bash' : 'Light';
-}
-
 function spellTypeLabel(type) {
   return type === 1 || type === '1' ? 'Concentration' : 'Fire';
 }
@@ -209,6 +224,21 @@ function castOnLabel(castOn) {
   if (castOn === 1 || castOn === '1') return 'Crosshair';
   if (castOn === 2 || castOn === '2') return 'Aimed';
   return 'Self';
+}
+
+function triggerLabel(id) {
+  return triggerLabels[id] || id;
+}
+
+function normalizeMetric(metric) {
+  const raw = String(metric || '').trim();
+  if (!raw) return '-';
+  return raw.replace(/^cost\s*:\s*/i, '').replace(/^cd\s*:\s*/i, '').replace(/^cooldown\s*:\s*/i, '');
+}
+
+function isCooldownSpellType(spellType) {
+  const t = String(spellType || '').toLowerCase();
+  return t.includes('power') || t.includes('shout');
 }
 
 function formatScanCode(scan) {
@@ -234,12 +264,19 @@ function App() {
   const [smartCastActiveChain, setSmartCastActiveChain] = useState(1);
   const [sbSearch, setSbSearch] = useState('');
   const [blacklistSearch, setBlacklistSearch] = useState('');
+  const [quickBuffSearch, setQuickBuffSearch] = useState('');
   const [toast, setToast] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('spellBinding');
   const [hudAdjustOpen, setHudAdjustOpen] = useState(false);
-  const [hudDragPos, setHudDragPos] = useState({ x: 48, y: 48 });
+  const [hudDragPos, setHudDragPos] = useState({
+    donut: { x: 48, y: 48 },
+    cycle: { x: 48, y: 152 },
+    chain: { x: 48, y: 216 }
+  });
+  const [hudDragTarget, setHudDragTarget] = useState('donut');
   const [captureField, setCaptureField] = useState(null);
+  const [quickBuffSelectedTrigger, setQuickBuffSelectedTrigger] = useState(triggerOrder[0]);
   const [windowState, setWindowState] = useState(defaultCenteredRect());
 
   const dragRef = useRef(null);
@@ -248,10 +285,12 @@ function App() {
   const toastTimerRef = useRef(null);
   const settingsOpenRef = useRef(false);
   const hudAdjustOpenRef = useRef(false);
-  const hudConfigRef = useRef({ x: 48, y: 48 });
   const hudDragRef = useRef(null);
-  const hudDragPosRef = useRef({ x: 48, y: 48 });
-  const hudSizeRef = useRef(88);
+  const hudDragPosRef = useRef({
+    donut: { x: 48, y: 48 },
+    cycle: { x: 48, y: 152 },
+    chain: { x: 48, y: 216 }
+  });
   const captureFieldRef = useRef(null);
 
   const sb = snapshot.spellBinding || {};
@@ -262,8 +301,8 @@ function App() {
   const currentWeapon = sb.currentWeapon || {};
   const currentSlots = currentWeapon.slots || {};
   const attackSlots = [
-    { id: 'light', label: 'Light Attack', slot: 0, data: currentSlots.light || {} },
-    { id: 'power', label: 'Power Attack', slot: 1, data: currentSlots.power || {} },
+    { id: 'light', label: 'Light', slot: 0, data: currentSlots.light || {} },
+    { id: 'power', label: 'Power', slot: 1, data: currentSlots.power || {} },
     { id: 'bash', label: 'Bash', slot: 2, data: currentSlots.bash || {} }
   ];
 
@@ -284,6 +323,13 @@ function App() {
       return !query || name.includes(query);
     });
   }, [sb.knownSpells, blacklistSearch]);
+  const quickBuffKnownSpellsFiltered = useMemo(() => {
+    const query = quickBuffSearch.toLowerCase().trim();
+    return (qb.knownSpells || []).filter((spell) => {
+      const name = String(spell.name || '').toLowerCase();
+      return !query || name.includes(query);
+    });
+  }, [qb.knownSpells, quickBuffSearch]);
 
   const showToast = (text) => {
     setToast(text || '');
@@ -304,22 +350,33 @@ function App() {
   }, [hudDragPos]);
 
   useEffect(() => {
-    hudSizeRef.current = Number(byPath(sb, ['config', 'hudDonutSize'], 88));
-  }, [sb]);
-
-  useEffect(() => {
     captureFieldRef.current = captureField;
   }, [captureField]);
 
   useEffect(() => {
-    hudConfigRef.current = {
-      x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
-      y: Number(byPath(sb, ['config', 'hudPosY'], 48))
-    };
     if (!hudAdjustOpenRef.current) {
-      setHudDragPos({ x: Number(byPath(sb, ['config', 'hudPosX'], 48)), y: Number(byPath(sb, ['config', 'hudPosY'], 48)) });
+      setHudDragPos({
+        donut: {
+          x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
+          y: Number(byPath(sb, ['config', 'hudPosY'], 48))
+        },
+        cycle: {
+          x: Number(byPath(sb, ['config', 'hudCyclePosX'], 48)),
+          y: Number(byPath(sb, ['config', 'hudCyclePosY'], 152))
+        },
+        chain: {
+          x: Number(byPath(sb, ['config', 'hudChainPosX'], 48)),
+          y: Number(byPath(sb, ['config', 'hudChainPosY'], 216))
+        }
+      });
     }
   }, [sb]);
+
+  const hudSizeForTarget = (target) => {
+    if (target === 'cycle') return Number(byPath(sb, ['config', 'hudCycleSize'], 56));
+    if (target === 'chain') return Number(byPath(sb, ['config', 'hudChainSize'], 56));
+    return Number(byPath(sb, ['config', 'hudDonutSize'], 88));
+  };
 
   const clampHudPos = (x, y, size) => {
     const width = window.innerWidth;
@@ -330,11 +387,15 @@ function App() {
   };
 
   const finalizeHudAdjust = (closeMenuAfter) => {
-    const clamped = clampHudPos(hudDragPosRef.current.x, hudDragPosRef.current.y, hudSizeRef.current);
-    hudAction('saveHudPosition', {
-      x: clamped.x,
-      y: clamped.y,
-      commit: true
+    HUD_TARGETS.forEach((target) => {
+      const pos = hudDragPosRef.current[target] || { x: 48, y: 48 };
+      const clamped = clampHudPos(pos.x, pos.y, hudSizeForTarget(target));
+      hudAction('saveHudPosition', {
+        target,
+        x: clamped.x,
+        y: clamped.y,
+        commit: true
+      });
     });
     setHudAdjustOpen(false);
     if (closeMenuAfter) {
@@ -344,7 +405,21 @@ function App() {
 
   const startHudAdjustMode = () => {
     setSettingsOpen(false);
-    setHudDragPos({ x: Number(byPath(sb, ['config', 'hudPosX'], 48)), y: Number(byPath(sb, ['config', 'hudPosY'], 48)) });
+    setHudDragPos({
+      donut: {
+        x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
+        y: Number(byPath(sb, ['config', 'hudPosY'], 48))
+      },
+      cycle: {
+        x: Number(byPath(sb, ['config', 'hudCyclePosX'], 48)),
+        y: Number(byPath(sb, ['config', 'hudCyclePosY'], 152))
+      },
+      chain: {
+        x: Number(byPath(sb, ['config', 'hudChainPosX'], 48)),
+        y: Number(byPath(sb, ['config', 'hudChainPosY'], 216))
+      }
+    });
+    setHudDragTarget('donut');
     setHudAdjustOpen(true);
     hudAction('enterDragMode');
   };
@@ -514,10 +589,10 @@ function App() {
     const onMove = (event) => {
       if (!hudDragRef.current || !hudAdjustOpenRef.current) return;
       const drag = hudDragRef.current;
-      const size = Number(byPath(sb, ['config', 'hudDonutSize'], 88));
+      const size = hudSizeForTarget(drag.target);
       const next = clampHudPos(drag.left + (event.clientX - drag.x), drag.top + (event.clientY - drag.y), size);
-      setHudDragPos(next);
-      hudAction('saveHudPosition', { x: next.x, y: next.y, commit: false });
+      setHudDragPos((prev) => ({ ...prev, [drag.target]: next }));
+      hudAction('saveHudPosition', { target: drag.target, x: next.x, y: next.y, commit: false });
     };
     const onUp = () => {
       hudDragRef.current = null;
@@ -579,6 +654,26 @@ function App() {
 
   const chains = byPath(sc, ['config', 'chains'], []);
   const selectedChain = chains[Math.max(0, smartCastActiveChain - 1)] || { name: `Chain ${smartCastActiveChain}`, steps: [] };
+  const weaponMasteryRows = byPath(mastery, ['weapon', 'rows'], []);
+  const weaponMasteryLevel = useMemo(() => {
+    const uniqueID = Number(byPath(sb, ['currentWeapon', 'key', 'uniqueID'], 0));
+    const name = String(byPath(sb, ['currentWeapon', 'displayName'], ''));
+    const byId = weaponMasteryRows.find((row) => Number(row.uniqueID || 0) === uniqueID && uniqueID !== 0);
+    if (byId) return Number(byId.level || 1);
+    const byName = weaponMasteryRows.find((row) => String(row.name || '') === name);
+    if (byName) return Number(byName.level || 1);
+    return 1;
+  }, [weaponMasteryRows, sb]);
+
+  useEffect(() => {
+    if (chains.length === 0) {
+      setSmartCastActiveChain(1);
+      return;
+    }
+    if (smartCastActiveChain > chains.length) {
+      setSmartCastActiveChain(chains.length);
+    }
+  }, [chains.length, smartCastActiveChain]);
 
   const panelStyle = windowState.isFullscreen
     ? {
@@ -650,8 +745,14 @@ function App() {
             <h1>Spell Binding</h1>
             <p>A Spellblade Overhaul Control Panel</p>
           </div>
+          <nav className="header-tabs" onMouseDown={(e) => e.stopPropagation()}>
+            <button className={tab === 'spellBinding' ? 'tab active' : 'tab'} onClick={() => setTab('spellBinding')}>Spell Binding</button>
+            <button className={tab === 'smartCast' ? 'tab active' : 'tab'} onClick={() => setTab('smartCast')}>Smart Cast</button>
+            <button className={tab === 'quickBuff' ? 'tab active' : 'tab'} onClick={() => setTab('quickBuff')}>Quick Buff</button>
+            <button className={tab === 'mastery' ? 'tab active' : 'tab'} onClick={() => setTab('mastery')}>Mastery</button>
+          </nav>
           <div className="window-actions" onMouseDown={(e) => e.stopPropagation()}>
-            <button className="icon-btn spin-icon-btn" onClick={startHudAdjustMode} aria-label="Adjust HUD Donut"><LoaderCircle size={16} strokeWidth={2} /></button>
+            <button className="icon-btn spin-icon-btn" onClick={startHudAdjustMode} aria-label="Drag UI elements"><LoaderCircle size={16} strokeWidth={2} /></button>
             <button className="icon-btn" onClick={() => setSettingsOpen(true)} aria-label="Settings"><Settings size={16} strokeWidth={2} /></button>
             <button className="icon-btn" onClick={toggleFullscreen} aria-label={windowState.isFullscreen ? 'Windowed' : 'Fullscreen'}>
               {windowState.isFullscreen ? <Minimize2 size={16} strokeWidth={2} /> : <Maximize2 size={16} strokeWidth={2} />}
@@ -659,13 +760,6 @@ function App() {
             <button className="icon-btn danger" onClick={() => callNative('sbo_toggle_ui', '')} aria-label="Close"><X size={16} strokeWidth={2} /></button>
           </div>
         </header>
-
-        <nav className="tabs">
-          <button className={tab === 'spellBinding' ? 'tab active' : 'tab'} onClick={() => setTab('spellBinding')}>Spell Binding</button>
-          <button className={tab === 'smartCast' ? 'tab active' : 'tab'} onClick={() => setTab('smartCast')}>Smart Cast</button>
-          <button className={tab === 'quickBuff' ? 'tab active' : 'tab'} onClick={() => setTab('quickBuff')}>Quick Buff</button>
-          <button className={tab === 'mastery' ? 'tab active' : 'tab'} onClick={() => setTab('mastery')}>Mastery</button>
-        </nav>
 
         <main className="content">
           {tab === 'spellBinding' && (
@@ -677,7 +771,7 @@ function App() {
                     <div className="preview-title slot-title">Weapon</div>
                     <div className="preview-body preview-body-weapon">
                       <div className="preview-name">{byPath(sb, ['currentWeapon', 'displayName'], 'None')}</div>
-                      <div className="preview-meta">{byPath(sb, ['currentWeapon', 'key', 'pluginName'], '') || 'No equipped weapon key'}</div>
+                      <div className="preview-meta">Level {weaponMasteryLevel}</div>
                     </div>
                   </div>
                   <div className="attack-slot-grid">
@@ -685,9 +779,9 @@ function App() {
                       <div className="preview-window attack-slot-card" key={`slot-${id}`}>
                         <div className="slot-header">
                           <div className="preview-title slot-title">{label}</div>
-                          {!!(data.enabled && currentWeapon.key) && (
+                          {!!((data.enabled || !!data.spellFormKey || !!data.displayName) && currentWeapon.key) && (
                             <button
-                              className="icon-btn slot-unbind-btn"
+                              className="ghost-x-btn"
                               onClick={() => doAction('spellBinding', 'unbindSlot', { key: currentWeapon.key, slot })}
                               aria-label={`Unbind ${label}`}
                             >
@@ -697,7 +791,13 @@ function App() {
                         </div>
                         <div className="preview-body">
                           <div className="preview-name">{data.enabled ? data.displayName || 'Unknown' : 'None'}</div>
-                          <div className="preview-meta">{data.enabled ? data.spellFormKey || '' : ''}</div>
+                          <div className="preview-meta">
+                            {data.enabled
+                                  ? (isCooldownSpellType(data.spellType)
+                                      ? `CD: ${normalizeMetric(data.metric)}`
+                                      : `Cost: ${normalizeMetric(data.metric)}`)
+                                  : ''}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -739,7 +839,7 @@ function App() {
                         <div>{row.key?.displayName || 'Unknown'}</div>
                         <div className="meta">L: {row.summary?.light || '-'} | P: {row.summary?.power || '-'} | B: {row.summary?.bash || '-'}</div>
                       </div>
-                      <button className="icon-btn list-unbind-btn" onClick={() => doAction('spellBinding', 'unbindWeapon', row.key || {})} aria-label={`Unbind ${row.key?.displayName || 'weapon'}`}>
+                      <button className="ghost-x-btn" onClick={() => doAction('spellBinding', 'unbindWeapon', row.key || {})} aria-label={`Unbind ${row.key?.displayName || 'weapon'}`}>
                         <X size={14} strokeWidth={2.25} />
                       </button>
                     </div>
@@ -780,19 +880,45 @@ function App() {
             <section className="grid sc-grid">
               <article className="card">
                 <h3>Chains</h3>
-                <div className="subtabs">
+                <div className="subtabs chain-subtabs">
                   {chains.map((chain, i) => (
-                    <button key={`chain-${i + 1}`} className={smartCastActiveChain === i + 1 ? 'subtab active' : 'subtab'} onClick={() => setSmartCastActiveChain(i + 1)}>
+                    <button
+                      key={`chain-${i + 1}`}
+                      className={smartCastActiveChain === i + 1 ? 'subtab active' : 'subtab'}
+                      onClick={() => {
+                        const nextIndex = i + 1;
+                        setSmartCastActiveChain(nextIndex);
+                        doAction('smartCast', 'chainSelected', { index: nextIndex, name: chain.name || `Chain ${nextIndex}` });
+                      }}
+                    >
                       {chain.name || `Chain ${i + 1}`}
                     </button>
                   ))}
+                  <button
+                    className="ghost-x-btn"
+                    onClick={() => {
+                      const nextCount = Math.max(1, chains.length + 1);
+                      setSetting('smartCast', 'global.maxChains', nextCount);
+                      setSmartCastActiveChain(nextCount);
+                    }}
+                    aria-label="Add chain"
+                  >
+                    <Plus size={14} strokeWidth={2.25} />
+                  </button>
                 </div>
                 <div className="row">
-                  <label className="grow">
-                    Chain Name
-                    <input id="sc-chain-name" defaultValue={selectedChain.name || `Chain ${smartCastActiveChain}`} onBlur={(e) => setSetting('smartCast', 'chain.name', e.target.value, { index: smartCastActiveChain })} />
-                  </label>
-                  <button className="btn" onClick={() => doAction('smartCast', 'clearChain', { index: smartCastActiveChain })}>Clear Chain</button>
+                  <input className="grow" id="sc-chain-name" defaultValue={selectedChain.name || `Chain ${smartCastActiveChain}`} onBlur={(e) => setSetting('smartCast', 'chain.name', e.target.value, { index: smartCastActiveChain })} />
+                  <button className="ghost-x-btn" onClick={() => doAction('smartCast', 'clearChain', { index: smartCastActiveChain })} aria-label={`Clear ${selectedChain.name || `Chain ${smartCastActiveChain}`}`}>
+                    <Eraser size={14} strokeWidth={2.25} />
+                  </button>
+                  <button
+                    className="ghost-x-btn ghost-danger-btn"
+                    onClick={() => doAction('smartCast', 'deleteChain', { index: smartCastActiveChain })}
+                    disabled={chains.length <= 1}
+                    aria-label={`Delete ${selectedChain.name || `Chain ${smartCastActiveChain}`}`}
+                  >
+                    <Trash2 size={14} strokeWidth={2.25} />
+                  </button>
                 </div>
                 <div className="scroll">
                   {(selectedChain.steps || []).length === 0 && <p className="meta">No recorded steps for this chain.</p>}
@@ -803,16 +929,6 @@ function App() {
                   ))}
                 </div>
               </article>
-
-              <article className="card">
-                <h3>Playback</h3>
-                <div className="setting-grid">
-                  <button className="btn" onClick={() => doAction('smartCast', 'startRecording', { index: smartCastActiveChain })}>Start Recording</button>
-                  <button className="btn" onClick={() => doAction('smartCast', 'stopRecording')}>Stop Recording</button>
-                  <button className="btn" onClick={() => doAction('smartCast', 'startPlayback', { index: smartCastActiveChain })}>Start Playback</button>
-                  <button className="btn" onClick={() => doAction('smartCast', 'stopPlayback')}>Stop Playback</button>
-                </div>
-              </article>
             </section>
           )}
 
@@ -820,45 +936,51 @@ function App() {
             <section className="grid qb-grid">
               <article className="card">
                 <h3>Quick Buff</h3>
-                <p className="meta">Triggers auto-cast by event and assigned spell.</p>
+                <p className="meta">Select a trigger and then assign a spell to it.</p>
+                <input placeholder="Search spell..." value={quickBuffSearch} onChange={(e) => setQuickBuffSearch(e.target.value)} />
+                <div className="scroll">
+                  <button
+                    className="btn block"
+                    onClick={() => {
+                      setSetting('quickBuff', 'trigger.spellFormID', '', { trigger: quickBuffSelectedTrigger });
+                      setSetting('quickBuff', 'trigger.enabled', false, { trigger: quickBuffSelectedTrigger });
+                    }}
+                  >
+                    None
+                  </button>
+                  {quickBuffKnownSpellsFiltered.map((spell) => (
+                    <button
+                      className="btn block"
+                      key={`qb-spell-${spell.formKey || spell.name}`}
+                      onClick={() => {
+                        const value = spell.formKey || '';
+                        setSetting('quickBuff', 'trigger.spellFormID', value, { trigger: quickBuffSelectedTrigger });
+                        setSetting('quickBuff', 'trigger.enabled', !!value, { trigger: quickBuffSelectedTrigger });
+                      }}
+                    >
+                      {spell.name || 'Unknown'}
+                    </button>
+                  ))}
+                </div>
               </article>
               <article className="card">
                 <h3>Triggers</h3>
                 <div className="trigger-grid">
                   {triggerOrder.map((triggerId) => {
                     const t = byPath(qb, ['config', 'triggers', triggerId], {});
+                    const selected = quickBuffSelectedTrigger === triggerId;
+                    const assigned = t.spellFormID
+                      ? ((qb.knownSpells || []).find((spell) => (spell.formKey || '') === t.spellFormID)?.name || t.spellFormID)
+                      : 'None';
                     return (
-                      <div className="trigger-card" key={triggerId}>
-                        <div className="trigger-title">{triggerId}</div>
-                        <label className="checkbox-inline">
-                          <input
-                            type="checkbox"
-                            checked={!!t.enabled}
-                            onChange={(e) => setSetting('quickBuff', 'trigger.enabled', e.target.checked, { trigger: triggerId })}
-                          />
-                          Enabled
-                        </label>
-                        <select
-                          value={t.spellFormID || ''}
-                          onChange={(e) => setSetting('quickBuff', 'trigger.spellFormID', e.target.value, { trigger: triggerId })}
-                        >
-                          <option value="">None</option>
-                          {(qb.knownSpells || []).map((spell) => (
-                            <option key={spell.formKey || spell.name} value={spell.formKey || ''}>{spell.name || 'Unknown'}</option>
-                          ))}
-                        </select>
-                        <div className="row">
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            max="120"
-                            value={Number(t.cooldownSec || 5).toFixed(1)}
-                            onChange={(e) => setSetting('quickBuff', 'trigger.cooldownSec', Number(e.target.value || 0), { trigger: triggerId })}
-                          />
-                          <button className="btn" onClick={() => doAction('quickBuff', 'testTrigger', { trigger: triggerId })}>Test</button>
-                        </div>
-                      </div>
+                      <button
+                        className={selected ? 'trigger-card active' : 'trigger-card'}
+                        key={triggerId}
+                        onClick={() => setQuickBuffSelectedTrigger(triggerId)}
+                      >
+                        <div className="trigger-title">{triggerLabel(triggerId)}</div>
+                        <div className="meta">Assigned: {assigned}</div>
+                      </button>
                     );
                   })}
                 </div>
@@ -869,9 +991,9 @@ function App() {
           {tab === 'mastery' && (
             <section className="grid mastery-grid">
               <article className="card">
-                <div className="subtabs">
-                  {['spells', 'shouts', 'weapons', 'overview'].map((id) => (
-                    <button key={id} className={masteryTab === id ? 'subtab active' : 'subtab'} onClick={() => setMasteryTab(id)}>{id}</button>
+                <div className="subtabs mastery-subtabs">
+                  {masteryTabs.map(({ id, label }) => (
+                    <button key={id} className={masteryTab === id ? 'subtab active' : 'subtab'} onClick={() => setMasteryTab(id)}>{label}</button>
                   ))}
                 </div>
                 {masteryTab === 'overview' && (
@@ -932,8 +1054,26 @@ function App() {
                 <div className="setting-grid">
                   <label>Record Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.record.toggleKey')}>{captureLabel('sc.record.toggleKey')}</button></label>
                   <label>Play Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.playback.playKey')}>{captureLabel('sc.playback.playKey')}</button></label>
-                  <label>Default Chain Index <input type="number" min="1" max="5" value={Number(byPath(sc, ['config', 'global', 'playback', 'defaultChainIndex'], 1))} onChange={(e) => setSetting('smartCast', 'playback.defaultChainIndex', Number(e.target.value || 1))} /></label>
+                  <label>
+                    Default Chain
+                    <select
+                      value={Number(byPath(sc, ['config', 'global', 'playback', 'defaultChainIndex'], 1))}
+                      onChange={(e) => setSetting('smartCast', 'playback.defaultChainIndex', Number(e.target.value || 1))}
+                    >
+                      {chains.map((_, i) => (
+                        <option key={`default-chain-${i + 1}`} value={i + 1}>{`Chain ${i + 1}`}</option>
+                      ))}
+                    </select>
+                  </label>
                   <label>Step Delay (s) <input type="number" min="0" max="2" step="0.01" value={Number(byPath(sc, ['config', 'global', 'playback', 'stepDelaySec'], 0.1)).toFixed(2)} onChange={(e) => setSetting('smartCast', 'playback.stepDelaySec', Number(e.target.value || 0.1))} /></label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={!!byPath(sb, ['config', 'hudChainAlwaysShowInCombat'], false)}
+                      onChange={(e) => setSetting('smartCast', 'hud.alwaysShowInCombat', e.target.checked)}
+                    />
+                    Always show in Combat
+                  </label>
                 </div>
               )}
 
@@ -945,18 +1085,15 @@ function App() {
 
               {settingsTab === 'mastery' && (
                 <div className="setting-grid">
-                  <div className="row">
-                    <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(mastery, ['spell', 'config', 'enabled'], true)} onChange={(e) => setSetting('mastery', 'masterySpell.enabled', e.target.checked)} /> Spell Enabled</label>
-                    <label>Spell Gain <input type="number" min="0.1" step="0.1" value={Number(byPath(mastery, ['spell', 'config', 'gainMultiplier'], 1)).toFixed(1)} onChange={(e) => setSetting('mastery', 'masterySpell.gainMultiplier', Number(e.target.value || 1))} /></label>
-                  </div>
-                  <div className="row">
-                    <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(mastery, ['shout', 'config', 'enabled'], true)} onChange={(e) => setSetting('mastery', 'masteryShout.enabled', e.target.checked)} /> Shout Enabled</label>
-                    <label>Shout Gain <input type="number" min="0.1" step="0.1" value={Number(byPath(mastery, ['shout', 'config', 'gainMultiplier'], 1)).toFixed(1)} onChange={(e) => setSetting('mastery', 'masteryShout.gainMultiplier', Number(e.target.value || 1))} /></label>
-                  </div>
-                  <div className="row">
-                    <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(mastery, ['weapon', 'config', 'enabled'], true)} onChange={(e) => setSetting('mastery', 'masteryWeapon.enabled', e.target.checked)} /> Weapon Enabled</label>
-                    <label>Weapon Gain <input type="number" min="0.1" step="0.1" value={Number(byPath(mastery, ['weapon', 'config', 'gainMultiplier'], 1)).toFixed(1)} onChange={(e) => setSetting('mastery', 'masteryWeapon.gainMultiplier', Number(e.target.value || 1))} /></label>
-                  </div>
+                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(mastery, ['spell', 'config', 'enabled'], true)} onChange={(e) => setSetting('mastery', 'masterySpell.enabled', e.target.checked)} /> Spell Enabled</label>
+                  <label>Spell Gain <input type="number" min="0.1" step="0.1" value={Number(byPath(mastery, ['spell', 'config', 'gainMultiplier'], 1)).toFixed(1)} onChange={(e) => setSetting('mastery', 'masterySpell.gainMultiplier', Number(e.target.value || 1))} /></label>
+
+                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(mastery, ['shout', 'config', 'enabled'], true)} onChange={(e) => setSetting('mastery', 'masteryShout.enabled', e.target.checked)} /> Shout Enabled</label>
+                  <label>Shout Gain <input type="number" min="0.1" step="0.1" value={Number(byPath(mastery, ['shout', 'config', 'gainMultiplier'], 1)).toFixed(1)} onChange={(e) => setSetting('mastery', 'masteryShout.gainMultiplier', Number(e.target.value || 1))} /></label>
+
+                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(mastery, ['weapon', 'config', 'enabled'], true)} onChange={(e) => setSetting('mastery', 'masteryWeapon.enabled', e.target.checked)} /> Weapon Enabled</label>
+                  <label>Weapon Gain <input type="number" min="0.1" step="0.1" value={Number(byPath(mastery, ['weapon', 'config', 'gainMultiplier'], 1)).toFixed(1)} onChange={(e) => setSetting('mastery', 'masteryWeapon.gainMultiplier', Number(e.target.value || 1))} /></label>
+
                   <div className="row">
                     <button className="btn" onClick={() => doAction('mastery', 'masterySpell.resetDefaults')}>Reset Spell Defaults</button>
                     <button className="btn" onClick={() => doAction('mastery', 'masteryShout.resetDefaults')}>Reset Shout Defaults</button>
@@ -969,23 +1106,9 @@ function App() {
                 <div className="setting-grid">
                   <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'hudDonutEnabled'], true)} onChange={(e) => setSetting('spellBinding', 'hudDonutEnabled', e.target.checked)} /> HUD Donut Enabled</label>
                   <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'hudDonutOnlyUnsheathed'], true)} onChange={(e) => setSetting('spellBinding', 'hudDonutOnlyUnsheathed', e.target.checked)} /> HUD Only Unsheathed</label>
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'hudShowCooldownSeconds'], true)} onChange={(e) => setSetting('spellBinding', 'hudShowCooldownSeconds', e.target.checked)} /> Show Cooldown Seconds</label>
-                  <label>HUD Donut Size <input type="number" min="48" max="220" step="2" value={Number(byPath(sb, ['config', 'hudDonutSize'], 88)).toFixed(0)} onChange={(e) => setSetting('spellBinding', 'hudDonutSize', Number(e.target.value || 88))} /></label>
                   <div className="row">
                     <button className="btn" onClick={resetWindowLayout}>Reset Window Layout</button>
                     {windowState.isFullscreen && <button className="btn" onClick={toggleFullscreen}>Exit Fullscreen</button>}
-                    <button
-                      className="btn"
-                      onClick={() =>
-                        hudAction('saveHudPosition', {
-                          x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
-                          y: Number(byPath(sb, ['config', 'hudPosY'], 48)),
-                          commit: true
-                        })
-                      }
-                    >
-                      Finish HUD Drag
-                    </button>
                   </div>
                 </div>
               )}
@@ -996,7 +1119,7 @@ function App() {
 
       {hudAdjustOpen && (
         <div className="hud-adjust">
-          <div className="hud-adjust-head">Drag the donut below, adjust size/seconds, then click Done.</div>
+          <div className="hud-adjust-head">Drag the UI elements, adjust sizes, then click Done.</div>
           <div className="hud-adjust-controls">
             <label className="inline">
               Donut Size
@@ -1009,38 +1132,87 @@ function App() {
                 onChange={(e) => setSetting('spellBinding', 'hudDonutSize', Number(e.target.value || 88))}
               />
             </label>
-            <label className="checkbox-inline">
+            <label className="inline">
+              Cycle Size
               <input
-                type="checkbox"
-                checked={!!byPath(sb, ['config', 'hudShowCooldownSeconds'], true)}
-                onChange={(e) => setSetting('spellBinding', 'hudShowCooldownSeconds', e.target.checked)}
+                type="range"
+                min="36"
+                max="200"
+                step="2"
+                value={Number(byPath(sb, ['config', 'hudCycleSize'], 56))}
+                onChange={(e) => setSetting('spellBinding', 'hudCycleSize', Number(e.target.value || 56))}
               />
-              Show cooldown seconds
+            </label>
+            <label className="inline">
+              Chain Size
+              <input
+                type="range"
+                min="36"
+                max="200"
+                step="2"
+                value={Number(byPath(sb, ['config', 'hudChainSize'], 56))}
+                onChange={(e) => setSetting('spellBinding', 'hudChainSize', Number(e.target.value || 56))}
+              />
             </label>
             <button className="btn" onClick={() => finalizeHudAdjust(false)}>Done</button>
           </div>
         </div>
       )}
       {hudAdjustOpen && (
-        <div
-          className="hud-adjust-donut"
-          style={{
-            left: `${hudDragPos.x}px`,
-            top: `${hudDragPos.y}px`,
-            width: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`,
-            height: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`
-          }}
-          onMouseDown={(e) => {
-            hudDragRef.current = { x: e.clientX, y: e.clientY, left: hudDragPos.x, top: hudDragPos.y };
-            e.preventDefault();
-          }}
-        >
-          <svg viewBox="0 0 100 100">
-            <circle className="track" cx="50" cy="50" r="42" />
-            <circle className="progress" cx="50" cy="50" r="42" />
-          </svg>
-          {!!byPath(sb, ['config', 'hudShowCooldownSeconds'], true) && <div className="label">1.5s</div>}
-        </div>
+        <>
+          <div
+            className="hud-adjust-donut"
+            style={{
+              left: `${hudDragPos.donut?.x ?? 48}px`,
+              top: `${hudDragPos.donut?.y ?? 48}px`,
+              width: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`,
+              height: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`
+            }}
+            onMouseDown={(e) => {
+              setHudDragTarget('donut');
+              hudDragRef.current = { target: 'donut', x: e.clientX, y: e.clientY, left: hudDragPos.donut?.x ?? 48, top: hudDragPos.donut?.y ?? 48 };
+              e.preventDefault();
+            }}
+          >
+            <svg viewBox="0 0 100 100">
+              <circle className="track" cx="50" cy="50" r="42" />
+              <circle className="progress" cx="50" cy="50" r="42" />
+            </svg>
+            <div className="label">1.5s</div>
+          </div>
+          <div
+            className={`hud-adjust-chip ${hudDragTarget === 'cycle' ? 'active' : ''}`}
+            style={{
+              left: `${hudDragPos.cycle?.x ?? 48}px`,
+              top: `${hudDragPos.cycle?.y ?? 152}px`,
+              width: `${Number(byPath(sb, ['config', 'hudCycleSize'], 56))}px`,
+              height: `${Number(byPath(sb, ['config', 'hudCycleSize'], 56))}px`
+            }}
+            onMouseDown={(e) => {
+              setHudDragTarget('cycle');
+              hudDragRef.current = { target: 'cycle', x: e.clientX, y: e.clientY, left: hudDragPos.cycle?.x ?? 48, top: hudDragPos.cycle?.y ?? 152 };
+              e.preventDefault();
+            }}
+          >
+            Light
+          </div>
+          <div
+            className={`hud-adjust-chip ${hudDragTarget === 'chain' ? 'active' : ''}`}
+            style={{
+              left: `${hudDragPos.chain?.x ?? 48}px`,
+              top: `${hudDragPos.chain?.y ?? 216}px`,
+              width: `${Number(byPath(sb, ['config', 'hudChainSize'], 56))}px`,
+              height: `${Number(byPath(sb, ['config', 'hudChainSize'], 56))}px`
+            }}
+            onMouseDown={(e) => {
+              setHudDragTarget('chain');
+              hudDragRef.current = { target: 'chain', x: e.clientX, y: e.clientY, left: hudDragPos.chain?.x ?? 48, top: hudDragPos.chain?.y ?? 216 };
+              e.preventDefault();
+            }}
+          >
+            Chain 1
+          </div>
+        </>
       )}
 
       {toast && <div className="toast">{toast}</div>}

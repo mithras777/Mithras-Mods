@@ -95,7 +95,7 @@ namespace SMART_CAST
 		bool preventWhileStaggered{ true };
 		bool preventWhileRagdoll{ true };
 		float minTimeAfterLoadSeconds{ 2.0f };
-		std::int32_t maxChains{ 5 };
+		std::int32_t maxChains{ 1 };
 		std::int32_t maxStepsPerChain{ 12 };
 		RecordConfig record{};
 		PlaybackConfig playback{};

@@ -12,6 +12,7 @@
 #include "json/single_include/nlohmann/json.hpp"
 
 #include <algorithm>
+#include <format>
 
 namespace SB_OVERHAUL
 {
@@ -439,6 +440,7 @@ namespace SB_OVERHAUL
 		SBO::MASTERY_SPELL::Manager::GetSingleton()->Initialize();
 		SBO::MASTERY_SHOUT::Manager::GetSingleton()->Initialize();
 		SBO::MASTERY_WEAPON::Manager::GetSingleton()->Initialize();
+		m_lastActiveChainIndex = SMART_CAST::Controller::GetSingleton()->GetActiveChainIndex1Based();
 		ForceEnabledFlags(true);
 	}
 
@@ -447,6 +449,20 @@ namespace SB_OVERHAUL
 		SBIND::Manager::GetSingleton()->Update(a_player, a_deltaTime);
 		SMART_CAST::Controller::GetSingleton()->Update(a_player, a_deltaTime);
 		QUICK_BUFF::Manager::GetSingleton()->Update(a_player, a_deltaTime);
+		const auto activeChain = SMART_CAST::Controller::GetSingleton()->GetActiveChainIndex1Based();
+		if (activeChain != m_lastActiveChainIndex) {
+			const auto cfg = SMART_CAST::Controller::GetSingleton()->GetConfig();
+			std::string chainName = std::format("Chain {}", std::max(1, activeChain));
+			if (activeChain > 0 && activeChain <= static_cast<std::int32_t>(cfg.chains.size())) {
+				const auto& candidate = cfg.chains[static_cast<std::size_t>(activeChain - 1)].name;
+				if (!candidate.empty()) {
+					chainName = candidate;
+				}
+			}
+			SBIND::Manager::GetSingleton()->NotifyChainSwitch(activeChain, chainName);
+			PushHUDSnapshot();
+			m_lastActiveChainIndex = activeChain;
+		}
 		(void)a_deltaTime;
 	}
 
@@ -468,6 +484,7 @@ namespace SB_OVERHAUL
 		SBO::MASTERY_SPELL::Manager::GetSingleton()->Deserialize(a_intfc);
 		SBO::MASTERY_SHOUT::Manager::GetSingleton()->Deserialize(a_intfc);
 		SBO::MASTERY_WEAPON::Manager::GetSingleton()->Deserialize(a_intfc);
+		m_lastActiveChainIndex = SMART_CAST::Controller::GetSingleton()->GetActiveChainIndex1Based();
 		ForceEnabledFlags(false);
 	}
 
@@ -479,6 +496,7 @@ namespace SB_OVERHAUL
 		SBO::MASTERY_SPELL::Manager::GetSingleton()->OnRevert();
 		SBO::MASTERY_SHOUT::Manager::GetSingleton()->OnRevert();
 		SBO::MASTERY_WEAPON::Manager::GetSingleton()->OnRevert();
+		m_lastActiveChainIndex = SMART_CAST::Controller::GetSingleton()->GetActiveChainIndex1Based();
 		ForceEnabledFlags(false);
 	}
 
@@ -636,8 +654,14 @@ namespace SB_OVERHAUL
 				auto cfg = SMART_CAST::Controller::GetSingleton()->GetConfig();
 				if (id == "record.toggleKey") cfg.global.record.toggleKey = payload.value("value", cfg.global.record.toggleKey);
 				else if (id == "playback.playKey") cfg.global.playback.playKey = payload.value("value", cfg.global.playback.playKey);
+				else if (id == "global.maxChains") cfg.global.maxChains = payload.value("value", cfg.global.maxChains);
 				else if (id == "playback.defaultChainIndex") cfg.global.playback.defaultChainIndex = payload.value("value", cfg.global.playback.defaultChainIndex);
 				else if (id == "playback.stepDelaySec") cfg.global.playback.stepDelaySec = payload.value("value", cfg.global.playback.stepDelaySec);
+				else if (id == "hud.alwaysShowInCombat") {
+					auto sbCfg = SBIND::Manager::GetSingleton()->GetConfig();
+					sbCfg.hudChainAlwaysShowInCombat = payload.value("value", sbCfg.hudChainAlwaysShowInCombat);
+					SBIND::Manager::GetSingleton()->SetConfig(sbCfg, true);
+				}
 				else if (id == "chain.name") {
 					const auto index = payload.value("index", 1);
 					const auto idx0 = std::max(0, index - 1);
@@ -647,6 +671,7 @@ namespace SB_OVERHAUL
 				}
 				SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
 				PushUISnapshot();
+				PushHUDSnapshot();
 				return;
 			}
 
@@ -741,6 +766,12 @@ namespace SB_OVERHAUL
 			}
 
 			if (module == "smartCast") {
+				if (action == "chainSelected") {
+					const auto index = payload.value("index", 1);
+					const auto name = payload.value("name", std::string{});
+					SBIND::Manager::GetSingleton()->NotifyChainSwitch(index, name);
+					PushHUDSnapshot();
+				}
 				if (action == "startRecording") SMART_CAST::Controller::GetSingleton()->StartRecording(payload.value("index", 1));
 				else if (action == "stopRecording") SMART_CAST::Controller::GetSingleton()->StopRecording();
 				else if (action == "startPlayback") SMART_CAST::Controller::GetSingleton()->StartPlayback(payload.value("index", 1));
@@ -750,6 +781,18 @@ namespace SB_OVERHAUL
 					const auto idx = std::max(0, payload.value("index", 1) - 1);
 					if (idx < static_cast<int>(cfg.chains.size())) {
 						cfg.chains[static_cast<std::size_t>(idx)].steps.clear();
+						SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
+					}
+				} else if (action == "deleteChain") {
+					auto cfg = SMART_CAST::Controller::GetSingleton()->GetConfig();
+					const auto idx = std::max(0, payload.value("index", 1) - 1);
+					if (idx < static_cast<int>(cfg.chains.size())) {
+						cfg.chains.erase(cfg.chains.begin() + idx);
+						cfg.global.maxChains = std::max(1, static_cast<int>(cfg.chains.size()));
+						cfg.global.playback.defaultChainIndex = std::clamp(
+							cfg.global.playback.defaultChainIndex,
+							1,
+							cfg.global.maxChains);
 						SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
 					}
 				}

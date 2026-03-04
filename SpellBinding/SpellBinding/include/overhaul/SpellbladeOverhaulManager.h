@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace SB_OVERHAUL
@@ -21,5 +22,8 @@ namespace SB_OVERHAUL
 		void PushUISnapshot() const;
 		void PushHUDSnapshot() const;
 		[[nodiscard]] std::string BuildSnapshotJson() const;
+
+	private:
+		std::int32_t m_lastActiveChainIndex{ -1 };
 	};
 }
