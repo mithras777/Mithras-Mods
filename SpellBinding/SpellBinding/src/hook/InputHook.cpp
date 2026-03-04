@@ -1,7 +1,7 @@
 #include "hook/InputHook.h"
 
 #include "console/ConsoleCommands.h"
-#include "spellbinding/SpellBindingManager.h"
+#include "overhaul/SpellbladeOverhaulManager.h"
 
 namespace HOOK::INPUT {
 
@@ -26,7 +26,7 @@ namespace HOOK::INPUT {
 	struct PlayerUpdate {
 		static void thunk(RE::PlayerCharacter* a_this, float a_delta)
 		{
-			SBIND::Manager::GetSingleton()->Update(a_this, a_delta);
+			SB_OVERHAUL::Manager::GetSingleton()->Update(a_this, a_delta);
 			func(a_this, a_delta);
 		}
 

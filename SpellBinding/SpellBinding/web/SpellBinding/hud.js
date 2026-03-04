@@ -31,7 +31,7 @@
     donut.style.pointerEvents = dragMode ? 'auto' : 'none'
   }
 
-  window.sb_renderHud = function (payload) {
+  window.sbo_renderHud = function (payload) {
     try {
       const state = JSON.parse(payload || '{}')
       apply(state)
@@ -49,7 +49,7 @@
     const y = drag.top + (e.clientY - drag.y)
     donut.style.left = x + 'px'
     donut.style.top = y + 'px'
-    call('sb_hud_drag_update', JSON.stringify({ x: x, y: y }))
+    call('sbo_hud_drag_update', JSON.stringify({ x: x, y: y }))
   })
 
   window.addEventListener('mouseup', function () {
@@ -57,6 +57,6 @@
     const x = donut.offsetLeft
     const y = donut.offsetTop
     drag = null
-    call('sb_hud_drag_commit', JSON.stringify({ x: x, y: y, commit: true }))
+    call('sbo_hud_drag_commit', JSON.stringify({ x: x, y: y, commit: true }))
   })
 })()

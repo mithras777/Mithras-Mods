@@ -1,27 +1,27 @@
 #include "serialization/Serialization.h"
 
-#include "spellbinding/SpellBindingManager.h"
+#include "overhaul/SpellbladeOverhaulManager.h"
 #include "util/LogUtil.h"
 
 namespace SBIND::SERIALIZATION
 {
 	namespace
 	{
-		constexpr std::uint32_t kSerializationID = 'SBIN';
+		constexpr std::uint32_t kSerializationID = 'SBOV';
 
 		void OnSave(SKSE::SerializationInterface* a_intfc)
 		{
-			SBIND::Manager::GetSingleton()->Serialize(a_intfc);
+			SB_OVERHAUL::Manager::GetSingleton()->Serialize(a_intfc);
 		}
 
 		void OnLoad(SKSE::SerializationInterface* a_intfc)
 		{
-			SBIND::Manager::GetSingleton()->Deserialize(a_intfc);
+			SB_OVERHAUL::Manager::GetSingleton()->Deserialize(a_intfc);
 		}
 
 		void OnRevert(SKSE::SerializationInterface*)
 		{
-			SBIND::Manager::GetSingleton()->OnRevert();
+			SB_OVERHAUL::Manager::GetSingleton()->OnRevert();
 		}
 	}
 

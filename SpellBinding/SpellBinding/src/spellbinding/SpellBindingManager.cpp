@@ -1,6 +1,7 @@
 #include "spellbinding/SpellBindingManager.h"
 
 #include "event/AttackAnimationEventSink.h"
+#include "overhaul/SpellbladeOverhaulManager.h"
 #include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
 
@@ -513,7 +514,7 @@ namespace SBIND
 
 	void Manager::PushUISnapshot()
 	{
-		UI::PRISMA::Bridge::GetSingleton()->PushSnapshot(GetSnapshot().json);
+		SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
 	}
 
 	void Manager::PushHUDSnapshot()
@@ -769,31 +770,32 @@ namespace SBIND
 		} catch (...) {
 			return;
 		}
+		const auto cfgNode = root.contains("spellBinding") && root["spellBinding"].is_object() ? root["spellBinding"] : root;
 
-		m_config.version = root.value("version", m_config.version);
-		m_config.enabled = root.value("enabled", m_config.enabled);
-		m_config.uiToggleKey = root.value("uiToggleKey", m_config.uiToggleKey);
-		m_config.bindKey = root.value("bindKey", m_config.bindKey);
-		m_config.showHudNotifications = root.value("showHudNotifications", m_config.showHudNotifications);
-		m_config.cycleSlotModifierKey = root.value("cycleSlotModifierKey", m_config.cycleSlotModifierKey);
-		m_config.fallbackDedupeSec = root.value("fallbackDedupeSec", m_config.fallbackDedupeSec);
-		m_config.enableSoundCues = root.value("enableSoundCues", m_config.enableSoundCues);
-		m_config.soundCueVolume = root.value("soundCueVolume", m_config.soundCueVolume);
-		m_config.hudDonutEnabled = root.value("hudDonutEnabled", m_config.hudDonutEnabled);
-		m_config.hudDonutOnlyUnsheathed = root.value("hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed);
-		m_config.hudShowCooldownSeconds = root.value("hudShowCooldownSeconds", m_config.hudShowCooldownSeconds);
-		m_config.hudAnchor = root.value("hudAnchor", m_config.hudAnchor);
-		m_config.hudPosX = root.value("hudPosX", m_config.hudPosX);
-		m_config.hudPosY = root.value("hudPosY", m_config.hudPosY);
-		m_config.hudDonutSize = root.value("hudDonutSize", m_config.hudDonutSize);
-		m_config.blacklistEnabled = root.value("blacklistEnabled", m_config.blacklistEnabled);
-		m_config.blacklistedSpellKeys = root.value("blacklistedSpellKeys", m_config.blacklistedSpellKeys);
-		m_config.currentBindSlotMode = ParseAttackSlot(root.value("currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode)));
+		m_config.version = cfgNode.value("version", m_config.version);
+		m_config.enabled = cfgNode.value("enabled", m_config.enabled);
+		m_config.uiToggleKey = cfgNode.value("uiToggleKey", m_config.uiToggleKey);
+		m_config.bindKey = cfgNode.value("bindKey", m_config.bindKey);
+		m_config.showHudNotifications = cfgNode.value("showHudNotifications", m_config.showHudNotifications);
+		m_config.cycleSlotModifierKey = cfgNode.value("cycleSlotModifierKey", m_config.cycleSlotModifierKey);
+		m_config.fallbackDedupeSec = cfgNode.value("fallbackDedupeSec", m_config.fallbackDedupeSec);
+		m_config.enableSoundCues = cfgNode.value("enableSoundCues", m_config.enableSoundCues);
+		m_config.soundCueVolume = cfgNode.value("soundCueVolume", m_config.soundCueVolume);
+		m_config.hudDonutEnabled = cfgNode.value("hudDonutEnabled", m_config.hudDonutEnabled);
+		m_config.hudDonutOnlyUnsheathed = cfgNode.value("hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed);
+		m_config.hudShowCooldownSeconds = cfgNode.value("hudShowCooldownSeconds", m_config.hudShowCooldownSeconds);
+		m_config.hudAnchor = cfgNode.value("hudAnchor", m_config.hudAnchor);
+		m_config.hudPosX = cfgNode.value("hudPosX", m_config.hudPosX);
+		m_config.hudPosY = cfgNode.value("hudPosY", m_config.hudPosY);
+		m_config.hudDonutSize = cfgNode.value("hudDonutSize", m_config.hudDonutSize);
+		m_config.blacklistEnabled = cfgNode.value("blacklistEnabled", m_config.blacklistEnabled);
+		m_config.blacklistedSpellKeys = cfgNode.value("blacklistedSpellKeys", m_config.blacklistedSpellKeys);
+		m_config.currentBindSlotMode = ParseAttackSlot(cfgNode.value("currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode)));
 	}
 
 	void Manager::SaveConfig() const
 	{
-		const json root = {
+		const json node = {
 			{ "version", m_config.version },
 			{ "enabled", m_config.enabled },
 			{ "uiToggleKey", m_config.uiToggleKey },
@@ -818,6 +820,15 @@ namespace SBIND
 		try {
 			const std::filesystem::path path{ std::string(kConfigPath) };
 			std::filesystem::create_directories(path.parent_path());
+			json root = json::object();
+			if (std::ifstream in(path, std::ios::in); in.is_open()) {
+				try {
+					in >> root;
+				} catch (...) {
+					root = json::object();
+				}
+			}
+			root["spellBinding"] = node;
 			std::ofstream out(path, std::ios::out | std::ios::trunc);
 			out << root.dump(2);
 		} catch (...) {}

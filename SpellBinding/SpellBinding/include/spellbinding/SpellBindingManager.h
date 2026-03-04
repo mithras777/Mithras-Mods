@@ -118,7 +118,7 @@ namespace SBIND
 	class Manager final : public REX::Singleton<Manager>
 	{
 	public:
-		static constexpr std::string_view kConfigPath = "Data/SKSE/Plugins/SpellBinding.json";
+		static constexpr std::string_view kConfigPath = "Data/SKSE/Plugins/SpellbladeOverhaul.json";
 
 		void Initialize();
 		void Update(RE::PlayerCharacter* a_player, float a_deltaTime);

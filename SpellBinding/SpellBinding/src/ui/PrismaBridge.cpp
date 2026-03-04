@@ -1,5 +1,6 @@
 #include "ui/PrismaBridge.h"
 
+#include "overhaul/SpellbladeOverhaulManager.h"
 #include "spellbinding/SpellBindingManager.h"
 #include "util/LogUtil.h"
 
@@ -43,7 +44,7 @@ namespace UI::PRISMA
 			auto* bridge = Bridge::GetSingleton();
 			if (bridge) {
 				bridge->RegisterListeners();
-				SBIND::Manager::GetSingleton()->PushUISnapshot();
+				SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
 			}
 		});
 		if (m_view == 0) {
@@ -70,7 +71,7 @@ namespace UI::PRISMA
 			auto* bridge = Bridge::GetSingleton();
 			if (bridge) {
 				bridge->RegisterHUDListeners();
-				SBIND::Manager::GetSingleton()->PushHUDSnapshot();
+				SB_OVERHAUL::Manager::GetSingleton()->PushHUDSnapshot();
 			}
 		});
 		if (m_hudView == 0) {
@@ -89,53 +90,24 @@ namespace UI::PRISMA
 			return;
 		}
 
-		m_api->RegisterJSListener(m_view, "sb_toggle_ui", [](const char*) -> void {
-			SBIND::Manager::GetSingleton()->ToggleUI();
+		m_api->RegisterJSListener(m_view, "sbo_toggle_ui", [](const char*) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->ToggleUI();
 		});
 
-		m_api->RegisterJSListener(m_view, "sb_request_snapshot", [](const char*) -> void {
-			SBIND::Manager::GetSingleton()->PushUISnapshot();
+		m_api->RegisterJSListener(m_view, "sbo_request_snapshot", [](const char*) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
 		});
 
-		m_api->RegisterJSListener(m_view, "sb_cycle_bind_slot", [](const char*) -> void {
-			SBIND::Manager::GetSingleton()->CycleBindSlotMode();
+		m_api->RegisterJSListener(m_view, "sbo_set_setting", [](const char* payload) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->HandleSetSetting(payload ? payload : "");
 		});
 
-		m_api->RegisterJSListener(m_view, "sb_bind_selected_magic_menu_spell", [](const char*) -> void {
-			SBIND::Manager::GetSingleton()->TryBindSelectedMagicMenuSpell();
+		m_api->RegisterJSListener(m_view, "sbo_action", [](const char* payload) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->HandleAction(payload ? payload : "");
 		});
 
-		m_api->RegisterJSListener(m_view, "sb_bind_spell_for_slot", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->BindSpellForSlotFromJson(payload ? payload : "");
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_unbind_slot", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->UnbindSlotFromJson(payload ? payload : "");
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_unbind_weapon", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->UnbindWeaponFromSerializedKey(payload ? payload : "");
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_set_setting", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->SetSettingFromJson(payload ? payload : "");
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_set_weapon_setting", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->SetWeaponSettingFromJson(payload ? payload : "");
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_set_blacklist", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->SetBlacklistFromJson(payload ? payload : "");
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_enter_hud_drag_mode", [](const char*) -> void {
-			SBIND::Manager::GetSingleton()->EnterHudDragMode();
-			SBIND::Manager::GetSingleton()->PushHUDSnapshot();
-		});
-
-		m_api->RegisterJSListener(m_view, "sb_save_hud_position", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->SaveHudPositionFromJson(payload ? payload : "");
+		m_api->RegisterJSListener(m_view, "sbo_hud_action", [](const char* payload) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->HandleHudAction(payload ? payload : "");
 		});
 
 		m_listenersRegistered = true;
@@ -147,12 +119,12 @@ namespace UI::PRISMA
 			return;
 		}
 
-		m_api->RegisterJSListener(m_hudView, "sb_hud_drag_update", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->SaveHudPositionFromJson(payload ? payload : "");
+		m_api->RegisterJSListener(m_hudView, "sbo_hud_drag_update", [](const char* payload) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->HandleHudAction(payload ? payload : "");
 		});
 
-		m_api->RegisterJSListener(m_hudView, "sb_hud_drag_commit", [](const char* payload) -> void {
-			SBIND::Manager::GetSingleton()->SaveHudPositionFromJson(payload ? payload : "");
+		m_api->RegisterJSListener(m_hudView, "sbo_hud_drag_commit", [](const char* payload) -> void {
+			SB_OVERHAUL::Manager::GetSingleton()->HandleHudAction(payload ? payload : "");
 		});
 
 		m_hudListenersRegistered = true;
@@ -176,7 +148,7 @@ namespace UI::PRISMA
 			m_api->Show(m_view);
 			const bool focused = m_api->Focus(m_view, false, false);
 			SetFocusState(focused);
-			SBIND::Manager::GetSingleton()->PushUISnapshot();
+			SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
 		} else {
 			m_api->Hide(m_view);
 			SetFocusState(false);
@@ -192,7 +164,7 @@ namespace UI::PRISMA
 		if (m_view == 0 || !m_api->IsValid(m_view)) {
 			return;
 		}
-		m_api->InteropCall(m_view, "sb_renderSnapshot", a_json.c_str());
+		m_api->InteropCall(m_view, "sbo_renderSnapshot", a_json.c_str());
 	}
 
 	void Bridge::PushHUDSnapshot(const std::string& a_json)
@@ -204,7 +176,7 @@ namespace UI::PRISMA
 		if (m_hudView == 0 || !m_api->IsValid(m_hudView)) {
 			return;
 		}
-		m_api->InteropCall(m_hudView, "sb_renderHud", a_json.c_str());
+		m_api->InteropCall(m_hudView, "sbo_renderHud", a_json.c_str());
 	}
 
 	void Bridge::ShowToast(const std::string& a_text)
@@ -216,7 +188,7 @@ namespace UI::PRISMA
 		if (m_view == 0 || !m_api->IsValid(m_view)) {
 			return;
 		}
-		m_api->InteropCall(m_view, "sb_showToast", a_text.c_str());
+		m_api->InteropCall(m_view, "sbo_showToast", a_text.c_str());
 	}
 
 	void Bridge::SendEscapeToMenu()
@@ -228,7 +200,7 @@ namespace UI::PRISMA
 		if (m_view == 0 || !m_api->IsValid(m_view) || m_api->IsHidden(m_view)) {
 			return;
 		}
-		m_api->InteropCall(m_view, "sb_native_escape", "");
+		m_api->InteropCall(m_view, "sbo_native_escape", "");
 	}
 
 	void Bridge::SendCloseRequestToMenu()
@@ -240,7 +212,7 @@ namespace UI::PRISMA
 		if (m_view == 0 || !m_api->IsValid(m_view) || m_api->IsHidden(m_view)) {
 			return;
 		}
-		m_api->InteropCall(m_view, "sb_close_ui", "");
+		m_api->InteropCall(m_view, "sbo_close_ui", "");
 	}
 
 	void Bridge::SetFocusState(bool a_focused)
@@ -253,7 +225,7 @@ namespace UI::PRISMA
 			return;
 		}
 		const auto json = std::format("{{\"focused\":{}}}", a_focused ? "true" : "false");
-		m_api->InteropCall(m_view, "sb_setFocusState", json.c_str());
+		m_api->InteropCall(m_view, "sbo_setFocusState", json.c_str());
 	}
 
 	bool Bridge::IsMenuOpen() const

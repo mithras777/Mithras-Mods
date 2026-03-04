@@ -6,8 +6,8 @@
 #include "event/EquipEventSink.h"
 #include "event/GameEventManager.h"
 #include "input/InputEventSink.h"
+#include "overhaul/SpellbladeOverhaulManager.h"
 #include "serialization/Serialization.h"
-#include "spellbinding/SpellBindingManager.h"
 #include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
 
@@ -50,14 +50,15 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
-				SBIND::Manager::GetSingleton()->Initialize();
+				SB_OVERHAUL::Manager::GetSingleton()->Initialize();
 				SB_INPUT::EventSink::Register();
 				// Register game events
 				GAME_EVENT::Manager::Register();
 				SB_EVENT::EquipEventSink::Register();
 				SB_EVENT::AttackAnimationEventSink::Register();
 				UI::PRISMA::Bridge::GetSingleton()->Initialize();
-				SBIND::Manager::GetSingleton()->PushUISnapshot();
+				SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
+				SB_OVERHAUL::Manager::GetSingleton()->PushHUDSnapshot();
 				// Log plugin loaded
 				LOG_INFO("{} loaded", DLLMAIN::Plugin::GetSingleton()->Info().name);
 				break;
