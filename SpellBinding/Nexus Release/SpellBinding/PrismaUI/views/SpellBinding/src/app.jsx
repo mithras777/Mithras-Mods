@@ -1,9 +1,16 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Settings, Maximize2, X } from 'lucide-react';
+import { LoaderCircle, Settings, Maximize2, Minimize2, X } from 'lucide-react';
 
 const triggerOrder = ['combatStart', 'combatEnd', 'healthBelow70', 'healthBelow50', 'healthBelow30', 'crouchStart', 'sprintStart', 'weaponDraw', 'powerAttackStart', 'shoutStart'];
+const settingsTabs = [
+  { id: 'spellBinding', label: 'Spell Binding' },
+  { id: 'smartCast', label: 'Smart Cast' },
+  { id: 'quickBuff', label: 'Quick Buff' },
+  { id: 'mastery', label: 'Mastery' },
+  { id: 'uiHud', label: 'UI' }
+];
 const WINDOW_MIN_WIDTH = 960;
 const WINDOW_MIN_HEIGHT = 620;
 const WINDOW_MARGIN = 8;
@@ -36,6 +43,95 @@ const SPELLBIND_CODE_BY_SCAN = Object.entries(SPELLBIND_SCAN_BY_CODE).reduce((ou
   out[scan] = code;
   return out;
 }, {});
+
+function normalizeEventCode(event) {
+  const rawCode = String(event?.code || '');
+  if (rawCode && Object.prototype.hasOwnProperty.call(SPELLBIND_SCAN_BY_CODE, rawCode)) {
+    return rawCode;
+  }
+
+  const rawKey = String(event?.key || '');
+  if (!rawKey) return '';
+
+  const upperKey = rawKey.toUpperCase();
+  if (/^[A-Z]$/.test(upperKey)) return `Key${upperKey}`;
+  if (/^[0-9]$/.test(rawKey)) {
+    if (event?.location === 3) return `Numpad${rawKey}`;
+    return `Digit${rawKey}`;
+  }
+
+  if (/^F([1-9]|1[0-2])$/i.test(rawKey)) return upperKey;
+
+  switch (rawKey) {
+    case 'Escape':
+      return 'Escape';
+    case 'Tab':
+      return 'Tab';
+    case 'Enter':
+      return event?.location === 3 ? 'NumpadEnter' : 'Enter';
+    case 'Backspace':
+      return 'Backspace';
+    case ' ':
+    case 'Spacebar':
+      return 'Space';
+    case '-':
+    case '_':
+      return 'Minus';
+    case '=':
+      return event?.location === 3 ? 'NumpadAdd' : 'Equal';
+    case '+':
+      return event?.location === 3 ? 'NumpadAdd' : 'Equal';
+    case 'Add':
+      return 'NumpadAdd';
+    case '[':
+    case '{':
+      return 'BracketLeft';
+    case ']':
+    case '}':
+      return 'BracketRight';
+    case ';':
+    case ':':
+      return 'Semicolon';
+    case '\'':
+    case '"':
+      return 'Quote';
+    case '`':
+    case '~':
+      return 'Backquote';
+    case '\\':
+    case '|':
+      return 'Backslash';
+    case ',':
+    case '<':
+      return 'Comma';
+    case '.':
+    case '>':
+      return 'Period';
+    case '/':
+    case '?':
+      return 'Slash';
+    case 'Control':
+      return 'ControlLeft';
+    case 'Alt':
+      return 'AltLeft';
+    case 'Shift':
+      return 'ShiftLeft';
+    case '*':
+      return event?.location === 3 ? 'NumpadMultiply' : '';
+    case 'Subtract':
+      return 'NumpadSubtract';
+    case 'Decimal':
+      return 'NumpadDecimal';
+    case 'NumLock':
+      return 'NumLock';
+    case 'ScrollLock':
+      return 'ScrollLock';
+    case 'CapsLock':
+      return 'CapsLock';
+    default:
+      return '';
+  }
+}
 
 function byPath(obj, path, fallback) {
   let cur = obj;
@@ -124,7 +220,7 @@ function formatScanCode(scan) {
 }
 
 function toSmartCastToken(event) {
-  const code = event.code || '';
+  const code = normalizeEventCode(event);
   if (code.startsWith('Key') && code.length === 4) return code.slice(3).toUpperCase();
   if (code.startsWith('Digit') && code.length === 6) return code.slice(5);
   if (/^F([1-9]|1[0-2])$/.test(code)) return code;
@@ -163,10 +259,13 @@ function App() {
   const qb = snapshot.quickBuff || {};
   const mastery = snapshot.mastery || {};
 
-  const currentSlot = Number(byPath(sb, ['bindMode', 'slot'], 0));
   const currentWeapon = sb.currentWeapon || {};
   const currentSlots = currentWeapon.slots || {};
-  const slotSpell = currentSlot === 1 ? currentSlots.power || {} : currentSlot === 2 ? currentSlots.bash || {} : currentSlots.light || {};
+  const attackSlots = [
+    { id: 'light', label: 'Light Attack', slot: 0, data: currentSlots.light || {} },
+    { id: 'power', label: 'Power Attack', slot: 1, data: currentSlots.power || {} },
+    { id: 'bash', label: 'Bash', slot: 2, data: currentSlots.bash || {} }
+  ];
 
   const blacklistSet = useMemo(() => new Set(sb.blacklist || []), [sb.blacklist]);
 
@@ -241,6 +340,13 @@ function App() {
     if (closeMenuAfter) {
       callNative('sbo_toggle_ui', '');
     }
+  };
+
+  const startHudAdjustMode = () => {
+    setSettingsOpen(false);
+    setHudDragPos({ x: Number(byPath(sb, ['config', 'hudPosX'], 48)), y: Number(byPath(sb, ['config', 'hudPosY'], 48)) });
+    setHudAdjustOpen(true);
+    hudAction('enterDragMode');
   };
 
   useEffect(() => {
@@ -509,7 +615,7 @@ function App() {
       }
 
       if (captureField === 'sb.uiToggleKey' || captureField === 'sb.bindKey' || captureField === 'sb.cycleSlotModifierKey') {
-        const scan = SPELLBIND_SCAN_BY_CODE[event.code || ''];
+        const scan = SPELLBIND_SCAN_BY_CODE[normalizeEventCode(event)];
         if (scan == null) {
           showToast('Unsupported key for this binding');
           return;
@@ -545,8 +651,11 @@ function App() {
             <p>A Spellblade Overhaul Control Panel</p>
           </div>
           <div className="window-actions" onMouseDown={(e) => e.stopPropagation()}>
+            <button className="icon-btn spin-icon-btn" onClick={startHudAdjustMode} aria-label="Adjust HUD Donut"><LoaderCircle size={16} strokeWidth={2} /></button>
             <button className="icon-btn" onClick={() => setSettingsOpen(true)} aria-label="Settings"><Settings size={16} strokeWidth={2} /></button>
-            <button className="icon-btn" onClick={toggleFullscreen} aria-label="Fullscreen"><Maximize2 size={16} strokeWidth={2} /></button>
+            <button className="icon-btn" onClick={toggleFullscreen} aria-label={windowState.isFullscreen ? 'Windowed' : 'Fullscreen'}>
+              {windowState.isFullscreen ? <Minimize2 size={16} strokeWidth={2} /> : <Maximize2 size={16} strokeWidth={2} />}
+            </button>
             <button className="icon-btn danger" onClick={() => callNative('sbo_toggle_ui', '')} aria-label="Close"><X size={16} strokeWidth={2} /></button>
           </div>
         </header>
@@ -563,45 +672,42 @@ function App() {
             <section className="grid sb-grid">
               <article className="card">
                 <h3>Current</h3>
-                <p><strong>Weapon:</strong> {byPath(sb, ['currentWeapon', 'displayName'], 'None')}</p>
-                <p><strong>Slot:</strong> {slotLabel(currentSlot)}</p>
-                <p><strong>Spell:</strong> {slotSpell.enabled ? slotSpell.displayName || 'Unknown' : 'None'}</p>
-                <p><strong>Cost:</strong> {slotSpell.enabled ? slotSpell.metric || '-' : '-'}</p>
-                <div className="preview-grid">
-                  <div className="preview-window">
-                    <div className="preview-title">Weapon Preview</div>
-                    <div className="preview-body">
+                <div className="current-preview-grid">
+                  <div className="preview-window preview-weapon-full">
+                    <div className="preview-title slot-title">Weapon</div>
+                    <div className="preview-body preview-body-weapon">
                       <div className="preview-name">{byPath(sb, ['currentWeapon', 'displayName'], 'None')}</div>
-                      <div className="preview-meta">{byPath(sb, ['currentWeapon', 'key', 'pluginName'], '')}</div>
+                      <div className="preview-meta">{byPath(sb, ['currentWeapon', 'key', 'pluginName'], '') || 'No equipped weapon key'}</div>
                     </div>
                   </div>
-                  <div className="preview-window">
-                    <div className="preview-title">Spell Preview</div>
-                    <div className="preview-body">
-                      <div className="preview-name">{slotSpell.enabled ? slotSpell.displayName || 'Unknown' : 'None'}</div>
-                      <div className="preview-meta">{slotSpell.enabled ? slotSpell.spellFormKey || '' : ''}</div>
-                    </div>
+                  <div className="attack-slot-grid">
+                    {attackSlots.map(({ id, label, slot, data }) => (
+                      <div className="preview-window attack-slot-card" key={`slot-${id}`}>
+                        <div className="slot-header">
+                          <div className="preview-title slot-title">{label}</div>
+                          {!!(data.enabled && currentWeapon.key) && (
+                            <button
+                              className="icon-btn slot-unbind-btn"
+                              onClick={() => doAction('spellBinding', 'unbindSlot', { key: currentWeapon.key, slot })}
+                              aria-label={`Unbind ${label}`}
+                            >
+                              <X size={14} strokeWidth={2.25} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="preview-body">
+                          <div className="preview-name">{data.enabled ? data.displayName || 'Unknown' : 'None'}</div>
+                          <div className="preview-meta">{data.enabled ? data.spellFormKey || '' : ''}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-                <div className="row">
-                  <button className="btn" onClick={() => doAction('spellBinding', 'cycleBindSlot')}>Cycle Slot</button>
-                  <button className="btn" onClick={() => currentWeapon.key && doAction('spellBinding', 'unbindSlot', { key: currentWeapon.key, slot: currentSlot })}>Unbind Slot</button>
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      setSettingsOpen(false);
-                      setHudDragPos({ x: Number(byPath(sb, ['config', 'hudPosX'], 48)), y: Number(byPath(sb, ['config', 'hudPosY'], 48)) });
-                      setHudAdjustOpen(true);
-                      hudAction('enterDragMode');
-                    }}
-                  >
-                    Adjust HUD Donut
-                  </button>
                 </div>
                 <div className="row">
                   <label className="inline">
                     Cooldown
                     <input
+                      className="thin-range"
                       type="range"
                       min="0.5"
                       max="5"
@@ -633,7 +739,9 @@ function App() {
                         <div>{row.key?.displayName || 'Unknown'}</div>
                         <div className="meta">L: {row.summary?.light || '-'} | P: {row.summary?.power || '-'} | B: {row.summary?.bash || '-'}</div>
                       </div>
-                      <button className="btn" onClick={() => doAction('spellBinding', 'unbindWeapon', row.key || {})}>Unbind</button>
+                      <button className="icon-btn list-unbind-btn" onClick={() => doAction('spellBinding', 'unbindWeapon', row.key || {})} aria-label={`Unbind ${row.key?.displayName || 'weapon'}`}>
+                        <X size={14} strokeWidth={2.25} />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -801,8 +909,8 @@ function App() {
               <button className="icon-btn danger" onClick={() => setSettingsOpen(false)}><X size={16} strokeWidth={2} /></button>
             </header>
             <nav className="settings-tabs">
-              {['spellBinding', 'smartCast', 'quickBuff', 'mastery', 'uiHud'].map((id) => (
-                <button key={id} className={settingsTab === id ? 'subtab active' : 'subtab'} onClick={() => setSettingsTab(id)}>{id}</button>
+              {settingsTabs.map(({ id, label }) => (
+                <button key={id} className={settingsTab === id ? 'subtab active' : 'subtab'} onClick={() => setSettingsTab(id)}>{label}</button>
               ))}
             </nav>
             <section className="settings-body">
