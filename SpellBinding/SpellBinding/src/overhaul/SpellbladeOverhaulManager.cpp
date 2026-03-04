@@ -702,6 +702,14 @@ namespace SB_OVERHAUL
 					SBO::MASTERY_WEAPON::Manager::GetSingleton()->SetConfig(cfg, true);
 				}
 				PushUISnapshot();
+				return;
+			}
+
+			if (module == "ui") {
+				if (id == "spellBindingWindow") {
+					SBIND::Manager::GetSingleton()->SetUIWindowFromJson(payload.dump());
+				}
+				PushUISnapshot();
 			}
 		} catch (const std::exception& e) {
 			LOG_WARN("SpellbladeOverhaul: HandleSetSetting parse failed - {}", e.what());

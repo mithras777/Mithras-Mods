@@ -110,6 +110,16 @@ namespace SBIND
 		AttackSlot currentBindSlotMode{ AttackSlot::kLight };
 	};
 
+	struct UIWindowConfig
+	{
+		float x{ 0.0f };
+		float y{ 0.0f };
+		float width{ 1180.0f };
+		float height{ 760.0f };
+		bool isFullscreen{ false };
+		bool hasSaved{ false };
+	};
+
 	struct ManagerSnapshot
 	{
 		std::string json{};
@@ -132,6 +142,7 @@ namespace SBIND
 		void SetSettingFromJson(const std::string& a_payload);
 		void SetWeaponSettingFromJson(const std::string& a_payload);
 		void SetBlacklistFromJson(const std::string& a_payload);
+		void SetUIWindowFromJson(const std::string& a_payload);
 
 		void OnEquipChanged();
 		void OnMenuStateChanged(bool a_blockingMenuOpen);
@@ -184,6 +195,7 @@ namespace SBIND
 		void LoadConfig();
 		void SaveConfig() const;
 		void ClampConfig(SpellBindingConfig& a_config) const;
+		void ClampWindowConfig(UIWindowConfig& a_config) const;
 
 		void RefreshEquippedKeysLocked(RE::PlayerCharacter* a_player);
 		[[nodiscard]] std::optional<BindingKey> ResolveCurrentBindingKeyLocked(RE::PlayerCharacter* a_player) const;
@@ -224,6 +236,7 @@ namespace SBIND
 	private:
 		mutable std::mutex m_lock;
 		SpellBindingConfig m_config{};
+		UIWindowConfig m_uiWindow{};
 		std::unordered_map<BindingKey, WeaponBindingProfile, BindingKeyHash> m_bindings{};
 		RuntimeState m_runtime{};
 	};

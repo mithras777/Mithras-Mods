@@ -15,6 +15,7 @@
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <format>
@@ -28,6 +29,8 @@ namespace SBIND
 		constexpr std::uint32_t kSerializationVersion = 3;
 		constexpr std::uint32_t kBindingsRecord = 'SBND';
 		constexpr std::uint32_t kConfigVersion = 2;
+		constexpr float kMinWindowWidth = 960.0f;
+		constexpr float kMinWindowHeight = 620.0f;
 
 		constexpr float kDefaultWeaponCooldown = 1.5f;
 		constexpr bool kDefaultOnlyInCombat = false;
@@ -297,6 +300,40 @@ namespace SBIND
 				}
 			}
 			SetConfig(config, true);
+		} catch (...) {}
+	}
+
+	void Manager::SetUIWindowFromJson(const std::string& a_payload)
+	{
+		if (a_payload.empty()) {
+			return;
+		}
+
+		try {
+			const auto parsed = json::parse(a_payload);
+			if (parsed.value("id", std::string{}) != "spellBindingWindow" || !parsed.contains("value") || !parsed["value"].is_object()) {
+				return;
+			}
+
+			UIWindowConfig next{};
+			{
+				std::scoped_lock lock(m_lock);
+				next = m_uiWindow;
+			}
+			const auto& value = parsed["value"];
+			next.x = value.value("x", next.x);
+			next.y = value.value("y", next.y);
+			next.width = value.value("width", next.width);
+			next.height = value.value("height", next.height);
+			next.isFullscreen = value.value("isFullscreen", next.isFullscreen);
+			next.hasSaved = true;
+			ClampWindowConfig(next);
+
+			{
+				std::scoped_lock lock(m_lock);
+				m_uiWindow = next;
+			}
+			SaveConfig();
 		} catch (...) {}
 	}
 
@@ -791,30 +828,59 @@ namespace SBIND
 		m_config.blacklistEnabled = cfgNode.value("blacklistEnabled", m_config.blacklistEnabled);
 		m_config.blacklistedSpellKeys = cfgNode.value("blacklistedSpellKeys", m_config.blacklistedSpellKeys);
 		m_config.currentBindSlotMode = ParseAttackSlot(cfgNode.value("currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode)));
+
+		if (root.contains("ui") && root["ui"].is_object()) {
+			const auto& uiNode = root["ui"];
+			if (uiNode.contains("spellBindingWindow") && uiNode["spellBindingWindow"].is_object()) {
+				const auto& windowNode = uiNode["spellBindingWindow"];
+				m_uiWindow.x = windowNode.value("x", m_uiWindow.x);
+				m_uiWindow.y = windowNode.value("y", m_uiWindow.y);
+				m_uiWindow.width = windowNode.value("width", m_uiWindow.width);
+				m_uiWindow.height = windowNode.value("height", m_uiWindow.height);
+				m_uiWindow.isFullscreen = windowNode.value("isFullscreen", m_uiWindow.isFullscreen);
+				m_uiWindow.hasSaved = true;
+			}
+		}
+		ClampWindowConfig(m_uiWindow);
 	}
 
 	void Manager::SaveConfig() const
 	{
+		SpellBindingConfig cfgCopy{};
+		UIWindowConfig windowCopy{};
+		{
+			std::scoped_lock lock(m_lock);
+			cfgCopy = m_config;
+			windowCopy = m_uiWindow;
+		}
+
 		const json node = {
-			{ "version", m_config.version },
-			{ "enabled", m_config.enabled },
-			{ "uiToggleKey", m_config.uiToggleKey },
-			{ "bindKey", m_config.bindKey },
-			{ "showHudNotifications", m_config.showHudNotifications },
-			{ "cycleSlotModifierKey", m_config.cycleSlotModifierKey },
-			{ "fallbackDedupeSec", m_config.fallbackDedupeSec },
-			{ "enableSoundCues", m_config.enableSoundCues },
-			{ "soundCueVolume", m_config.soundCueVolume },
-			{ "hudDonutEnabled", m_config.hudDonutEnabled },
-			{ "hudDonutOnlyUnsheathed", m_config.hudDonutOnlyUnsheathed },
-			{ "hudShowCooldownSeconds", m_config.hudShowCooldownSeconds },
-			{ "hudAnchor", m_config.hudAnchor },
-			{ "hudPosX", m_config.hudPosX },
-			{ "hudPosY", m_config.hudPosY },
-			{ "hudDonutSize", m_config.hudDonutSize },
-			{ "blacklistEnabled", m_config.blacklistEnabled },
-			{ "blacklistedSpellKeys", m_config.blacklistedSpellKeys },
-			{ "currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode) }
+			{ "version", cfgCopy.version },
+			{ "enabled", cfgCopy.enabled },
+			{ "uiToggleKey", cfgCopy.uiToggleKey },
+			{ "bindKey", cfgCopy.bindKey },
+			{ "showHudNotifications", cfgCopy.showHudNotifications },
+			{ "cycleSlotModifierKey", cfgCopy.cycleSlotModifierKey },
+			{ "fallbackDedupeSec", cfgCopy.fallbackDedupeSec },
+			{ "enableSoundCues", cfgCopy.enableSoundCues },
+			{ "soundCueVolume", cfgCopy.soundCueVolume },
+			{ "hudDonutEnabled", cfgCopy.hudDonutEnabled },
+			{ "hudDonutOnlyUnsheathed", cfgCopy.hudDonutOnlyUnsheathed },
+			{ "hudShowCooldownSeconds", cfgCopy.hudShowCooldownSeconds },
+			{ "hudAnchor", cfgCopy.hudAnchor },
+			{ "hudPosX", cfgCopy.hudPosX },
+			{ "hudPosY", cfgCopy.hudPosY },
+			{ "hudDonutSize", cfgCopy.hudDonutSize },
+			{ "blacklistEnabled", cfgCopy.blacklistEnabled },
+			{ "blacklistedSpellKeys", cfgCopy.blacklistedSpellKeys },
+			{ "currentBindSlotMode", static_cast<std::uint32_t>(cfgCopy.currentBindSlotMode) }
+		};
+		const json windowNode = {
+			{ "x", windowCopy.x },
+			{ "y", windowCopy.y },
+			{ "width", windowCopy.width },
+			{ "height", windowCopy.height },
+			{ "isFullscreen", windowCopy.isFullscreen }
 		};
 
 		try {
@@ -829,6 +895,10 @@ namespace SBIND
 				}
 			}
 			root["spellBinding"] = node;
+			if (!root.contains("ui") || !root["ui"].is_object()) {
+				root["ui"] = json::object();
+			}
+			root["ui"]["spellBindingWindow"] = windowNode;
 			std::ofstream out(path, std::ios::out | std::ios::trunc);
 			out << root.dump(2);
 		} catch (...) {}
@@ -842,6 +912,18 @@ namespace SBIND
 		a_config.hudDonutSize = std::clamp(a_config.hudDonutSize, 48.0f, 220.0f);
 		if (a_config.hudAnchor.empty()) {
 			a_config.hudAnchor = "top-right";
+		}
+	}
+
+	void Manager::ClampWindowConfig(UIWindowConfig& a_config) const
+	{
+		a_config.width = std::clamp(a_config.width, kMinWindowWidth, 4096.0f);
+		a_config.height = std::clamp(a_config.height, kMinWindowHeight, 4096.0f);
+		if (!std::isfinite(a_config.x)) {
+			a_config.x = 0.0f;
+		}
+		if (!std::isfinite(a_config.y)) {
+			a_config.y = 0.0f;
 		}
 	}
 	void Manager::RefreshEquippedKeysLocked(RE::PlayerCharacter* a_player)
@@ -1412,6 +1494,16 @@ namespace SBIND
 			{ "lastWasPowerAttack", m_runtime.lastWasPowerAttack },
 			{ "lastError", m_runtime.lastError }
 		};
+		root["ui"] = {
+			{ "spellBindingWindow", {
+				{ "x", m_uiWindow.x },
+				{ "y", m_uiWindow.y },
+				{ "width", m_uiWindow.width },
+				{ "height", m_uiWindow.height },
+				{ "isFullscreen", m_uiWindow.isFullscreen },
+				{ "hasSaved", m_uiWindow.hasSaved }
+			} }
+		};
 		return root.dump();
 	}
 
@@ -1421,7 +1513,7 @@ namespace SBIND
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		float total = kDefaultWeaponCooldown;
 		float remaining = 0.0f;
-		bool visible = m_config.hudDonutEnabled;
+		bool visible = m_config.hudDonutEnabled || m_runtime.hudDragModeActive;
 
 		const auto current = m_runtime.rightWeapon.has_value() ? m_runtime.rightWeapon : (m_runtime.leftWeapon.has_value() ? m_runtime.leftWeapon : m_runtime.unarmedKey);
 		if (current.has_value()) {
@@ -1433,7 +1525,7 @@ namespace SBIND
 			}
 		}
 
-		if (m_config.hudDonutOnlyUnsheathed && player) {
+		if (m_config.hudDonutOnlyUnsheathed && player && !m_runtime.hudDragModeActive) {
 			const auto* actorState = player->AsActorState();
 			if (actorState && !actorState->IsWeaponDrawn()) {
 				visible = false;
@@ -1443,7 +1535,7 @@ namespace SBIND
 			visible = false;
 		}
 
-		root["visible"] = visible && !m_runtime.hudDragModeActive;
+		root["visible"] = visible;
 		root["progress"] = total <= 0.01f ? 0.0f : std::clamp(remaining / total, 0.0f, 1.0f);
 		root["remainingSec"] = remaining;
 		root["x"] = m_config.hudPosX;
