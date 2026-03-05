@@ -25,8 +25,10 @@ namespace SMART_CAST
 	namespace
 	{
 		constexpr std::uint32_t kConfigVersion = 1;
-		constexpr std::uint32_t kSerializationVersion = 2;
+		constexpr std::uint32_t kSerializationVersion = 3;
 		constexpr std::uint32_t kChainRecord = 'SCCH';
+		constexpr std::uint32_t kPrismaSchemaVersion = 2;
+		constexpr std::string_view kPrismaSchemaVersionKey = "prismaSchemaVersion";
 		std::string Trim(std::string_view text)
 		{
 			const auto begin = text.find_first_not_of(" \t\r\n");
@@ -62,6 +64,7 @@ namespace SMART_CAST
 		cfg.global.maxChains = 1;
 		cfg.global.maxStepsPerChain = 0;
 		cfg.global.playback.defaultChainIndex = 1;
+		cfg.global.playback.cycleModifierKey = "Shift";
 		cfg.global.record.ignorePowers = false;
 		cfg.global.record.ignoreShouts = false;
 		cfg.global.record.ignoreScrolls = true;
@@ -126,6 +129,7 @@ namespace SMART_CAST
 			writeString(chain.name);
 			a_intfc->WriteRecordData(chain.enabled);
 			writeString(chain.hotkey);
+			a_intfc->WriteRecordData(chain.stepDelaySec);
 
 			const std::uint32_t stepCount = static_cast<std::uint32_t>(chain.steps.size());
 			a_intfc->WriteRecordData(stepCount);
@@ -153,7 +157,7 @@ namespace SMART_CAST
 		std::uint32_t version = 0;
 		std::uint32_t length = 0;
 		while (a_intfc->GetNextRecordInfo(type, version, length)) {
-			if (type != kChainRecord || (version != 1 && version != kSerializationVersion)) {
+			if (type != kChainRecord || (version != 1 && version != 2 && version != kSerializationVersion)) {
 				continue;
 			}
 
@@ -178,6 +182,11 @@ namespace SMART_CAST
 				readString(chain.name);
 				a_intfc->ReadRecordData(chain.enabled);
 				readString(chain.hotkey);
+				if (version >= 3) {
+					a_intfc->ReadRecordData(chain.stepDelaySec);
+				} else {
+					chain.stepDelaySec = 1.0f;
+				}
 
 				std::uint32_t stepCount = 0;
 				a_intfc->ReadRecordData(stepCount);
@@ -227,6 +236,15 @@ namespace SMART_CAST
 
 		json root;
 		try { ifs >> root; } catch (...) { return; }
+		const auto storedSchemaVersion = root.value(std::string(kPrismaSchemaVersionKey), 0u);
+		if (storedSchemaVersion < kPrismaSchemaVersion) {
+			m_config = GetDefaultConfig();
+			ClampConfig(m_config);
+			EnsureChainCount(m_config);
+			SaveConfig();
+			return;
+		}
+
 		const auto cfgNode = root.contains("smartCast") && root["smartCast"].is_object() ? root["smartCast"] : root;
 
 		Config cfg = GetDefaultConfig();
@@ -348,6 +366,7 @@ namespace SMART_CAST
 				}
 			}
 			root["smartCast"] = node;
+			root[std::string(kPrismaSchemaVersionKey)] = kPrismaSchemaVersion;
 			std::ofstream ofs(path, std::ios::out | std::ios::trunc);
 			ofs << root.dump(2);
 		} catch (...) {}
@@ -365,11 +384,11 @@ namespace SMART_CAST
 		cfg.global.record.ignorePowers = false;
 		cfg.global.record.ignoreShouts = false;
 		cfg.global.record.ignoreScrolls = true;
-		cfg.global.playback.stepDelaySec = std::clamp(cfg.global.playback.stepDelaySec, 0.0f, 2.0f);
+		cfg.global.playback.stepDelaySec = std::clamp(cfg.global.playback.stepDelaySec, 0.5f, 3.0f);
 		cfg.global.playback.cancelKey = cfg.global.playback.playKey;
 		if (cfg.global.playback.cycleModifierKey != "Shift" &&
 		    cfg.global.playback.cycleModifierKey != "Ctrl") {
-			cfg.global.playback.cycleModifierKey = "None";
+			cfg.global.playback.cycleModifierKey = "Shift";
 		}
 		cfg.global.concentration.minHoldSec = std::clamp(cfg.global.concentration.minHoldSec, 0.05f, 10.0f);
 		cfg.global.concentration.maxHoldSec = std::clamp(cfg.global.concentration.maxHoldSec, cfg.global.concentration.minHoldSec, 10.0f);
@@ -378,6 +397,7 @@ namespace SMART_CAST
 		for (auto& chain : cfg.chains) {
 			if (chain.name.empty()) chain.name = "Chain";
 			chain.enabled = true;
+			chain.stepDelaySec = std::clamp(chain.stepDelaySec, 0.5f, 3.0f);
 			for (auto& step : chain.steps) {
 				step.holdSec = std::clamp(step.holdSec, 0.05f, 10.0f);
 				step.castCount = std::clamp(step.castCount, 1u, 10u);
@@ -395,6 +415,7 @@ namespace SMART_CAST
 				cfg.chains[i].name = std::format("Chain {}", i + 1);
 				cfg.chains[i].enabled = true;
 				cfg.chains[i].hotkey = "None";
+				cfg.chains[i].stepDelaySec = 1.0f;
 			}
 		} else if (cfg.chains.size() > target) {
 			cfg.chains.resize(target);
@@ -455,7 +476,7 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 		if (chain.steps.empty()) return;
 		if (m_runtime.mode == Mode::kRecording) StopRecording();
 		m_runtime.mode = Mode::kPlaying;
-		m_runtime.activeChainIndex = idx;
+		m_runtime.playbackChainIndex = idx;
 		m_runtime.playbackStepIndex = 0;
 		m_runtime.stepDelayTimer = 0.0f;
 		m_runtime.concentrationHoldRemaining = 0.0f;
@@ -464,12 +485,30 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 		m_runtime.activeConcentrationSpell.clear();
 		m_runtime.playbackTarget = RE::ObjectRefHandle{};
 		m_runtime.playbackCastOnSelf = true;
+		std::string chainName = std::format("Chain {}", idx + 1);
+		if (static_cast<std::size_t>(idx) < m_config.chains.size()) {
+			const auto& candidate = m_config.chains[static_cast<std::size_t>(idx)].name;
+			if (!candidate.empty()) {
+				chainName = candidate;
+			}
+		}
+		SBIND::Manager::GetSingleton()->NotifyChainPlayingState(idx + 1, chainName, true);
 	}
 
 	void Controller::StopPlayback(bool)
 	{
 		if (m_runtime.mode == Mode::kPlaying) {
+			const auto playingIdx = m_runtime.playbackChainIndex >= 0 ? m_runtime.playbackChainIndex : m_runtime.activeChainIndex;
+			std::string chainName = std::format("Chain {}", playingIdx + 1);
+			if (static_cast<std::size_t>(playingIdx) < m_config.chains.size()) {
+				const auto& candidate = m_config.chains[static_cast<std::size_t>(playingIdx)].name;
+				if (!candidate.empty()) {
+					chainName = candidate;
+				}
+			}
 			m_runtime.mode = Mode::kIdle;
+			SBIND::Manager::GetSingleton()->NotifyChainPlayingState(playingIdx + 1, chainName, false);
+			m_runtime.playbackChainIndex = -1;
 			m_runtime.playbackStepIndex = 0;
 			m_runtime.stepDelayTimer = 0.0f;
 			m_runtime.concentrationHoldRemaining = 0.0f;
@@ -535,16 +574,21 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 
 	void Controller::UpdateHotkeys(RE::PlayerCharacter*)
 	{
+		if (m_runtime.chainKeyWasDown.size() != m_config.chains.size()) {
+			m_runtime.chainKeyWasDown.assign(m_config.chains.size(), false);
+		}
+
 		const auto updateKeyEdgesOnly = [this]() {
 			m_runtime.keyWasDown[static_cast<std::size_t>(HotkeySlot::kRecordToggle)] = IsKeyDown(m_config.global.record.toggleKey);
 			m_runtime.keyWasDown[static_cast<std::size_t>(HotkeySlot::kRecordCancel)] = IsKeyDown(m_config.global.record.cancelKey);
 			m_runtime.keyWasDown[static_cast<std::size_t>(HotkeySlot::kPlay)] = IsKeyDown(m_config.global.playback.playKey);
 			m_runtime.keyWasDown[static_cast<std::size_t>(HotkeySlot::kPlayCancel)] = IsKeyDown(m_config.global.playback.cancelKey);
-			for (const auto& chain : m_config.chains) {
+			for (std::size_t i = 0; i < m_config.chains.size(); ++i) {
+				const auto& chain = m_config.chains[i];
 				if (chain.hotkey.empty() || chain.hotkey == "None") {
 					continue;
 				}
-				m_runtime.chainKeyWasDown[chain.hotkey] = IsKeyDown(chain.hotkey);
+				m_runtime.chainKeyWasDown[i] = IsKeyDown(chain.hotkey);
 			}
 		};
 
@@ -577,10 +621,10 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 				continue;
 			}
 			const bool now = IsKeyDown(key);
-			const bool pressed = now && !m_runtime.chainKeyWasDown[key];
-			m_runtime.chainKeyWasDown[key] = now;
+			const bool pressed = now && !m_runtime.chainKeyWasDown[i];
+			m_runtime.chainKeyWasDown[i] = now;
 			if (allowPlaybackHotkeys && pressed) {
-				m_runtime.activeChainIndex = static_cast<std::int32_t>(i);
+				StartPlayback(static_cast<std::int32_t>(i + 1));
 				break;
 			}
 		}
@@ -802,14 +846,16 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 			return;
 		}
 		if (m_runtime.releasePaddingRemaining > 0.0f) { m_runtime.releasePaddingRemaining = std::max(0.0f, m_runtime.releasePaddingRemaining - delta); return; }
-		const auto chainIdx = static_cast<std::size_t>(m_runtime.activeChainIndex);
-		if (chainIdx >= m_config.chains.size()) { StopPlayback(true); return; }
+		const auto playbackIdx = m_runtime.playbackChainIndex >= 0 ? m_runtime.playbackChainIndex : m_runtime.activeChainIndex;
+		const auto chainIdx = static_cast<std::size_t>(playbackIdx);
+		if (playbackIdx < 0 || chainIdx >= m_config.chains.size()) { StopPlayback(true); return; }
 		const auto& chain = m_config.chains[chainIdx];
 		if (m_runtime.playbackStepIndex >= chain.steps.size()) { StopPlayback(true); return; }
 		const bool ok = ExecuteStep(player, chain.steps[m_runtime.playbackStepIndex]);
 		if (!ok && m_config.global.playback.abortOnFail) { StopPlayback(true); return; }
 		++m_runtime.playbackStepIndex;
-		m_runtime.stepDelayTimer = m_config.global.playback.stepDelaySec;
+		const float chainStepDelay = std::clamp(chain.stepDelaySec, 0.5f, 3.0f);
+		m_runtime.stepDelayTimer = chainStepDelay;
 	}
 
 	void Controller::Update(RE::PlayerCharacter* player, float delta)

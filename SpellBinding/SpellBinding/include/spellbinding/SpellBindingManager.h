@@ -171,6 +171,7 @@ namespace SBIND
 		void SaveHudPositionFromJson(const std::string& a_payload);
 		void NotifyChainSwitch(std::int32_t a_chainIndex1Based, std::string_view a_chainName);
 		void NotifyChainRecordingState(std::int32_t a_chainIndex1Based, std::string_view a_chainName, bool a_recording);
+		void NotifyChainPlayingState(std::int32_t a_chainIndex1Based, std::string_view a_chainName, bool a_playing);
 
 		[[nodiscard]] std::string GetUIHotkeyName() const;
 		[[nodiscard]] std::string GetBindHotkeyName() const;
@@ -201,8 +202,10 @@ namespace SBIND
 			bool lastWasPowerAttack{ false };
 			float lastCycleSwitchWorldTimeSec{ -1000.0f };
 			float lastChainSwitchWorldTimeSec{ -1000.0f };
+			float lastChainPlayingWorldTimeSec{ -1000.0f };
 			std::string lastChainHudText{ "Chain 1" };
 			bool chainRecordingActive{ false };
+			bool chainPlayingActive{ false };
 		};
 
 		void LoadConfig();

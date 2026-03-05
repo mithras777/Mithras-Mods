@@ -25,6 +25,9 @@ namespace QUICK_BUFF
 		constexpr std::uint32_t kConfigVersion = 1;
 		constexpr std::uint32_t kSerializationVersion = 1;
 		constexpr std::uint32_t kBindingRecord = 'QBBN';
+		constexpr std::uint32_t kPrismaSchemaVersion = 2;
+		constexpr std::string_view kPrismaSchemaVersionKey = "prismaSchemaVersion";
+		constexpr float kQuickBuffMinTimeAfterLoadSeconds = 2.0f;
 
 		std::string Trim(std::string_view a_text)
 		{
@@ -232,7 +235,7 @@ namespace QUICK_BUFF
 			return;
 		}
 
-		if (m_runtime.timeSinceLoad < m_config.global.minTimeAfterLoadSeconds) {
+		if (m_runtime.timeSinceLoad < kQuickBuffMinTimeAfterLoadSeconds) {
 			SyncPreviousStates(live);
 			return;
 		}
@@ -461,6 +464,14 @@ namespace QUICK_BUFF
 			LOG_WARN("QuickBuff: invalid JSON, using defaults");
 			return;
 		}
+		const auto storedSchemaVersion = root.value(std::string(kPrismaSchemaVersionKey), 0u);
+		if (storedSchemaVersion < kPrismaSchemaVersion) {
+			m_config = DefaultConfig();
+			ClampConfig(m_config);
+			SaveConfig();
+			return;
+		}
+
 		const auto cfgNode = root.contains("quickBuff") && root["quickBuff"].is_object() ? root["quickBuff"] : root;
 
 		Config cfg = DefaultConfig();
@@ -471,13 +482,12 @@ namespace QUICK_BUFF
 		if (cfgNode.contains("global") && cfgNode["global"].is_object()) {
 			const auto& g = cfgNode["global"];
 			cfg.global.enabled = g.value("enabled", cfg.global.enabled);
-			cfg.global.firstPersonOnlyDefault = g.value("firstPersonOnlyDefault", cfg.global.firstPersonOnlyDefault);
-			cfg.global.weaponDrawnOnlyDefault = g.value("weaponDrawnOnlyDefault", cfg.global.weaponDrawnOnlyDefault);
-			cfg.global.preventCastingInMenus = g.value("preventCastingInMenus", cfg.global.preventCastingInMenus);
-			cfg.global.preventCastingWhileStaggered = g.value("preventCastingWhileStaggered", cfg.global.preventCastingWhileStaggered);
-			cfg.global.preventCastingWhileRagdoll = g.value("preventCastingWhileRagdoll", cfg.global.preventCastingWhileRagdoll);
-			cfg.global.minTimeAfterLoadSeconds = g.value("minTimeAfterLoadSeconds", cfg.global.minTimeAfterLoadSeconds);
-		}
+				cfg.global.firstPersonOnlyDefault = g.value("firstPersonOnlyDefault", cfg.global.firstPersonOnlyDefault);
+				cfg.global.weaponDrawnOnlyDefault = g.value("weaponDrawnOnlyDefault", cfg.global.weaponDrawnOnlyDefault);
+				cfg.global.preventCastingInMenus = g.value("preventCastingInMenus", cfg.global.preventCastingInMenus);
+				cfg.global.preventCastingWhileStaggered = g.value("preventCastingWhileStaggered", cfg.global.preventCastingWhileStaggered);
+				cfg.global.preventCastingWhileRagdoll = g.value("preventCastingWhileRagdoll", cfg.global.preventCastingWhileRagdoll);
+			}
 
 		ApplyGlobalDefaults(cfg);
 
@@ -570,15 +580,14 @@ namespace QUICK_BUFF
 
 		const json node = {
 			{ "version", m_config.version },
-			{ "global", {
-				{ "enabled", m_config.global.enabled },
-				{ "firstPersonOnlyDefault", m_config.global.firstPersonOnlyDefault },
-				{ "weaponDrawnOnlyDefault", m_config.global.weaponDrawnOnlyDefault },
-				{ "preventCastingInMenus", m_config.global.preventCastingInMenus },
-				{ "preventCastingWhileStaggered", m_config.global.preventCastingWhileStaggered },
-				{ "preventCastingWhileRagdoll", m_config.global.preventCastingWhileRagdoll },
-				{ "minTimeAfterLoadSeconds", m_config.global.minTimeAfterLoadSeconds }
-			} },
+				{ "global", {
+					{ "enabled", m_config.global.enabled },
+					{ "firstPersonOnlyDefault", m_config.global.firstPersonOnlyDefault },
+					{ "weaponDrawnOnlyDefault", m_config.global.weaponDrawnOnlyDefault },
+					{ "preventCastingInMenus", m_config.global.preventCastingInMenus },
+					{ "preventCastingWhileStaggered", m_config.global.preventCastingWhileStaggered },
+					{ "preventCastingWhileRagdoll", m_config.global.preventCastingWhileRagdoll }
+				} },
 			{ "triggers", {
 				{ "combatStart", serializeTrigger(m_config.combatStart) },
 				{ "combatEnd", serializeTrigger(m_config.combatEnd) },
@@ -603,21 +612,21 @@ namespace QUICK_BUFF
 				} catch (...) {
 					root = json::object();
 				}
-			}
-			root["quickBuff"] = node;
-			std::ofstream ofs(path, std::ios::out | std::ios::trunc);
-			ofs << root.dump(2);
+				}
+				root["quickBuff"] = node;
+				root[std::string(kPrismaSchemaVersionKey)] = kPrismaSchemaVersion;
+				std::ofstream ofs(path, std::ios::out | std::ios::trunc);
+				ofs << root.dump(2);
 		} catch (const std::exception&) {
 			LOG_WARN("QuickBuff: failed to save config");
 		}
 	}
 
-	void Manager::ClampConfig(Config& a_config) const
-	{
-		a_config.version = kConfigVersion;
-		a_config.global.minTimeAfterLoadSeconds = std::clamp(a_config.global.minTimeAfterLoadSeconds, 0.0f, 30.0f);
+		void Manager::ClampConfig(Config& a_config) const
+		{
+			a_config.version = kConfigVersion;
 
-		const auto clampTrigger = [](TriggerConfig& a_cfg) {
+			const auto clampTrigger = [](TriggerConfig& a_cfg) {
 			a_cfg.cooldownSec = std::clamp(a_cfg.cooldownSec, 0.0f, 120.0f);
 			a_cfg.thresholdHealthPercent = std::clamp(a_cfg.thresholdHealthPercent, 0.01f, 0.99f);
 			a_cfg.hysteresisMargin = std::clamp(a_cfg.hysteresisMargin, 0.0f, 0.20f);

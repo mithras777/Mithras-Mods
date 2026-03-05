@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace SMART_CAST
@@ -44,11 +43,12 @@ namespace SMART_CAST
 		bool enabled{ true };
 		std::string hotkey{ "None" };
 		std::vector<ChainStep> steps{};
+		float stepDelaySec{ 1.0f };
 	};
 
 	struct RecordConfig
 	{
-		std::string toggleKey{ "R" };
+		std::string toggleKey{ "H" };
 		std::string cancelKey{ "None" };
 		float maxIdleSec{ 4.0f };
 		bool recordOnlySuccessfulCasts{ true };
@@ -59,11 +59,11 @@ namespace SMART_CAST
 
 	struct PlaybackConfig
 	{
-		std::string playKey{ "G" };
+		std::string playKey{ "X" };
 		std::string cancelKey{ "G" };
 		std::int32_t defaultChainIndex{ 1 };
-		std::string cycleModifierKey{ "None" };
-		float stepDelaySec{ 0.10f };
+		std::string cycleModifierKey{ "Shift" };
+		float stepDelaySec{ 1.0f };
 		bool abortOnFail{ false };
 		bool skipOnFail{ true };
 		bool requireWeaponSheathed{ false };
@@ -155,6 +155,7 @@ namespace SMART_CAST
 		{
 			Mode mode{ Mode::kIdle };
 			std::int32_t activeChainIndex{ 0 };  // 0-based
+			std::int32_t playbackChainIndex{ -1 };  // 0-based, independent from selected active chain
 			float timeSinceLoad{ 0.0f };
 			float recordIdleTimer{ 0.0f };
 			float stepDelayTimer{ 0.0f };
@@ -171,7 +172,7 @@ namespace SMART_CAST
 			bool wasAttacking{ false };
 			bool wasBlocking{ false };
 			std::array<bool, 8> keyWasDown{};
-			std::unordered_map<std::string, bool> chainKeyWasDown{};
+			std::vector<bool> chainKeyWasDown{};
 			RE::ObjectRefHandle playbackTarget{};
 			bool playbackCastOnSelf{ true };
 			bool wasPowerOrShoutCasting{ false };

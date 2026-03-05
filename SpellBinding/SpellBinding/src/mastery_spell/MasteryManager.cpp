@@ -4,6 +4,7 @@
 #include "util/NotificationCompat.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <format>
@@ -44,15 +45,27 @@ namespace SBO::MASTERY_SPELL
 
 		void ClampConfig(MasteryConfig& a_config)
 		{
+			static constexpr std::array<std::uint32_t, 5> kDefaultThresholds{ 10, 25, 50, 100, 200 };
 			a_config.gainMultiplier = std::clamp(a_config.gainMultiplier, 0.1f, 20.0f);
 			if (a_config.thresholds.empty()) {
-				a_config.thresholds = { 10, 25, 50, 100, 200 };
+				a_config.thresholds = { kDefaultThresholds.begin(), kDefaultThresholds.end() };
 			}
 			for (auto& threshold : a_config.thresholds) {
 				threshold = std::max<std::uint32_t>(1, threshold);
 			}
 			std::sort(a_config.thresholds.begin(), a_config.thresholds.end());
 			a_config.thresholds.erase(std::unique(a_config.thresholds.begin(), a_config.thresholds.end()), a_config.thresholds.end());
+			if (a_config.thresholds.size() < kDefaultThresholds.size()) {
+				for (const auto threshold : kDefaultThresholds) {
+					a_config.thresholds.push_back(threshold);
+				}
+				std::sort(a_config.thresholds.begin(), a_config.thresholds.end());
+				a_config.thresholds.erase(std::unique(a_config.thresholds.begin(), a_config.thresholds.end()), a_config.thresholds.end());
+				while (a_config.thresholds.size() < kDefaultThresholds.size()) {
+					const auto last = a_config.thresholds.back();
+					a_config.thresholds.push_back(last + std::max(1u, last));
+				}
+			}
 
 			ClampBonuses(a_config.generalBonuses);
 			for (auto& schoolCfg : a_config.schools) {

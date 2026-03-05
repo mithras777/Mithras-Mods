@@ -110,6 +110,7 @@ namespace SB_OVERHAUL
 				{ "name", a_chain.name },
 				{ "enabled", a_chain.enabled },
 				{ "hotkey", a_chain.hotkey },
+				{ "stepDelaySec", a_chain.stepDelaySec },
 				{ "steps", std::move(steps) }
 			};
 		}
@@ -167,17 +168,44 @@ namespace SB_OVERHAUL
 			};
 		}
 
-		[[nodiscard]] std::pair<std::uint32_t, std::uint32_t> ProgressMeta(const std::vector<std::uint32_t>& a_thresholds, std::uint32_t a_points)
+		struct ProgressSegment
 		{
-			if (a_thresholds.empty()) {
-				return { a_points, a_points == 0 ? 1u : a_points };
-			}
+			std::uint32_t current{ 0 };
+			std::uint32_t next{ 1 };
+			float pct{ 0.0f };
+		};
+
+		[[nodiscard]] std::uint32_t ComputeLevelFromProgress(const std::vector<std::uint32_t>& a_thresholds, std::uint32_t a_points)
+		{
+			std::uint32_t level = 0;
 			for (const auto threshold : a_thresholds) {
-				if (a_points < threshold) {
-					return { a_points, threshold };
+				if (a_points >= threshold) {
+					++level;
 				}
 			}
-			return { a_points, a_thresholds.back() };
+			return level;
+		}
+
+		[[nodiscard]] ProgressSegment ProgressMeta(const std::vector<std::uint32_t>& a_thresholds, std::uint32_t a_points, std::uint32_t a_level)
+		{
+			if (a_thresholds.empty()) {
+				return ProgressSegment{ a_points, a_points == 0 ? 1u : a_points, a_points > 0 ? 1.0f : 0.0f };
+			}
+
+			const auto levelIdx = static_cast<std::size_t>(a_level);
+			if (levelIdx >= a_thresholds.size()) {
+				return ProgressSegment{ 1u, 1u, 1.0f };
+			}
+
+			const std::uint32_t prevThreshold = levelIdx == 0 ? 0u : a_thresholds[levelIdx - 1];
+			const std::uint32_t nextThreshold = a_thresholds[levelIdx];
+			const std::uint32_t segmentSize = std::max(1u, nextThreshold > prevThreshold ? (nextThreshold - prevThreshold) : 1u);
+			const std::uint32_t segmentCurrent = std::clamp(
+				a_points > prevThreshold ? (a_points - prevThreshold) : 0u,
+				0u,
+				segmentSize);
+			const float pct = std::clamp(static_cast<float>(segmentCurrent) / static_cast<float>(segmentSize), 0.0f, 1.0f);
+			return ProgressSegment{ segmentCurrent, segmentSize, pct };
 		}
 
 		[[nodiscard]] json BuildSpellRow(const SBO::MASTERY_SPELL::SpellKey& a_key,
@@ -196,8 +224,8 @@ namespace SB_OVERHAUL
 			}
 			points *= std::max(0.0f, a_cfg.gainMultiplier);
 			const auto progressPoints = static_cast<std::uint32_t>(std::max(0.0f, points));
-			const auto [cur, next] = ProgressMeta(a_cfg.thresholds, progressPoints);
-			const float pct = next == 0 ? 1.0f : std::clamp(static_cast<float>(cur) / static_cast<float>(next), 0.0f, 1.0f);
+			const auto derivedLevel = ComputeLevelFromProgress(a_cfg.thresholds, progressPoints);
+			const auto progress = ProgressMeta(a_cfg.thresholds, progressPoints, derivedLevel);
 
 			return {
 				{ "name", a_key.name },
@@ -209,10 +237,10 @@ namespace SB_OVERHAUL
 				{ "summons", a_stats.summons },
 				{ "hits", a_stats.hits },
 				{ "equippedSeconds", a_stats.equippedSeconds },
-				{ "level", a_stats.level },
-				{ "progressPoints", cur },
-				{ "nextThreshold", next },
-				{ "progressPct", pct }
+				{ "level", derivedLevel },
+				{ "progressPoints", progress.current },
+				{ "nextThreshold", progress.next },
+				{ "progressPct", progress.pct }
 			};
 		}
 
@@ -222,17 +250,17 @@ namespace SB_OVERHAUL
 		{
 			const float rawPoints = a_cfg.gainFromUses ? static_cast<float>(a_stats.uses) : 0.0f;
 			const auto progressPoints = static_cast<std::uint32_t>(std::max(0.0f, rawPoints * std::max(0.0f, a_cfg.gainMultiplier)));
-			const auto [cur, next] = ProgressMeta(a_cfg.thresholds, progressPoints);
-			const float pct = next == 0 ? 1.0f : std::clamp(static_cast<float>(cur) / static_cast<float>(next), 0.0f, 1.0f);
+			const auto derivedLevel = ComputeLevelFromProgress(a_cfg.thresholds, progressPoints);
+			const auto progress = ProgressMeta(a_cfg.thresholds, progressPoints, derivedLevel);
 			return {
 				{ "name", a_key.name },
 				{ "formID", a_key.formID },
 				{ "type", "Shout" },
 				{ "uses", a_stats.uses },
-				{ "level", a_stats.level },
-				{ "progressPoints", cur },
-				{ "nextThreshold", next },
-				{ "progressPct", pct }
+				{ "level", derivedLevel },
+				{ "progressPoints", progress.current },
+				{ "nextThreshold", progress.next },
+				{ "progressPct", progress.pct }
 			};
 		}
 
@@ -248,8 +276,8 @@ namespace SB_OVERHAUL
 			if (a_cfg.timeBasedLeveling) points += a_stats.secondsEquipped / 5.0f;
 			points *= std::max(0.0f, a_cfg.gainMultiplier);
 			const auto progressPoints = static_cast<std::uint32_t>(std::max(0.0f, points));
-			const auto [cur, next] = ProgressMeta(a_cfg.thresholds, progressPoints);
-			const float pct = next == 0 ? 1.0f : std::clamp(static_cast<float>(cur) / static_cast<float>(next), 0.0f, 1.0f);
+			const auto derivedLevel = ComputeLevelFromProgress(a_cfg.thresholds, progressPoints);
+			const auto progress = ProgressMeta(a_cfg.thresholds, progressPoints, derivedLevel);
 			return {
 				{ "name", a_key.baseName },
 				{ "uniqueID", a_key.uniqueID },
@@ -262,10 +290,10 @@ namespace SB_OVERHAUL
 				{ "powerHits", a_stats.powerHits },
 				{ "blocks", a_stats.blocks },
 				{ "secondsEquipped", a_stats.secondsEquipped },
-				{ "level", a_stats.level },
-				{ "progressPoints", cur },
-				{ "nextThreshold", next },
-				{ "progressPct", pct }
+				{ "level", derivedLevel },
+				{ "progressPoints", progress.current },
+				{ "nextThreshold", progress.next },
+				{ "progressPct", progress.pct }
 			};
 		}
 
@@ -680,8 +708,7 @@ namespace SB_OVERHAUL
 						{ "weaponDrawnOnlyDefault", cfg.global.weaponDrawnOnlyDefault },
 						{ "preventCastingInMenus", cfg.global.preventCastingInMenus },
 						{ "preventCastingWhileStaggered", cfg.global.preventCastingWhileStaggered },
-						{ "preventCastingWhileRagdoll", cfg.global.preventCastingWhileRagdoll },
-						{ "minTimeAfterLoadSeconds", cfg.global.minTimeAfterLoadSeconds }
+						{ "preventCastingWhileRagdoll", cfg.global.preventCastingWhileRagdoll }
 					} },
 					{ "triggers", std::move(triggers) }
 				} },
@@ -871,6 +898,13 @@ namespace SB_OVERHAUL
 						if (idx0 < static_cast<int>(cfg.chains.size())) {
 							cfg.chains[static_cast<std::size_t>(idx0)].hotkey = payload.value("value", cfg.chains[static_cast<std::size_t>(idx0)].hotkey);
 						}
+					} else if (id == "chain.step.stepDelaySec") {
+						const auto index = payload.value("index", 1);
+						const auto idx0 = std::max(0, index - 1);
+						if (idx0 < static_cast<int>(cfg.chains.size())) {
+							auto value = payload.value("value", cfg.chains[static_cast<std::size_t>(idx0)].stepDelaySec);
+							cfg.chains[static_cast<std::size_t>(idx0)].stepDelaySec = std::clamp(value, 0.5f, 3.0f);
+						}
 					} else if (id == "chain.step.holdSec" || id == "chain.step.castCount") {
 						const auto index = payload.value("index", 1);
 						const auto step = payload.value("step", 0);
@@ -895,9 +929,7 @@ namespace SB_OVERHAUL
 
 			if (module == "quickBuff") {
 				auto cfg = QUICK_BUFF::Manager::GetSingleton()->GetConfig();
-				if (id == "global.minTimeAfterLoadSeconds") {
-					cfg.global.minTimeAfterLoadSeconds = payload.value("value", cfg.global.minTimeAfterLoadSeconds);
-				} else if (id == "trigger.enabled" || id == "trigger.spellFormID" || id == "trigger.cooldownSec") {
+				if (id == "trigger.enabled" || id == "trigger.spellFormID" || id == "trigger.cooldownSec") {
 					const auto trigger = ParseTriggerID(payload.value("trigger", std::string{ "combatStart" }));
 					auto& triggerCfg = cfg.Get(trigger);
 					if (id == "trigger.enabled") triggerCfg.enabled = payload.value("value", triggerCfg.enabled);

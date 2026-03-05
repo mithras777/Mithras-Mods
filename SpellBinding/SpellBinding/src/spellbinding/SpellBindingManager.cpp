@@ -643,11 +643,10 @@ namespace SBIND
 		const auto next = (static_cast<std::uint32_t>(config.currentBindSlotMode) + 1u) % 3u;
 		config.currentBindSlotMode = ParseAttackSlot(next);
 		SetConfig(config, true);
-		{
-			std::scoped_lock lock(m_lock);
-			m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
-		}
-		Notify(std::format("SpellBinding: bind slot -> {}", AttackSlotLabel(config.currentBindSlotMode)));
+	{
+		std::scoped_lock lock(m_lock);
+		m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+	}
 	}
 
 	void Manager::OnPowerAttackInputStart()
@@ -827,6 +826,23 @@ namespace SBIND
 		}
 		m_runtime.chainRecordingActive = a_recording;
 		if (!a_recording) {
+			m_runtime.lastChainSwitchWorldTimeSec = m_runtime.worldTimeSec;
+		}
+	}
+
+	void Manager::NotifyChainPlayingState(std::int32_t a_chainIndex1Based, std::string_view a_chainName, bool a_playing)
+	{
+		std::scoped_lock lock(m_lock);
+		const auto chainName = std::string(a_chainName);
+		if (!chainName.empty()) {
+			m_runtime.lastChainHudText = chainName;
+		} else {
+			const auto safeIndex = std::max(1, a_chainIndex1Based);
+			m_runtime.lastChainHudText = std::format("Chain {}", safeIndex);
+		}
+		m_runtime.chainPlayingActive = a_playing;
+		m_runtime.lastChainPlayingWorldTimeSec = m_runtime.worldTimeSec;
+		if (!a_playing) {
 			m_runtime.lastChainSwitchWorldTimeSec = m_runtime.worldTimeSec;
 		}
 	}
@@ -1611,7 +1627,8 @@ namespace SBIND
 		const bool cycleVisible = (m_runtime.worldTimeSec - m_runtime.lastCycleSwitchWorldTimeSec) <= 2.0f;
 		const bool inCombat = player ? player->IsInCombat() : false;
 		const bool chainPopupVisible = (m_runtime.worldTimeSec - m_runtime.lastChainSwitchWorldTimeSec) <= 2.0f;
-		const bool chainVisible = m_runtime.chainRecordingActive || chainPopupVisible || (m_config.hudChainAlwaysShowInCombat && inCombat);
+		const bool chainPlayingRecently = (m_runtime.worldTimeSec - m_runtime.lastChainPlayingWorldTimeSec) <= 2.0f;
+		const bool chainVisible = m_runtime.chainRecordingActive || m_runtime.chainPlayingActive || chainPlayingRecently || chainPopupVisible || (m_config.hudChainAlwaysShowInCombat && inCombat);
 
 		root["donut"] = {
 			{ "visible", donutVisible && !m_runtime.hudDragModeActive },
@@ -1641,7 +1658,9 @@ namespace SBIND
 			{ "dragMode", m_runtime.hudDragModeActive },
 			{ "alwaysShowInCombat", m_config.hudChainAlwaysShowInCombat },
 			{ "isRecording", m_runtime.chainRecordingActive },
-			{ "recordingChainText", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText }
+			{ "recordingChainText", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText },
+			{ "isPlaying", m_runtime.chainPlayingActive },
+			{ "playingChainText", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText }
 		};
 
 		// Legacy donut fields for compatibility while web HUD parser migrates.

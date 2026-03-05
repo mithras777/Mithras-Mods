@@ -254,7 +254,9 @@ function isCooldownSpellType(spellType) {
 }
 
 function formatScanCode(scan) {
-  const code = SPELLBIND_CODE_BY_SCAN[Number(scan)];
+  const numeric = Number(scan);
+  if (!Number.isFinite(numeric)) return 'G';
+  const code = SPELLBIND_CODE_BY_SCAN[numeric];
   if (!code) return `Key ${scan}`;
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
@@ -278,7 +280,8 @@ function App() {
   const [tab, setTab] = useState('spellBinding');
   const [masteryTab, setMasteryTab] = useState('spells');
   const [masterySearch, setMasterySearch] = useState('');
-  const [masteryTypeFilter, setMasteryTypeFilter] = useState('all');
+  const [masteryTypeFilterByTab, setMasteryTypeFilterByTab] = useState({ spells: 'all', shouts: 'all', weapons: 'all' });
+  const [masteryFilterOpen, setMasteryFilterOpen] = useState(false);
   const [masterySort, setMasterySort] = useState({ key: 'name', dir: 'asc' });
   const [smartCastActiveChain, setSmartCastActiveChain] = useState(1);
   const [sbSearch, setSbSearch] = useState('');
@@ -311,6 +314,8 @@ function App() {
     chain: { x: 48, y: 216 }
   });
   const captureFieldRef = useRef(null);
+  const masteryFilterRef = useRef(null);
+  const previousChainsLengthRef = useRef(0);
 
   const sb = snapshot.spellBinding || {};
   const sc = snapshot.smartCast || {};
@@ -672,7 +677,9 @@ function App() {
   };
 
   const chains = byPath(sc, ['config', 'chains'], []);
-  const selectedChain = chains[Math.max(0, smartCastActiveChain - 1)] || { name: `Chain ${smartCastActiveChain}`, steps: [] };
+  const activeChainIndex = chains.length ? Math.max(0, Math.min(chains.length - 1, smartCastActiveChain - 1)) : 0;
+  const selectedChain = chains[activeChainIndex] || { name: `Chain ${smartCastActiveChain}`, steps: [] };
+  const selectedChainStepDelay = Number(byPath(sc, ['config', 'chains', activeChainIndex, 'stepDelaySec'], Number(selectedChain.stepDelaySec || 1.0)));
   const smartCastKnownSpellMap = useMemo(() => {
     const map = new Map();
     (sc.knownSpells || []).forEach((spell) => {
@@ -680,15 +687,28 @@ function App() {
     });
     return map;
   }, [sc.knownSpells]);
+  const smartCastTotalCost = useMemo(() => {
+    return (selectedChain.steps || []).reduce((sum, step) => {
+      const spell = smartCastKnownSpellMap.get(String(step.spellFormID || '')) || {};
+      const baseCost = Math.max(0, Number(spell.magickaCost || 0));
+      const isConc = Number(step.type || 0) === 1;
+      if (isConc) {
+        const holdSec = Math.max(0, Number(step.holdSec || 0.15));
+        return sum + baseCost * holdSec;
+      }
+      const casts = Math.max(1, Number(step.castCount || 1));
+      return sum + baseCost * casts;
+    }, 0);
+  }, [selectedChain.steps, smartCastKnownSpellMap]);
   const weaponMasteryRows = byPath(mastery, ['weapon', 'rows'], []);
   const weaponMasteryLevel = useMemo(() => {
     const uniqueID = Number(byPath(sb, ['currentWeapon', 'key', 'uniqueID'], 0));
     const name = String(byPath(sb, ['currentWeapon', 'displayName'], ''));
     const byId = weaponMasteryRows.find((row) => Number(row.uniqueID || 0) === uniqueID && uniqueID !== 0);
-    if (byId) return Number(byId.level || 1);
+    if (byId) return Number(byId.level || 0);
     const byName = weaponMasteryRows.find((row) => String(row.name || '') === name);
-    if (byName) return Number(byName.level || 1);
-    return 1;
+    if (byName) return Number(byName.level || 0);
+    return 0;
   }, [weaponMasteryRows, sb]);
 
   const masteryRowsRaw = useMemo(() => {
@@ -698,17 +718,19 @@ function App() {
   }, [mastery, masteryTab]);
 
   const masteryTypes = useMemo(() => {
+    if (masteryTab === 'shouts') return [];
     const set = new Set();
     masteryRowsRaw.forEach((row) => set.add(String(row.type || 'Unknown')));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [masteryRowsRaw]);
+  }, [masteryRowsRaw, masteryTab]);
 
   const masteryRows = useMemo(() => {
     const query = masterySearch.toLowerCase().trim();
+    const activeTypeFilter = masteryTypeFilterByTab[masteryTab] || 'all';
     const filtered = masteryRowsRaw.filter((row) => {
       const type = String(row.type || 'Unknown');
       const name = String(row.name || '');
-      const passesType = masteryTypeFilter === 'all' || type === masteryTypeFilter;
+      const passesType = masteryTab === 'shouts' || activeTypeFilter === 'all' || type === activeTypeFilter;
       const hay = `${name} ${type}`.toLowerCase();
       const passesSearch = !query || hay.includes(query);
       return passesType && passesSearch;
@@ -716,13 +738,14 @@ function App() {
 
     const sorted = [...filtered].sort((a, b) => {
       const dir = masterySort.dir === 'asc' ? 1 : -1;
+      if (masterySort.key === 'uses') return (Number(a.uses || 0) - Number(b.uses || 0)) * dir;
       if (masterySort.key === 'level') return (Number(a.level || 0) - Number(b.level || 0)) * dir;
       if (masterySort.key === 'type') return String(a.type || '').localeCompare(String(b.type || '')) * dir;
       if (masterySort.key === 'progress') return (Number(a.progressPct || 0) - Number(b.progressPct || 0)) * dir;
       return String(a.name || '').localeCompare(String(b.name || '')) * dir;
     });
     return sorted;
-  }, [masteryRowsRaw, masterySearch, masteryTypeFilter, masterySort]);
+  }, [masteryRowsRaw, masterySearch, masteryTypeFilterByTab, masterySort, masteryTab]);
 
   const toggleMasterySort = (key) => {
     setMasterySort((prev) => {
@@ -736,12 +759,27 @@ function App() {
   useEffect(() => {
     if (chains.length === 0) {
       setSmartCastActiveChain(1);
-      return;
-    }
-    if (smartCastActiveChain > chains.length) {
+    } else if (chains.length < previousChainsLengthRef.current && smartCastActiveChain > chains.length) {
       setSmartCastActiveChain(chains.length);
     }
+    previousChainsLengthRef.current = chains.length;
   }, [chains.length, smartCastActiveChain]);
+
+  useEffect(() => {
+    if (!masteryFilterOpen) return;
+    const onClickOutside = (event) => {
+      if (!masteryFilterRef.current) return;
+      if (!masteryFilterRef.current.contains(event.target)) {
+        setMasteryFilterOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onClickOutside);
+    return () => window.removeEventListener('mousedown', onClickOutside);
+  }, [masteryFilterOpen]);
+
+  useEffect(() => {
+    setMasteryFilterOpen(false);
+  }, [masteryTab]);
 
   const panelStyle = windowState.isFullscreen
     ? {
@@ -760,11 +798,14 @@ function App() {
   const captureLabel = (field) => {
     if (captureField === field) return 'Press key to define...';
     if (field === 'sb.uiToggleKey') return String(byPath(sb, ['config', 'uiToggleKey'], 'Unset'));
-    if (field === 'sb.bindKey') return String(byPath(sb, ['config', 'bindKey'], 'Unset'));
+    if (field === 'sb.bindKey') {
+      const bindCode = Number(byPath(sb, ['config', 'bindKeyCode'], byPath(sb, ['config', 'bindKey'], 34)));
+      return formatScanCode(Number.isFinite(bindCode) ? bindCode : 34);
+    }
     if (field === 'sb.cycleSlotModifierKey') return formatScanCode(Number(byPath(sb, ['config', 'cycleSlotModifierKey'], 0)));
-    if (field === 'sc.record.toggleKey') return String(byPath(sc, ['config', 'global', 'record', 'toggleKey'], 'Unset'));
-    if (field === 'sc.playback.playKey') return String(byPath(sc, ['config', 'global', 'playback', 'playKey'], 'Unset'));
-    if (field === 'sc.playback.cycleModifierKey') return String(byPath(sc, ['config', 'global', 'playback', 'cycleModifierKey'], 'None'));
+    if (field === 'sc.record.toggleKey') return String(byPath(sc, ['config', 'global', 'record', 'toggleKey'], 'H'));
+    if (field === 'sc.playback.playKey') return String(byPath(sc, ['config', 'global', 'playback', 'playKey'], 'X'));
+    if (field === 'sc.playback.cycleModifierKey') return String(byPath(sc, ['config', 'global', 'playback', 'cycleModifierKey'], 'Shift'));
     if (field.startsWith('sc.chain.hotkey.')) {
       const idx = Math.max(0, Number(field.split('.').pop() || 1) - 1);
       return String(byPath(sc, ['config', 'chains', idx, 'hotkey'], 'None'));
@@ -994,6 +1035,17 @@ function App() {
                     onBlur={(e) => setSetting('smartCast', 'chain.name', e.target.value, { index: smartCastActiveChain })}
                   />
                   <div className="chain-actions-right">
+                    <label className="chain-delay-control inline">
+                      <span>{selectedChainStepDelay.toFixed(2)}s</span>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="3"
+                        step="0.05"
+                        value={selectedChainStepDelay}
+                        onChange={(e) => setSetting('smartCast', 'chain.step.stepDelaySec', Number(e.target.value || 1.0), { index: smartCastActiveChain })}
+                      />
+                    </label>
                     <button
                       className="btn hotkey-btn compact-hotkey-btn"
                       onClick={() => setCaptureField(`sc.chain.hotkey.${smartCastActiveChain}`)}
@@ -1016,56 +1068,59 @@ function App() {
                 <div className="scroll">
                   {(selectedChain.steps || []).length === 0 && <p className="meta">No recorded steps for this chain.</p>}
                   {(selectedChain.steps || []).length > 0 && (
-                    <table className="chain-step-table">
-                      <thead>
-                        <tr>
-                          <th>Spell</th>
-                          <th>Cost</th>
-                          <th>Adjust</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(selectedChain.steps || []).map((step, idx) => {
-                          const spell = smartCastKnownSpellMap.get(String(step.spellFormID || '')) || {};
-                          const isConc = Number(step.type || 0) === 1;
-                          const spellName = spell.name || step.spellFormID || 'Unknown';
-                          const baseCost = Number(spell.magickaCost || 0);
-                          return (
-                            <tr key={`step-${idx}`}>
-                              <td>{spellName}</td>
-                              <td>{formatCostLabel(step, baseCost)}</td>
-                              <td>
-                                {isConc ? (
-                                  <label className="inline chain-step-slider">
-                                    <span>{Number(step.holdSec || 0.15).toFixed(2)}s</span>
-                                    <input
-                                      type="range"
-                                      min="0.10"
-                                      max="10.0"
-                                      step="0.05"
-                                      value={Number(step.holdSec || 0.15)}
-                                      onChange={(e) => setSetting('smartCast', 'chain.step.holdSec', Number(e.target.value || 0.15), { index: smartCastActiveChain, step: idx })}
-                                    />
-                                  </label>
-                                ) : (
-                                  <label className="inline chain-step-slider">
-                                    <span>x{Math.max(1, Number(step.castCount || 1))}</span>
-                                    <input
-                                      type="range"
-                                      min="1"
-                                      max="10"
-                                      step="1"
-                                      value={Math.max(1, Number(step.castCount || 1))}
-                                      onChange={(e) => setSetting('smartCast', 'chain.step.castCount', Math.max(1, Number(e.target.value || 1)), { index: smartCastActiveChain, step: idx })}
-                                    />
-                                  </label>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                    <>
+                      <table className="chain-step-table">
+                        <thead>
+                          <tr>
+                            <th>Spell</th>
+                            <th>Cost</th>
+                            <th>Adjust</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedChain.steps || []).map((step, idx) => {
+                            const spell = smartCastKnownSpellMap.get(String(step.spellFormID || '')) || {};
+                            const isConc = Number(step.type || 0) === 1;
+                            const spellName = spell.name || step.spellFormID || 'Unknown';
+                            const baseCost = Number(spell.magickaCost || 0);
+                            return (
+                              <tr key={`step-${idx}`}>
+                                <td>{spellName}</td>
+                                <td>{formatCostLabel(step, baseCost)}</td>
+                                <td>
+                                  {isConc ? (
+                                    <label className="inline chain-step-slider">
+                                      <span>{Number(step.holdSec || 0.15).toFixed(2)}s</span>
+                                      <input
+                                        type="range"
+                                        min="0.10"
+                                        max="10.0"
+                                        step="0.05"
+                                        value={Number(step.holdSec || 0.15)}
+                                        onChange={(e) => setSetting('smartCast', 'chain.step.holdSec', Number(e.target.value || 0.15), { index: smartCastActiveChain, step: idx })}
+                                      />
+                                    </label>
+                                  ) : (
+                                    <label className="inline chain-step-slider">
+                                      <span>x{Math.max(1, Number(step.castCount || 1))}</span>
+                                      <input
+                                        type="range"
+                                        min="1"
+                                        max="10"
+                                        step="1"
+                                        value={Math.max(1, Number(step.castCount || 1))}
+                                        onChange={(e) => setSetting('smartCast', 'chain.step.castCount', Math.max(1, Number(e.target.value || 1)), { index: smartCastActiveChain, step: idx })}
+                                      />
+                                    </label>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <div className="chain-total-cost">Total Magicka Cost: {smartCastTotalCost.toFixed(1)}</div>
+                    </>
                   )}
                 </div>
               </article>
@@ -1142,17 +1197,41 @@ function App() {
                     value={masterySearch}
                     onChange={(e) => setMasterySearch(e.target.value)}
                   />
-                  <div className="mastery-filter-wrap">
-                    <Filter size={14} strokeWidth={2} />
-                    <select value={masteryTypeFilter} onChange={(e) => setMasteryTypeFilter(e.target.value)}>
-                      <option value="all">All Types</option>
-                      {masteryTypes.map((type) => (
-                        <option key={`mastery-type-${type}`} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {masteryTab !== 'shouts' && (
+                    <div className="mastery-filter-wrap" ref={masteryFilterRef}>
+                      <button className="mastery-filter-trigger" onClick={() => setMasteryFilterOpen((v) => !v)}>
+                        <Filter size={14} strokeWidth={2} />
+                        <span>{masteryTypeFilterByTab[masteryTab] === 'all' ? 'All Types' : (masteryTypeFilterByTab[masteryTab] || 'All Types')}</span>
+                      </button>
+                      {masteryFilterOpen && (
+                        <div className="mastery-filter-menu">
+                          <button
+                            className={(masteryTypeFilterByTab[masteryTab] || 'all') === 'all' ? 'mastery-filter-item active' : 'mastery-filter-item'}
+                            onClick={() => {
+                              setMasteryTypeFilterByTab((prev) => ({ ...prev, [masteryTab]: 'all' }));
+                              setMasteryFilterOpen(false);
+                            }}
+                          >
+                            All Types
+                          </button>
+                          {masteryTypes.map((type) => (
+                            <button
+                              key={`mastery-type-${type}`}
+                              className={(masteryTypeFilterByTab[masteryTab] || 'all') === type ? 'mastery-filter-item active' : 'mastery-filter-item'}
+                              onClick={() => {
+                                setMasteryTypeFilterByTab((prev) => ({ ...prev, [masteryTab]: type }));
+                                setMasteryFilterOpen(false);
+                              }}
+                            >
+                              {type}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="scroll mastery-table-wrap">
+                <div className={masteryTab === 'weapons' ? 'mastery-table-wrap mastery-table-wrap-weapons' : 'scroll mastery-table-wrap'}>
                   <table className="mastery-table">
                     <thead>
                       <tr>
@@ -1166,7 +1245,11 @@ function App() {
                             Type <ArrowUpDown size={13} strokeWidth={2} />
                           </button>
                         </th>
-                        <th>Uses</th>
+                        <th>
+                          <button className="table-sort-btn" onClick={() => toggleMasterySort('uses')}>
+                            Uses <ArrowUpDown size={13} strokeWidth={2} />
+                          </button>
+                        </th>
                         <th>
                           <button className="table-sort-btn" onClick={() => toggleMasterySort('progress')}>
                             Progression <ArrowUpDown size={13} strokeWidth={2} />
@@ -1185,7 +1268,8 @@ function App() {
                         const hits = Number(row.hits || 0);
                         const progressPoints = Number(row.progressPoints || 0);
                         const nextThreshold = Math.max(1, Number(row.nextThreshold || 1));
-                        const progressPct = Math.max(0, Math.min(100, Number(row.progressPct || 0)));
+                        const progressRatio = Math.max(0, Math.min(1, Number(row.progressPct || 0)));
+                        const progressPct = progressRatio * 100;
                         const usesCell = masteryTab === 'weapons' ? `${uses} / ${hits}` : `${uses}`;
                         return (
                           <tr key={`m-${masteryTab}-${idx}-${row.name || 'unknown'}`}>
@@ -1200,7 +1284,7 @@ function App() {
                                 </div>
                               </div>
                             </td>
-                            <td>{Number(row.level || 1)}</td>
+                            <td>{Number(row.level ?? 0)}</td>
                           </tr>
                         );
                       })}
@@ -1235,15 +1319,10 @@ function App() {
             <section className="settings-body">
               {settingsTab === 'spellBinding' && (
                 <div className="setting-grid">
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'enabled'], true)} onChange={(e) => setSetting('spellBinding', 'enabled', e.target.checked)} /> Enabled</label>
                   <label>UI Toggle Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.uiToggleKey')}>{captureLabel('sb.uiToggleKey')}</button></label>
                   <label>Bind Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.bindKey')}>{captureLabel('sb.bindKey')}</button></label>
                   <label>Cycle Modifier Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.cycleSlotModifierKey')}>{captureLabel('sb.cycleSlotModifierKey')}</button></label>
                   <label>Fallback Dedupe (s) <input type="number" step="0.1" min="0.5" max="5" value={Number(byPath(sb, ['config', 'fallbackDedupeSec'], 1.5)).toFixed(1)} onChange={(e) => setSetting('spellBinding', 'fallbackDedupeSec', Number(e.target.value || 1.5))} /></label>
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'showHudNotifications'], true)} onChange={(e) => setSetting('spellBinding', 'showHudNotifications', e.target.checked)} /> Show HUD Notifications</label>
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'enableSoundCues'], true)} onChange={(e) => setSetting('spellBinding', 'enableSoundCues', e.target.checked)} /> Enable Sound Cues</label>
-                  <label>Sound Cue Volume <input type="number" min="0" max="1" step="0.05" value={Number(byPath(sb, ['config', 'soundCueVolume'], 0.45)).toFixed(2)} onChange={(e) => setSetting('spellBinding', 'soundCueVolume', Number(e.target.value || 0))} /></label>
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'blacklistEnabled'], true)} onChange={(e) => setSetting('spellBinding', 'blacklistEnabled', e.target.checked)} /> Enable Blacklist</label>
                 </div>
               )}
 
@@ -1252,7 +1331,6 @@ function App() {
                   <label>Record Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.record.toggleKey')}>{captureLabel('sc.record.toggleKey')}</button></label>
                   <label>Play Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.playback.playKey')}>{captureLabel('sc.playback.playKey')}</button></label>
                   <label>Cycle Modifier <button className="btn hotkey-btn" onClick={() => setCaptureField('sc.playback.cycleModifierKey')}>{captureLabel('sc.playback.cycleModifierKey')}</button></label>
-                  <label>Step Delay (s) <input type="number" min="0" max="2" step="0.01" value={Number(byPath(sc, ['config', 'global', 'playback', 'stepDelaySec'], 0.1)).toFixed(2)} onChange={(e) => setSetting('smartCast', 'playback.stepDelaySec', Number(e.target.value || 0.1))} /></label>
                   <label className="checkbox-inline">
                     <input
                       type="checkbox"
@@ -1266,7 +1344,7 @@ function App() {
 
               {settingsTab === 'quickBuff' && (
                 <div className="setting-grid">
-                  <label>Min Time After Load (s) <input type="number" min="0" max="30" step="0.5" value={Number(byPath(qb, ['config', 'global', 'minTimeAfterLoadSeconds'], 2)).toFixed(1)} onChange={(e) => setSetting('quickBuff', 'global.minTimeAfterLoadSeconds', Number(e.target.value || 0))} /></label>
+                  <p className="meta">More settings coming soon.</p>
                 </div>
               )}
 

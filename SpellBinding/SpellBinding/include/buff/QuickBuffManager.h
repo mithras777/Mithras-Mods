@@ -59,7 +59,6 @@ namespace QUICK_BUFF
 		bool preventCastingInMenus{ true };
 		bool preventCastingWhileStaggered{ true };
 		bool preventCastingWhileRagdoll{ true };
-		float minTimeAfterLoadSeconds{ 2.0f };
 	};
 
 	struct Config
