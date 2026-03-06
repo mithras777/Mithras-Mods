@@ -39,7 +39,7 @@ The mod targets the movement form records themselves, which means the behavior a
 - On disable (if configured).
 - During shutdown (if configured).
 - During re-apply cycles before writing new values.
-- Sends movement refresh pulses (graph variables + sprint start/stop events) across active actors to force state refresh after changes.
+- Applies movement changes without forcing refresh pulses.
 
 ### 5. NPC compatibility logic
 - Resolves base NPC default movement and additionally syncs one-handed and two-handed NPC movement forms.

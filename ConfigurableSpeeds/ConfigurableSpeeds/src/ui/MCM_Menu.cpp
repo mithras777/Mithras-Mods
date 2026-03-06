@@ -53,6 +53,12 @@ namespace UI::MCM
 			replaceAll(out, "PowerAttacking", "Power Attacking");
 			replaceAll(out, "MagicCasting", "Magic Casting");
 			replaceAll(out, "ShieldCharge", "Shield Charge");
+			if (out == "Bow") {
+				out = "Bow Not Drawn";
+			}
+			if (out == "Magic") {
+				out = "Magic Not Casting";
+			}
 
 			std::replace(out.begin(), out.end(), '_', ' ');
 			return out;
@@ -242,8 +248,7 @@ namespace UI::MCM
 			ImGui::PushTextWrapPos(0.0f);
 			ImGui::TextColored(
 				ImVec4(0.90f, 0.75f, 1.00f, 1.00f),
-				"Tip: Speed changes apply after your movement state updates. "
-				"After changing a value, briefly sprint to refresh.");
+				"Tip: Speed changes apply after your movement state updates.");
 			ImGui::PopTextWrapPos();
 		}
 	}

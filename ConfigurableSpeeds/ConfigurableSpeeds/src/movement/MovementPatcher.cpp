@@ -20,39 +20,7 @@ namespace MOVEMENT
 
 		void RefreshActiveActorMovement()
 		{
-			auto* processLists = RE::ProcessLists::GetSingleton();
-			if (!processLists) {
-				return;
-			}
-
-			static const RE::BSFixedString kSprintStartLower("sprintStart");
-			static const RE::BSFixedString kSprintStopLower("sprintStop");
-			static const RE::BSFixedString kSprintStartUpper("SprintStart");
-			static const RE::BSFixedString kSprintStopUpper("SprintStop");
-			static const RE::BSFixedString kIsSprinting("IsSprinting");
-			static const RE::BSFixedString kSyncSprintState("iSyncSprintState");
-			static const RE::BSFixedString kSpeedSynced("bSpeedSynced");
-
-			processLists->ForAllActors([](RE::Actor* a_actor) {
-				if (!a_actor || a_actor->IsDead()) {
-					return RE::BSContainer::ForEachResult::kContinue;
-				}
-
-				// Force a deterministic sprint state pulse so movement state machines refresh immediately.
-				a_actor->SetGraphVariableBool(kSpeedSynced, false);
-				a_actor->SetGraphVariableBool(kIsSprinting, true);
-				a_actor->SetGraphVariableInt(kSyncSprintState, 1);
-				a_actor->NotifyAnimationGraph(kSprintStartLower);
-				a_actor->NotifyAnimationGraph(kSprintStartUpper);
-
-				a_actor->SetGraphVariableBool(kIsSprinting, false);
-				a_actor->SetGraphVariableInt(kSyncSprintState, 0);
-				a_actor->NotifyAnimationGraph(kSprintStopLower);
-				a_actor->NotifyAnimationGraph(kSprintStopUpper);
-				a_actor->SetGraphVariableBool(kSpeedSynced, false);
-
-				return RE::BSContainer::ForEachResult::kContinue;
-			});
+			// Intentionally no-op: do not force movement refresh pulses.
 		}
 	}
 
