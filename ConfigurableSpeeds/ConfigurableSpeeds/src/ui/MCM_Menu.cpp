@@ -248,7 +248,8 @@ namespace UI::MCM
 			ImGui::PushTextWrapPos(0.0f);
 			ImGui::TextColored(
 				ImVec4(0.90f, 0.75f, 1.00f, 1.00f),
-				"Tip: Speed changes apply after your movement state updates.");
+				"Tip: Speed changes apply after your movement state updates. "
+				"After changing a value, briefly sprint to refresh.");
 			ImGui::PopTextWrapPos();
 		}
 	}
