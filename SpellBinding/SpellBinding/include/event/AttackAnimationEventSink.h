@@ -7,6 +7,7 @@ namespace SB_EVENT
 	{
 	public:
 		static void Register();
+		static void RebindToPlayer();
 
 	private:
 		RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_eventSource) override;
