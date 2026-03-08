@@ -623,7 +623,20 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 			const bool now = IsKeyDown(key);
 			const bool pressed = now && !m_runtime.chainKeyWasDown[i];
 			m_runtime.chainKeyWasDown[i] = now;
-			if (allowPlaybackHotkeys && pressed) {
+			if (!pressed) {
+				continue;
+			}
+			if (cycleModifierDown) {
+				m_runtime.activeChainIndex = static_cast<std::int32_t>(i);
+				std::string chainName = std::format("Chain {}", i + 1);
+				const auto& configured = m_config.chains[i].name;
+				if (!configured.empty()) {
+					chainName = configured;
+				}
+				SBIND::Manager::GetSingleton()->NotifyChainSwitch(static_cast<std::int32_t>(i + 1), chainName);
+				continue;
+			}
+			if (allowPlaybackHotkeys) {
 				StartPlayback(static_cast<std::int32_t>(i + 1));
 				break;
 			}
@@ -765,29 +778,38 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 		return true;
 	}
 
-	bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* spell, CastOn castOn, bool, RE::ObjectRefHandle* targetOut, bool* castOnSelfOut)
-	{
-		auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-		if (!caster) caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
-		if (!caster) return false;
+bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* spell, CastOn castOn, bool, RE::ObjectRefHandle* targetOut, bool* castOnSelfOut)
+{
+	if (!player || !spell) return false;
+	auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+	if (!caster) return false;
 
 		RE::TESObjectREFR* target = player;
 		bool castOnSelf = true;
 
-		if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf || castOn == CastOn::kSelf) {
-			target = player;
-			castOnSelf = true;
-		} else {
-			// "Aimed" behavior: let the engine cast forward from current view/aim without crosshair target forcing.
-			target = player;
-			castOnSelf = false;
-		}
-
-		caster->CastSpellImmediate(spell, castOnSelf, target, 1.0f, false, 0.0f, player);
-		if (targetOut) *targetOut = castOnSelf ? RE::ObjectRefHandle{} : target->CreateRefHandle();
-		if (castOnSelfOut) *castOnSelfOut = castOnSelf;
-		return true;
+	if (spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf || castOn == CastOn::kSelf) {
+		target = player;
+		castOnSelf = true;
+	} else {
+		auto combatTarget = player->GetActorRuntimeData().currentCombatTarget.get();
+		target = combatTarget ? static_cast<RE::TESObjectREFR*>(combatTarget.get()) : nullptr;
+		castOnSelf = false;
 	}
+
+	if (spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+		caster->currentSpellCost = std::max(0.0f, spell->CalculateMagickaCost(player));
+	}
+	caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, castOnSelf ? nullptr : player);
+	if (spell->GetDelivery() == RE::MagicSystem::Delivery::kTargetLocation &&
+	    spell->GetCastingType() != RE::MagicSystem::CastingType::kConcentration &&
+	    player->IsCasting(spell)) {
+		player->InterruptCast(false);
+		return false;
+	}
+	if (targetOut) *targetOut = castOnSelf ? RE::ObjectRefHandle{} : target->CreateRefHandle();
+	if (castOnSelfOut) *castOnSelfOut = castOnSelf;
+	return true;
+}
 
 	void Controller::UpdateRecording(RE::PlayerCharacter* player, float delta)
 	{
@@ -828,14 +850,12 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 			if (m_runtime.concentrationTickTimer <= 0.0f && !m_runtime.activeConcentrationSpell.empty()) {
 				if (auto* spell = ResolveSpell(m_runtime.activeConcentrationSpell)) {
 					auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-					if (!caster) {
-						caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
-					}
 					if (caster) {
 						auto targetPtr = m_runtime.playbackTarget.get();
 						auto* target = m_runtime.playbackCastOnSelf ? static_cast<RE::TESObjectREFR*>(player) : targetPtr.get();
 						if (target) {
-							caster->CastSpellImmediate(spell, m_runtime.playbackCastOnSelf, target, 1.0f, false, 0.0f, player);
+							caster->currentSpellCost = std::max(0.0f, spell->CalculateMagickaCost(player));
+							caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, m_runtime.playbackCastOnSelf ? nullptr : player);
 							SBO::MASTERY_SPELL::Manager::GetSingleton()->OnDirectSpellCast(spell);
 							SBO::MASTERY_SHOUT::Manager::GetSingleton()->OnDirectSpellCast(spell->GetFormID());
 						}

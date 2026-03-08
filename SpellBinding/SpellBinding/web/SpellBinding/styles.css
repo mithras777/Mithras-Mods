@@ -121,7 +121,7 @@ body {
 }
 
 .grid { height: 100%; min-height: 0; display: grid; gap: 12px; }
-.sb-grid { grid-template-columns: 1fr 1fr 1.15fr; }
+.sb-grid { grid-template-columns: minmax(260px, 0.92fr) minmax(540px, 1.58fr); }
 .sc-grid { grid-template-columns: 1fr; }
 .qb-grid { grid-template-columns: 0.9fr 2.1fr; }
 .mastery-grid { grid-template-columns: 1fr; }
@@ -152,8 +152,12 @@ body {
   display: grid;
   gap: 8px;
 }
+.equipped-center {
+  justify-items: center;
+}
 .preview-weapon-full {
   width: 100%;
+  max-width: 520px;
 }
 .preview-body-weapon {
   min-height: 54px;
@@ -165,6 +169,23 @@ body {
 }
 .attack-slot-card {
   min-height: 0;
+}
+.compact-slot-grid {
+  width: 100%;
+  max-width: 720px;
+}
+.compact-slot-card .preview-body {
+  min-height: 120px;
+}
+.slot-body-tight {
+  align-content: start;
+}
+.slot-slider-inline {
+  width: 100%;
+  justify-content: space-between;
+}
+.slot-slider-inline input[type='range'] {
+  width: 52%;
 }
 .slot-header {
   display: flex;
@@ -350,6 +371,13 @@ input[type='checkbox']:checked::before { transform: scale(1); }
   grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: center;
+}
+.bound-weapons-card .item {
+  padding: 6px 7px;
+  gap: 6px;
+}
+.bound-weapons-card .meta {
+  font-size: 11px;
 }
 .item.single { grid-template-columns: 1fr; }
 .meta { color: var(--muted); margin: 0; font-size: 12px; }
@@ -756,7 +784,7 @@ input[type='checkbox']:checked::before { transform: scale(1); }
 }
 
 @media (max-width: 1320px) {
-  .sb-grid { grid-template-columns: 1fr 1fr; }
+  .sb-grid { grid-template-columns: 1fr; }
   .sc-grid { grid-template-columns: 1fr; }
   .qb-grid { grid-template-columns: 1fr; }
 }

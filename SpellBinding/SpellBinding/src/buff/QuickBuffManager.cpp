@@ -715,9 +715,6 @@ namespace QUICK_BUFF
 
 		auto* caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
 		if (!caster) {
-			caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
-		}
-		if (!caster) {
 			m_pendingConcentration.clear();
 			return;
 		}
@@ -743,7 +740,7 @@ namespace QUICK_BUFF
 				continue;
 			}
 
-				caster->CastSpellImmediate(spell, pending.castOnSelf, target, 1.0f, false, 0.0f, a_player);
+				caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, pending.castOnSelf ? nullptr : a_player);
 				NotifyMasteryCast(spell);
 				pending.tickTimer = kConcentrationTick;
 			}
@@ -863,13 +860,19 @@ namespace QUICK_BUFF
 
 		auto* caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
 		if (!caster) {
-			caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
-		}
-		if (!caster) {
 			return false;
 		}
 
-		caster->CastSpellImmediate(a_spell, a_castOnSelf, a_target, 1.0f, false, 0.0f, a_player);
+		if (a_spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+			caster->currentSpellCost = std::max(0.0f, a_spell->CalculateMagickaCost(a_player));
+		}
+		caster->CastSpellImmediate(a_spell, false, a_target, 1.0f, false, 0.0f, a_castOnSelf ? nullptr : a_player);
+		if (a_spell->GetDelivery() == RE::MagicSystem::Delivery::kTargetLocation &&
+		    a_spell->GetCastingType() != RE::MagicSystem::CastingType::kConcentration &&
+		    a_player->IsCasting(a_spell)) {
+			a_player->InterruptCast(false);
+			return false;
+		}
 		NotifyMasteryCast(a_spell);
 		return true;
 	}
@@ -902,13 +905,13 @@ namespace QUICK_BUFF
 			return a_player;
 		}
 
-		auto* crosshairTarget = GetCrosshairTarget();
-		if (!crosshairTarget) {
+		auto combatTarget = a_player->GetActorRuntimeData().currentCombatTarget.get();
+		if (!combatTarget) {
 			return nullptr;
 		}
 
 		a_castOnSelf = false;
-		return crosshairTarget;
+		return combatTarget.get();
 	}
 
 	RE::SpellItem* Manager::ResolveSpell(std::string_view a_formKey)

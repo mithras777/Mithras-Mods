@@ -7,7 +7,6 @@
 
 #include "RE/C/Calendar.h"
 #include "RE/M/MagicMenu.h"
-#include "RE/S/SendHUDMessage.h"
 
 #include "json/single_include/nlohmann/json.hpp"
 
@@ -26,7 +25,7 @@ namespace SBIND
 
 	namespace
 	{
-		constexpr std::uint32_t kSerializationVersion = 3;
+		constexpr std::uint32_t kSerializationVersion = 4;
 		constexpr std::uint32_t kBindingsRecord = 'SBND';
 		constexpr std::uint32_t kConfigVersion = 2;
 		constexpr float kMinWindowWidth = 960.0f;
@@ -34,7 +33,7 @@ namespace SBIND
 
 		constexpr float kDefaultWeaponCooldown = 1.5f;
 		constexpr bool kDefaultOnlyInCombat = false;
-		constexpr float kPendingLightDelaySec = 0.16f;
+		constexpr float kPendingLightDelaySec = 0.30f;
 
 		AttackSlot ParseAttackSlot(std::uint32_t a_slot)
 		{
@@ -90,6 +89,9 @@ namespace SBIND
 			writeString(a_slot.displayName);
 			a_intfc->WriteRecordData(a_slot.lastKnownCost);
 			a_intfc->WriteRecordData(a_slot.spellType);
+			a_intfc->WriteRecordData(a_slot.castHoldSec);
+			a_intfc->WriteRecordData(a_slot.castIntervalSec);
+			a_intfc->WriteRecordData(a_slot.castCount);
 			a_intfc->WriteRecordData(a_slot.enabled);
 		};
 
@@ -146,6 +148,16 @@ namespace SBIND
 				a_intfc->ReadRecordData(a_slot.spellType);
 				a_intfc->ReadRecordData(a_slot.enabled);
 			};
+			const auto readSlotV4 = [a_intfc, &readString](SlotBinding& a_slot) {
+				readString(a_slot.spellFormKey);
+				readString(a_slot.displayName);
+				a_intfc->ReadRecordData(a_slot.lastKnownCost);
+				a_intfc->ReadRecordData(a_slot.spellType);
+				a_intfc->ReadRecordData(a_slot.castHoldSec);
+				a_intfc->ReadRecordData(a_slot.castIntervalSec);
+				a_intfc->ReadRecordData(a_slot.castCount);
+				a_intfc->ReadRecordData(a_slot.enabled);
+			};
 
 			std::uint32_t count = 0;
 			a_intfc->ReadRecordData(count);
@@ -164,7 +176,13 @@ namespace SBIND
 				profile.triggerCooldownSec = kDefaultWeaponCooldown;
 				profile.onlyInCombat = kDefaultOnlyInCombat;
 
-				if (version >= 3) {
+				if (version >= 4) {
+					readSlotV4(profile.light);
+					readSlotV4(profile.power);
+					readSlotV4(profile.bash);
+					a_intfc->ReadRecordData(profile.triggerCooldownSec);
+					a_intfc->ReadRecordData(profile.onlyInCombat);
+				} else if (version >= 3) {
 					readSlot(profile.light);
 					readSlot(profile.power);
 					readSlot(profile.bash);
@@ -183,6 +201,14 @@ namespace SBIND
 				}
 
 				profile.triggerCooldownSec = std::clamp(profile.triggerCooldownSec, 0.5f, 5.0f);
+				auto clampSlot = [](SlotBinding& slot) {
+					slot.castHoldSec = std::clamp(slot.castHoldSec, 0.30f, 10.0f);
+					slot.castIntervalSec = std::clamp(slot.castIntervalSec, 0.0f, 1.0f);
+					slot.castCount = std::clamp(slot.castCount, 1u, 10u);
+				};
+				clampSlot(profile.light);
+				clampSlot(profile.power);
+				clampSlot(profile.bash);
 				loaded[key] = std::move(profile);
 			}
 		}
@@ -231,8 +257,6 @@ namespace SBIND
 				config.cycleSlotModifierKey = parsed.value("value", config.cycleSlotModifierKey);
 			} else if (id == "showHudNotifications") {
 				config.showHudNotifications = parsed.value("value", config.showHudNotifications);
-			} else if (id == "fallbackDedupeSec") {
-				config.fallbackDedupeSec = parsed.value("value", config.fallbackDedupeSec);
 			} else if (id == "enableSoundCues") {
 				config.enableSoundCues = parsed.value("value", config.enableSoundCues);
 			} else if (id == "soundCueVolume") {
@@ -285,6 +309,18 @@ namespace SBIND
 					profile.triggerCooldownSec = std::clamp(parsed.value("value", profile.triggerCooldownSec), 0.5f, 5.0f);
 				} else if (id == "onlyInCombat") {
 					profile.onlyInCombat = parsed.value("value", profile.onlyInCombat);
+				} else if (id == "castHoldSec" || id == "castIntervalSec" || id == "castCount") {
+					const auto slot = ParseAttackSlot(parsed.value("slot", 0u));
+					auto* slotBinding = GetSlotBinding(profile, slot);
+					if (slotBinding) {
+						if (id == "castHoldSec") {
+							slotBinding->castHoldSec = std::clamp(parsed.value("value", slotBinding->castHoldSec), 0.30f, 10.0f);
+						} else if (id == "castIntervalSec") {
+							slotBinding->castIntervalSec = std::clamp(parsed.value("value", slotBinding->castIntervalSec), 0.0f, 1.0f);
+						} else {
+							slotBinding->castCount = std::clamp(parsed.value("value", slotBinding->castCount), 1u, 10u);
+						}
+					}
 				}
 			}
 			PushUISnapshot();
@@ -362,6 +398,8 @@ namespace SBIND
 		}
 
 		if (!config.enabled || a_player->IsDead()) {
+			std::scoped_lock lock(m_lock);
+			StopActiveConcentration(a_player, true);
 			PushHUDSnapshot();
 			return;
 		}
@@ -370,9 +408,10 @@ namespace SBIND
 		{
 			std::scoped_lock lock(m_lock);
 			RefreshEquippedKeysLocked(a_player);
+			UpdateActiveConcentration(a_player, a_deltaTime);
 			if (m_runtime.pendingLightAttack && m_runtime.worldTimeSec >= m_runtime.pendingLightReadyAtWorldTimeSec) {
 				m_runtime.pendingLightAttack = false;
-				const bool shouldPromotePower = a_player->IsPowerAttacking() || (m_runtime.worldTimeSec <= m_runtime.recentPowerInputUntilSec);
+				const bool shouldPromotePower = IsPowerAttackActive(a_player);
 				triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, shouldPromotePower ? AttackSlot::kPower : AttackSlot::kLight, shouldPromotePower);
 			}
 		}
@@ -463,11 +502,6 @@ namespace SBIND
 		const bool hasAttackStart =
 			tag.find("attackstart") != std::string::npos ||
 			payload.find("attackstart") != std::string::npos;
-		const bool hasPowerStart =
-			tag.find("attackpowerstart") != std::string::npos ||
-			payload.find("attackpowerstart") != std::string::npos ||
-			tag.find("powerattack") != std::string::npos ||
-			payload.find("powerattack") != std::string::npos;
 		const bool hasBashStart =
 			tag.find("bash") != std::string::npos ||
 			payload.find("bash") != std::string::npos;
@@ -475,17 +509,22 @@ namespace SBIND
 		bool attemptedTrigger = false;
 		{
 			std::scoped_lock lock(m_lock);
-			const bool recentPowerInput = m_runtime.worldTimeSec <= m_runtime.recentPowerInputUntilSec;
-			if (hasPowerStart || ((player->IsPowerAttacking() || recentPowerInput) && hasAttackStart)) {
+			if (m_runtime.pendingLightAttack && IsPowerAttackActive(player, tag, payload)) {
 				m_runtime.pendingLightAttack = false;
 				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
-			} else if (hasBashStart) {
+			} else
+			if (hasBashStart) {
 				m_runtime.pendingLightAttack = false;
 				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kBash, false);
 			} else if (hasAttackStart) {
+				if (IsPowerAttackActive(player, tag, payload)) {
+					m_runtime.pendingLightAttack = false;
+					attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+				} else {
 				m_runtime.pendingLightAttack = true;
 				m_runtime.pendingLightReadyAtWorldTimeSec = m_runtime.worldTimeSec + kPendingLightDelaySec;
 				return;
+				}
 			} else {
 				const AttackSlot attackSlot = ResolveAttackSlot(tag, payload, player);
 				m_runtime.pendingLightAttack = false;
@@ -512,10 +551,6 @@ namespace SBIND
 		if (m_runtime.attackChainActive) {
 			return false;
 		}
-		if ((m_runtime.worldTimeSec - m_runtime.lastAttackTriggerWorldTimeSec) < m_config.fallbackDedupeSec) {
-			return false;
-		}
-
 		RefreshEquippedKeysLocked(a_player);
 		std::optional<BindingKey> keyOpt;
 		if (m_runtime.rightWeapon.has_value() && m_runtime.leftWeapon.has_value()) {
@@ -627,6 +662,9 @@ namespace SBIND
 				spell->GetName() ? spell->GetName() : "",
 				spell->CalculateMagickaCost(player),
 				static_cast<std::uint32_t>(spell->GetSpellType()),
+				1.5f,
+				0.0f,
+				1u,
 				true
 			};
 			m_runtime.lastError.clear();
@@ -647,12 +685,6 @@ namespace SBIND
 		std::scoped_lock lock(m_lock);
 		m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
 	}
-	}
-
-	void Manager::OnPowerAttackInputStart()
-	{
-		std::scoped_lock lock(m_lock);
-		m_runtime.recentPowerInputUntilSec = m_runtime.worldTimeSec + 0.35f;
 	}
 
 	bool Manager::BindSpellForSlotFromJson(const std::string& a_payload)
@@ -692,6 +724,9 @@ namespace SBIND
 					spell->GetName() ? spell->GetName() : "",
 					spell->CalculateMagickaCost(player),
 					static_cast<std::uint32_t>(spell->GetSpellType()),
+					1.5f,
+					0.0f,
+					1u,
 					true
 				};
 			}
@@ -881,7 +916,6 @@ namespace SBIND
 		m_config.bindKey = cfgNode.value("bindKey", m_config.bindKey);
 		m_config.showHudNotifications = cfgNode.value("showHudNotifications", m_config.showHudNotifications);
 		m_config.cycleSlotModifierKey = cfgNode.value("cycleSlotModifierKey", m_config.cycleSlotModifierKey);
-		m_config.fallbackDedupeSec = cfgNode.value("fallbackDedupeSec", m_config.fallbackDedupeSec);
 		m_config.enableSoundCues = cfgNode.value("enableSoundCues", m_config.enableSoundCues);
 		m_config.soundCueVolume = cfgNode.value("soundCueVolume", m_config.soundCueVolume);
 		m_config.hudDonutEnabled = cfgNode.value("hudDonutEnabled", m_config.hudDonutEnabled);
@@ -934,7 +968,6 @@ namespace SBIND
 			{ "bindKey", cfgCopy.bindKey },
 			{ "showHudNotifications", cfgCopy.showHudNotifications },
 			{ "cycleSlotModifierKey", cfgCopy.cycleSlotModifierKey },
-			{ "fallbackDedupeSec", cfgCopy.fallbackDedupeSec },
 			{ "enableSoundCues", cfgCopy.enableSoundCues },
 			{ "soundCueVolume", cfgCopy.soundCueVolume },
 			{ "hudDonutEnabled", cfgCopy.hudDonutEnabled },
@@ -987,7 +1020,6 @@ namespace SBIND
 	void Manager::ClampConfig(SpellBindingConfig& a_config) const
 	{
 		a_config.version = kConfigVersion;
-		a_config.fallbackDedupeSec = std::clamp(a_config.fallbackDedupeSec, 0.5f, 5.0f);
 		a_config.soundCueVolume = std::clamp(a_config.soundCueVolume, 0.0f, 1.0f);
 		a_config.hudDonutSize = std::clamp(a_config.hudDonutSize, 48.0f, 220.0f);
 		a_config.hudCycleSize = std::clamp(a_config.hudCycleSize, 36.0f, 200.0f);
@@ -1169,16 +1201,94 @@ namespace SBIND
 		auto contains = [](std::string_view text, std::string_view token) {
 			return text.find(token) != std::string_view::npos;
 		};
-		if (a_player && a_player->IsPowerAttacking()) {
-			return AttackSlot::kPower;
-		}
-		if (contains(a_tag, "power") || contains(a_payload, "power")) {
+		if (IsPowerAttackActive(a_player, a_tag, a_payload)) {
 			return AttackSlot::kPower;
 		}
 		if (contains(a_tag, "bash") || contains(a_payload, "bash")) {
 			return AttackSlot::kBash;
 		}
 		return AttackSlot::kLight;
+	}
+
+bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_view a_tag, std::string_view a_payload) const
+{
+		(void)a_tag;
+		(void)a_payload;
+		if (!a_player) {
+			return false;
+		}
+
+		if (auto* high = a_player->GetHighProcess(); high && high->attackData) {
+			const auto flags = high->attackData->data.flags;
+			if (flags.all(RE::AttackData::AttackFlag::kPowerAttack) || flags.all(RE::AttackData::AttackFlag::kChargeAttack)) {
+				return true;
+			}
+		}
+		return false;
+}
+
+	void Manager::StopActiveConcentration(RE::PlayerCharacter* a_player, bool a_interruptCast)
+	{
+		if (m_runtime.activeConcentrationSpellKey.empty()) {
+			return;
+		}
+
+		if (a_interruptCast && a_player) {
+			if (auto* caster = a_player->GetMagicCaster(m_runtime.concentrationSource)) {
+				caster->InterruptCast(false);
+			}
+		}
+
+		m_runtime.activeConcentrationSpellKey.clear();
+		m_runtime.concentrationRemainingSec = 0.0f;
+		m_runtime.concentrationTickTimer = 0.0f;
+		m_runtime.concentrationCastOnSelf = true;
+		m_runtime.concentrationTargetHandle = RE::ObjectRefHandle{};
+	}
+
+	void Manager::UpdateActiveConcentration(RE::PlayerCharacter* a_player, float a_deltaTime)
+	{
+		if (m_runtime.activeConcentrationSpellKey.empty()) {
+			return;
+		}
+
+		if (!a_player ||
+		    m_runtime.menuBlocked ||
+		    IsMountedBlocked(a_player) ||
+		    IsKillmoveBlocked(a_player) ||
+		    IsDialogueBlocked()) {
+			StopActiveConcentration(a_player, true);
+			return;
+		}
+
+		m_runtime.concentrationRemainingSec = std::max(0.0f, m_runtime.concentrationRemainingSec - a_deltaTime);
+		m_runtime.concentrationTickTimer = std::max(0.0f, m_runtime.concentrationTickTimer - a_deltaTime);
+		if (m_runtime.concentrationRemainingSec <= 0.0f) {
+			StopActiveConcentration(a_player, true);
+			return;
+		}
+		if (m_runtime.concentrationTickTimer > 0.0f) {
+			return;
+		}
+
+		auto* spell = ResolveSpell(m_runtime.activeConcentrationSpellKey);
+		if (!spell || !a_player->HasSpell(spell) || spell->GetCastingType() != RE::MagicSystem::CastingType::kConcentration) {
+			StopActiveConcentration(a_player, true);
+			return;
+		}
+
+		auto* caster = a_player->GetMagicCaster(m_runtime.concentrationSource);
+		if (!caster) {
+			StopActiveConcentration(a_player, false);
+			return;
+		}
+
+		auto combatTarget = a_player->GetActorRuntimeData().currentCombatTarget.get();
+		RE::TESObjectREFR* target = m_runtime.concentrationCastOnSelf ? static_cast<RE::TESObjectREFR*>(a_player) : combatTarget.get();
+
+		caster->currentSpellCost = std::max(0.0f, spell->CalculateMagickaCost(a_player));
+		caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, m_runtime.concentrationCastOnSelf ? nullptr : a_player);
+		m_runtime.concentrationTickTimer = 0.30f;
 	}
 
 	bool Manager::TryTriggerBoundSpellLocked(RE::PlayerCharacter* a_player, const BindingKey& a_key, AttackSlot a_slot, bool a_isPowerAttack)
@@ -1209,12 +1319,16 @@ namespace SBIND
 		}
 
 		auto* spell = ResolveSpell(slotBinding->spellFormKey);
-		if (!spell || !a_player->HasSpell(spell) || spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
+		if (!spell || !a_player->HasSpell(spell)) {
 			SetLastErrorLocked("Missing or invalid bound spell");
 			PlayCueBlocked();
 			return false;
 		}
 		const auto spellType = spell->GetSpellType();
+		const bool isConcentration = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+		if (!m_runtime.activeConcentrationSpellKey.empty()) {
+			StopActiveConcentration(a_player, true);
+		}
 		if (spellType == RE::MagicSystem::SpellType::kPower || spellType == RE::MagicSystem::SpellType::kVoicePower) {
 			if (a_player->IsInCastPowerList(spell)) {
 				SetLastErrorLocked("Power is on cooldown");
@@ -1248,16 +1362,15 @@ namespace SBIND
 
 		const float magickaCost = std::max(0.0f, spell->CalculateMagickaCost(a_player));
 		const float preMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
-		if (preMagicka + 0.001f < magickaCost) {
+		if (!isConcentration && preMagicka + 0.001f < magickaCost) {
 			SetLastErrorLocked("Not enough magicka");
 			PlayCueBlocked();
 			return false;
 		}
+		const auto castCount = (SupportsCastCount(spell) && !isConcentration) ? std::clamp(slotBinding->castCount, 1u, 10u) : 1u;
 
-		auto* caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-		if (!caster) {
-			caster = a_player->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
-		}
+		auto source = RE::MagicSystem::CastingSource::kInstant;
+		auto* caster = a_player->GetMagicCaster(source);
 		if (!caster) {
 			SetLastErrorLocked("No valid magic caster");
 			PlayCueBlocked();
@@ -1265,11 +1378,23 @@ namespace SBIND
 		}
 
 		const bool castOnSelf = spell->GetDelivery() == RE::MagicSystem::Delivery::kSelf;
-		RE::TESObjectREFR* target = a_player;
-		caster->CastSpellImmediate(spell, castOnSelf, target, 1.0f, false, 0.0f, a_player);
+		auto combatTarget = a_player->GetActorRuntimeData().currentCombatTarget.get();
+		RE::TESObjectREFR* target = castOnSelf ? static_cast<RE::TESObjectREFR*>(a_player) : combatTarget.get();
+		for (std::uint32_t i = 0; i < castCount; ++i) {
+			if (isConcentration) {
+				caster->currentSpellCost = magickaCost;
+			}
+			caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, castOnSelf ? nullptr : a_player);
+			if (spell->GetDelivery() == RE::MagicSystem::Delivery::kTargetLocation && !isConcentration && a_player->IsCasting(spell)) {
+				a_player->InterruptCast(false);
+				SetLastErrorLocked("Target location cast failed");
+				PlayCueBlocked();
+				return false;
+			}
+		}
 
 		float spentMagicka = 0.0f;
-		if (spellType == RE::MagicSystem::SpellType::kSpell || spellType == RE::MagicSystem::SpellType::kLesserPower) {
+		if (!isConcentration && (spellType == RE::MagicSystem::SpellType::kSpell || spellType == RE::MagicSystem::SpellType::kLesserPower)) {
 			const float postMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
 			const float engineSpent = std::max(0.0f, preMagicka - postMagicka);
 			const float manualNeeded = std::max(0.0f, magickaCost - engineSpent);
@@ -1286,6 +1411,14 @@ namespace SBIND
 			m_runtime.powerCooldownUntil[slotBinding->spellFormKey] = m_runtime.worldTimeSec + cd;
 		} else if (spellType == RE::MagicSystem::SpellType::kPower) {
 			m_runtime.powerCooldownGameDayUntil[slotBinding->spellFormKey] = GetGameDaysPassed() + 1.0f;
+		}
+		if (isConcentration) {
+			m_runtime.activeConcentrationSpellKey = slotBinding->spellFormKey;
+			m_runtime.concentrationCastOnSelf = castOnSelf;
+			m_runtime.concentrationTargetHandle = (!castOnSelf && target) ? target->CreateRefHandle() : RE::ObjectRefHandle{};
+			m_runtime.concentrationSource = source;
+			m_runtime.concentrationRemainingSec = std::max(0.30f, slotBinding->castHoldSec);
+			m_runtime.concentrationTickTimer = 0.30f;
 		}
 
 		const float cdSec = std::clamp(profileIt->second.triggerCooldownSec, 0.5f, 5.0f);
@@ -1357,17 +1490,29 @@ namespace SBIND
 		(void)m_config;
 	}
 
-	bool Manager::IsSupportedSpell(const RE::SpellItem* a_spell)
-	{
-		if (!a_spell || a_spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
-			return false;
-		}
+bool Manager::IsSupportedSpell(const RE::SpellItem* a_spell)
+{
+	if (!a_spell) {
+		return false;
+	}
 		const auto type = a_spell->GetSpellType();
 		return type == RE::MagicSystem::SpellType::kSpell ||
 		       type == RE::MagicSystem::SpellType::kLesserPower ||
-		       type == RE::MagicSystem::SpellType::kPower ||
-		       type == RE::MagicSystem::SpellType::kVoicePower;
-	}
+	       type == RE::MagicSystem::SpellType::kPower ||
+	       type == RE::MagicSystem::SpellType::kVoicePower;
+}
+
+bool Manager::IsDestructionSpell(const RE::SpellItem* a_spell)
+{
+	return a_spell && a_spell->GetAssociatedSkill() == RE::ActorValue::kDestruction;
+}
+
+bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
+{
+	return a_spell &&
+	       a_spell->GetCastingType() != RE::MagicSystem::CastingType::kConcentration &&
+	       IsDestructionSpell(a_spell);
+}
 
 	float Manager::GetGameDaysPassed()
 	{
@@ -1462,7 +1607,6 @@ namespace SBIND
 			{ "bindKey", GetKeyboardKeyName(m_config.bindKey) },
 			{ "bindKeyCode", m_config.bindKey },
 			{ "cycleSlotModifierKey", m_config.cycleSlotModifierKey },
-			{ "fallbackDedupeSec", m_config.fallbackDedupeSec },
 			{ "showHudNotifications", m_config.showHudNotifications },
 			{ "enableSoundCues", m_config.enableSoundCues },
 			{ "soundCueVolume", m_config.soundCueVolume },
@@ -1509,10 +1653,33 @@ namespace SBIND
 						{ "displayName", slot.displayName },
 						{ "spellFormKey", slot.spellFormKey },
 						{ "spellType", SpellTypeLabel(slot.spellType) },
-						{ "metric", "N/A" }
+						{ "metric", "N/A" },
+						{ "castHoldSec", slot.castHoldSec },
+						{ "castIntervalSec", slot.castIntervalSec },
+						{ "castCount", slot.castCount },
+						{ "school", "Other" },
+						{ "castingType", "FireAndForget" },
+						{ "baseCost", 0.0f },
+						{ "costPerSecond", 0.0f },
+						{ "netCost", 0.0f },
+						{ "supportsCastCount", false }
 					};
 					if (auto* resolved = ResolveSpell(slot.spellFormKey)) {
 						out["metric"] = BuildSpellMetricLocked(slot, resolved, player);
+						const auto school = resolved->GetAssociatedSkill();
+						if (school == RE::ActorValue::kDestruction) out["school"] = "Destruction";
+						else if (school == RE::ActorValue::kConjuration) out["school"] = "Conjuration";
+						else if (school == RE::ActorValue::kRestoration) out["school"] = "Restoration";
+						else if (school == RE::ActorValue::kIllusion) out["school"] = "Illusion";
+						else if (school == RE::ActorValue::kAlteration) out["school"] = "Alteration";
+						const bool conc = resolved->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+						const float baseCost = player ? std::max(0.0f, resolved->CalculateMagickaCost(player)) : 0.0f;
+						const auto casts = SupportsCastCount(resolved) ? std::clamp(slot.castCount, 1u, 10u) : 1u;
+						out["castingType"] = conc ? "Concentration" : "FireAndForget";
+						out["baseCost"] = baseCost;
+						out["costPerSecond"] = conc ? baseCost : 0.0f;
+						out["netCost"] = conc ? baseCost : (baseCost * static_cast<float>(casts));
+						out["supportsCastCount"] = SupportsCastCount(resolved);
 					}
 					return out;
 				};
@@ -1676,13 +1843,10 @@ namespace SBIND
 		return root.dump();
 	}
 
-	void Manager::Notify(const std::string& a_message) const
-	{
-		if (!m_config.showHudNotifications) {
-			return;
-		}
-		RE::SendHUDMessage::ShowHUDMessage(a_message.c_str());
-	}
+void Manager::Notify(const std::string& a_message) const
+{
+		(void)a_message;
+}
 
 	void Manager::SetLastErrorLocked(std::string a_error)
 	{

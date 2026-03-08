@@ -75,6 +75,9 @@ namespace SBIND
 		std::string displayName{};
 		float lastKnownCost{ 0.0f };
 		std::uint32_t spellType{ 0 };
+		float castHoldSec{ 1.5f };
+		float castIntervalSec{ 0.0f };
+		std::uint32_t castCount{ 1 };
 		bool enabled{ false };
 	};
 
@@ -94,7 +97,6 @@ namespace SBIND
 		std::uint32_t uiToggleKey{ 0x3C };          // F2
 		std::uint32_t bindKey{ 0x22 };              // G
 		std::uint32_t cycleSlotModifierKey{ 0x2A }; // LShift
-		float fallbackDedupeSec{ 1.5f };
 		bool showHudNotifications{ true };
 		bool enableSoundCues{ true };
 		float soundCueVolume{ 0.45f };
@@ -163,7 +165,6 @@ namespace SBIND
 
 		bool TryBindSelectedMagicMenuSpell();
 		void CycleBindSlotMode();
-		void OnPowerAttackInputStart();
 		bool BindSpellForSlotFromJson(const std::string& a_payload);
 		bool UnbindSlotFromJson(const std::string& a_payload);
 		bool UnbindWeaponFromSerializedKey(const std::string& a_key);
@@ -187,7 +188,6 @@ namespace SBIND
 			float worldTimeSec{ 0.0f };
 			float lastAttackTriggerWorldTimeSec{ -1000.0f };
 			float pendingLightReadyAtWorldTimeSec{ 0.0f };
-			float recentPowerInputUntilSec{ 0.0f };
 			AttackSlot lastResolvedAttackSlot{ AttackSlot::kLight };
 			std::optional<BindingKey> rightWeapon{};
 			std::optional<BindingKey> leftWeapon{};
@@ -206,6 +206,12 @@ namespace SBIND
 			std::string lastChainHudText{ "Chain 1" };
 			bool chainRecordingActive{ false };
 			bool chainPlayingActive{ false };
+			std::string activeConcentrationSpellKey{};
+			float concentrationRemainingSec{ 0.0f };
+			float concentrationTickTimer{ 0.0f };
+			bool concentrationCastOnSelf{ true };
+			RE::ObjectRefHandle concentrationTargetHandle{};
+			RE::MagicSystem::CastingSource concentrationSource{ RE::MagicSystem::CastingSource::kInstant };
 		};
 
 		void LoadConfig();
@@ -224,6 +230,9 @@ namespace SBIND
 		[[nodiscard]] static std::optional<RE::FormID> ResolveSelectedSpellFormIDFromMagicMenu();
 
 		[[nodiscard]] AttackSlot ResolveAttackSlot(std::string_view a_tag, std::string_view a_payload, RE::PlayerCharacter* a_player) const;
+		[[nodiscard]] bool IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_view a_tag = {}, std::string_view a_payload = {}) const;
+		void UpdateActiveConcentration(RE::PlayerCharacter* a_player, float a_deltaTime);
+		void StopActiveConcentration(RE::PlayerCharacter* a_player, bool a_interruptCast);
 		bool TryTriggerAttackSlotLocked(RE::PlayerCharacter* a_player, AttackSlot a_slot, bool a_isPowerAttack);
 		bool TryTriggerBoundSpellLocked(RE::PlayerCharacter* a_player, const BindingKey& a_key, AttackSlot a_slot, bool a_isPowerAttack);
 		[[nodiscard]] WeaponBindingProfile& EnsureProfileLocked(const BindingKey& a_key);
@@ -237,6 +246,8 @@ namespace SBIND
 		void PlayCueBlocked() const;
 
 		[[nodiscard]] static bool IsSupportedSpell(const RE::SpellItem* a_spell);
+		[[nodiscard]] static bool IsDestructionSpell(const RE::SpellItem* a_spell);
+		[[nodiscard]] static bool SupportsCastCount(const RE::SpellItem* a_spell);
 		[[nodiscard]] static float GetGameDaysPassed();
 		[[nodiscard]] std::string BuildSpellMetricLocked(const SlotBinding& a_spellData, RE::SpellItem* a_spell, RE::PlayerCharacter* a_player) const;
 		[[nodiscard]] static std::string SpellTypeLabel(std::uint32_t a_spellType);

@@ -253,6 +253,14 @@ function isCooldownSpellType(spellType) {
   return t.includes('power') || t.includes('shout');
 }
 
+function formatSlotCostText(slot) {
+  const castingType = String(slot?.castingType || '');
+  if (castingType === 'Concentration') {
+    return `${Math.max(0, Number(slot?.costPerSecond || 0)).toFixed(0)}/s`;
+  }
+  return `${Math.max(0, Number(slot?.baseCost || 0)).toFixed(0)}`;
+}
+
 function formatScanCode(scan) {
   const numeric = Number(scan);
   if (!Number.isFinite(numeric)) return 'G';
@@ -289,6 +297,7 @@ function App() {
   const [quickBuffSearch, setQuickBuffSearch] = useState('');
   const [toast, setToast] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [blacklistDialogOpen, setBlacklistDialogOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('spellBinding');
   const [hudAdjustOpen, setHudAdjustOpen] = useState(false);
   const [hudDragPos, setHudDragPos] = useState({
@@ -306,6 +315,7 @@ function App() {
   const lastWindowedRef = useRef(null);
   const toastTimerRef = useRef(null);
   const settingsOpenRef = useRef(false);
+  const blacklistDialogOpenRef = useRef(false);
   const hudAdjustOpenRef = useRef(false);
   const hudDragRef = useRef(null);
   const hudDragPosRef = useRef({
@@ -364,6 +374,10 @@ function App() {
   useEffect(() => {
     settingsOpenRef.current = settingsOpen;
   }, [settingsOpen]);
+
+  useEffect(() => {
+    blacklistDialogOpenRef.current = blacklistDialogOpen;
+  }, [blacklistDialogOpen]);
 
   useEffect(() => {
     hudAdjustOpenRef.current = hudAdjustOpen;
@@ -466,6 +480,10 @@ function App() {
       }
       if (captureFieldRef.current) {
         setCaptureField(null);
+        return;
+      }
+      if (blacklistDialogOpenRef.current) {
+        setBlacklistDialogOpen(false);
         return;
       }
       if (settingsOpenRef.current) {
@@ -673,6 +691,16 @@ function App() {
       key: currentWeapon.key,
       id: 'onlyInCombat',
       value: checked
+    });
+  };
+
+  const onSlotSettingChange = (slot, id, value) => {
+    if (!currentWeapon.key) return;
+    setSetting('spellBinding', 'weapon', value, {
+      key: currentWeapon.key,
+      slot,
+      id,
+      value
     });
   };
 
@@ -886,43 +914,92 @@ function App() {
         <main className="content">
           {tab === 'spellBinding' && (
             <section className="grid sb-grid">
-              <article className="card">
-                <h3>Current</h3>
-                <div className="current-preview-grid">
+              <article className="card bound-weapons-card">
+                <h3>Bound Weapons</h3>
+                <input placeholder="Search weapon..." value={sbSearch} onChange={(e) => setSbSearch(e.target.value)} />
+                <div className="scroll">
+                  {bindRows.length === 0 && <p className="meta">No bound weapons.</p>}
+                  {bindRows.map((row, idx) => (
+                    <div className="item" key={`${row.key?.displayName || 'weapon'}-${idx}`}>
+                      <div>
+                        <div>{row.key?.displayName || 'Unknown'}</div>
+                        <div className="meta">L: {row.summary?.light || '-'} | P: {row.summary?.power || '-'} | B: {row.summary?.bash || '-'}</div>
+                      </div>
+                      <button className="ghost-x-btn" onClick={() => doAction('spellBinding', 'unbindWeapon', row.key || {})} aria-label={`Unbind ${row.key?.displayName || 'weapon'}`}>
+                        <X size={14} strokeWidth={2.25} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="card equipped-card">
+                <h3>Equipped Weapon</h3>
+                <div className="current-preview-grid equipped-center">
                   <div className="preview-window preview-weapon-full">
-                    <div className="preview-title slot-title">Weapon</div>
+                    <div className="preview-title slot-title">Equipped Weapon</div>
                     <div className="preview-body preview-body-weapon">
                       <div className="preview-name">{byPath(sb, ['currentWeapon', 'displayName'], 'None')}</div>
                       <div className="preview-meta">Level {weaponMasteryLevel}</div>
                     </div>
                   </div>
-                  <div className="attack-slot-grid">
-                    {attackSlots.map(({ id, label, slot, data }) => (
-                      <div className="preview-window attack-slot-card" key={`slot-${id}`}>
-                        <div className="slot-header">
-                          <div className="preview-title slot-title">{label}</div>
-                          {!!((data.enabled || !!data.spellFormKey || !!data.displayName) && currentWeapon.key) && (
-                            <button
-                              className="ghost-x-btn"
-                              onClick={() => doAction('spellBinding', 'unbindSlot', { key: currentWeapon.key, slot })}
-                              aria-label={`Unbind ${label}`}
-                            >
-                              <X size={14} strokeWidth={2.25} />
-                            </button>
-                          )}
-                        </div>
-                        <div className="preview-body">
-                          <div className="preview-name">{data.enabled ? data.displayName || 'Unknown' : 'None'}</div>
-                          <div className="preview-meta">
-                            {data.enabled
-                                  ? (isCooldownSpellType(data.spellType)
-                                      ? `CD: ${normalizeMetric(data.metric)}`
-                                      : `Cost: ${normalizeMetric(data.metric)}`)
-                                  : ''}
+                  <div className="attack-slot-grid compact-slot-grid">
+                    {attackSlots.map(({ id, label, slot, data }) => {
+                      const isConc = String(data.castingType || '') === 'Concentration';
+                      const isPowerOrShout = isCooldownSpellType(data.spellType);
+                      const supportsCastCount = !!data.supportsCastCount && !isConc;
+                      return (
+                        <div className="preview-window attack-slot-card compact-slot-card" key={`slot-${id}`}>
+                          <div className="slot-header">
+                            <div className="preview-title slot-title">{label}</div>
+                            {!!((data.enabled || !!data.spellFormKey || !!data.displayName) && currentWeapon.key) && (
+                              <button
+                                className="ghost-x-btn"
+                                onClick={() => doAction('spellBinding', 'unbindSlot', { key: currentWeapon.key, slot })}
+                                aria-label={`Unbind ${label}`}
+                              >
+                                <X size={14} strokeWidth={2.25} />
+                              </button>
+                            )}
+                          </div>
+                          <div className="preview-body slot-body-tight">
+                            <div className="preview-name">{data.enabled ? data.displayName || 'Unknown' : 'None'}</div>
+                            {data.enabled && (
+                              <>
+                                <div className="preview-meta">Cost: {formatSlotCostText(data)}{!isConc ? ` | Net: ${Math.max(0, Number(data.netCost || 0)).toFixed(0)}` : ''}</div>
+                                {isCooldownSpellType(data.spellType) && <div className="preview-meta">{normalizeMetric(data.metric)}</div>}
+                                {!isPowerOrShout && (
+                                  <label className="inline slot-slider-inline">
+                                    <span>{isConc ? 'Hold' : 'Interval'} {Number(isConc ? data.castHoldSec : data.castIntervalSec || 0).toFixed(2)}s</span>
+                                    <input
+                                      type="range"
+                                      min={isConc ? '0.3' : '0.0'}
+                                      max={isConc ? '10' : '1.0'}
+                                      step="0.05"
+                                      value={Number(isConc ? data.castHoldSec : data.castIntervalSec || 0)}
+                                      onChange={(e) => onSlotSettingChange(slot, isConc ? 'castHoldSec' : 'castIntervalSec', Number(e.target.value || 0))}
+                                    />
+                                  </label>
+                                )}
+                                {supportsCastCount && (
+                                  <label className="inline slot-slider-inline">
+                                    <span>Casts x{Math.max(1, Number(data.castCount || 1))}</span>
+                                    <input
+                                      type="range"
+                                      min="1"
+                                      max="10"
+                                      step="1"
+                                      value={Math.max(1, Number(data.castCount || 1))}
+                                      onChange={(e) => onSlotSettingChange(slot, 'castCount', Math.max(1, Number(e.target.value || 1)))}
+                                    />
+                                  </label>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="row">
@@ -947,52 +1024,7 @@ function App() {
                     />
                     Only combat
                   </label>
-                </div>
-              </article>
-
-              <article className="card">
-                <h3>Bound Weapons</h3>
-                <input placeholder="Search weapon..." value={sbSearch} onChange={(e) => setSbSearch(e.target.value)} />
-                <div className="scroll">
-                  {bindRows.length === 0 && <p className="meta">No bound weapons.</p>}
-                  {bindRows.map((row, idx) => (
-                    <div className="item" key={`${row.key?.displayName || 'weapon'}-${idx}`}>
-                      <div>
-                        <div>{row.key?.displayName || 'Unknown'}</div>
-                        <div className="meta">L: {row.summary?.light || '-'} | P: {row.summary?.power || '-'} | B: {row.summary?.bash || '-'}</div>
-                      </div>
-                      <button className="ghost-x-btn" onClick={() => doAction('spellBinding', 'unbindWeapon', row.key || {})} aria-label={`Unbind ${row.key?.displayName || 'weapon'}`}>
-                        <X size={14} strokeWidth={2.25} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </article>
-
-              <article className="card">
-                <h3>Blacklist</h3>
-                <input placeholder="Search spell..." value={blacklistSearch} onChange={(e) => setBlacklistSearch(e.target.value)} />
-                <div className="split">
-                  <section>
-                    <h4>Blocked</h4>
-                    <div className="scroll">
-                      {knownSpellsFiltered.filter((s) => blacklistSet.has(s.spellFormKey)).map((spell) => (
-                        <button className="btn block" key={`blk-${spell.spellFormKey}`} onClick={() => toggleBlacklistSpell(spell.spellFormKey)}>
-                          {spell.displayName}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                  <section>
-                    <h4>Available</h4>
-                    <div className="scroll">
-                      {knownSpellsFiltered.filter((s) => !blacklistSet.has(s.spellFormKey)).map((spell) => (
-                        <button className="btn block" key={`ok-${spell.spellFormKey}`} onClick={() => toggleBlacklistSpell(spell.spellFormKey)}>
-                          {spell.displayName}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
+                  <button className="btn" onClick={() => setBlacklistDialogOpen(true)}>Edit Blacklist</button>
                 </div>
               </article>
             </section>
@@ -1322,7 +1354,6 @@ function App() {
                   <label>UI Toggle Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.uiToggleKey')}>{captureLabel('sb.uiToggleKey')}</button></label>
                   <label>Bind Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.bindKey')}>{captureLabel('sb.bindKey')}</button></label>
                   <label>Cycle Modifier Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.cycleSlotModifierKey')}>{captureLabel('sb.cycleSlotModifierKey')}</button></label>
-                  <label>Fallback Dedupe (s) <input type="number" step="0.1" min="0.5" max="5" value={Number(byPath(sb, ['config', 'fallbackDedupeSec'], 1.5)).toFixed(1)} onChange={(e) => setSetting('spellBinding', 'fallbackDedupeSec', Number(e.target.value || 1.5))} /></label>
                 </div>
               )}
 
@@ -1377,6 +1408,42 @@ function App() {
                   </div>
                 </div>
               )}
+            </section>
+          </div>
+        </div>
+      )}
+
+      {blacklistDialogOpen && (
+        <div className="modal-overlay" onMouseDown={() => setBlacklistDialogOpen(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <header className="modal-header">
+              <h2>Spell Blacklist</h2>
+              <button className="icon-btn danger" onClick={() => setBlacklistDialogOpen(false)}><X size={16} strokeWidth={2} /></button>
+            </header>
+            <section className="settings-body">
+              <input placeholder="Search spell..." value={blacklistSearch} onChange={(e) => setBlacklistSearch(e.target.value)} />
+              <div className="split">
+                <section>
+                  <h4>Blocked</h4>
+                  <div className="scroll">
+                    {knownSpellsFiltered.filter((s) => blacklistSet.has(s.spellFormKey)).map((spell) => (
+                      <button className="btn block" key={`blk-${spell.spellFormKey}`} onClick={() => toggleBlacklistSpell(spell.spellFormKey)}>
+                        {spell.displayName}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <section>
+                  <h4>Available</h4>
+                  <div className="scroll">
+                    {knownSpellsFiltered.filter((s) => !blacklistSet.has(s.spellFormKey)).map((spell) => (
+                      <button className="btn block" key={`ok-${spell.spellFormKey}`} onClick={() => toggleBlacklistSpell(spell.spellFormKey)}>
+                        {spell.displayName}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
             </section>
           </div>
         </div>

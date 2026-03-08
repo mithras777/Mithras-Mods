@@ -82,13 +82,6 @@ namespace SB_INPUT
 			}
 
 			const auto keyCode = static_cast<std::uint32_t>(button->GetIDCode());
-			const auto userEvent = input->QUserEvent();
-			if (button->IsDown()) {
-				auto* userEvents = RE::UserEvents::GetSingleton();
-				if (userEvents && userEvent == userEvents->attackPowerStart) {
-					manager->OnPowerAttackInputStart();
-				}
-			}
 
 			if (keyCode == 0x01 && prismaMenuOpen && !magicMenuOpen) {
 				prismaBridge->SendEscapeToMenu();
@@ -107,7 +100,7 @@ namespace SB_INPUT
 			}
 
 			if (keyCode == config.bindKey) {
-				if (IsModifierDown(config.cycleSlotModifierKey) && !prismaMenuOpen && !magicMenuOpen) {
+				if (IsModifierDown(config.cycleSlotModifierKey) && !prismaMenuOpen) {
 					manager->CycleBindSlotMode();
 					consumeEvent = true;
 					continue;
