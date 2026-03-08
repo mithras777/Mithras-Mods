@@ -28,7 +28,7 @@ const masteryTabs = [
   { id: 'shouts', label: 'Shouts' },
   { id: 'weapons', label: 'Weapons' }
 ];
-const HUD_TARGETS = ['donut', 'cycle', 'chain'];
+const HUD_TARGETS = ['cycle', 'chain'];
 const WINDOW_MIN_WIDTH = 960;
 const WINDOW_MIN_HEIGHT = 620;
 const WINDOW_MARGIN = 8;
@@ -229,12 +229,6 @@ function triggerLabel(id) {
   return triggerLabels[id] || id;
 }
 
-function normalizeMetric(metric) {
-  const raw = String(metric || '').trim();
-  if (!raw) return '-';
-  return raw.replace(/^cost\s*:\s*/i, '').replace(/^cd\s*:\s*/i, '').replace(/^cooldown\s*:\s*/i, '');
-}
-
 function compactChainInputWidth(name) {
   const len = String(name || '').trim().length || 7;
   return `${Math.max(10, Math.min(24, len + 2))}ch`;
@@ -246,11 +240,6 @@ function formatCostLabel(step, baseCost) {
   if (isConc) return `${cost.toFixed(0)}/s`;
   const casts = Math.max(1, Number(step.castCount || 1));
   return `${(cost * casts).toFixed(0)}`;
-}
-
-function isCooldownSpellType(spellType) {
-  const t = String(spellType || '').toLowerCase();
-  return t.includes('power') || t.includes('shout');
 }
 
 function formatSlotCostText(slot) {
@@ -301,11 +290,10 @@ function App() {
   const [settingsTab, setSettingsTab] = useState('spellBinding');
   const [hudAdjustOpen, setHudAdjustOpen] = useState(false);
   const [hudDragPos, setHudDragPos] = useState({
-    donut: { x: 48, y: 48 },
     cycle: { x: 48, y: 152 },
     chain: { x: 48, y: 216 }
   });
-  const [hudDragTarget, setHudDragTarget] = useState('donut');
+  const [hudDragTarget, setHudDragTarget] = useState('cycle');
   const [captureField, setCaptureField] = useState(null);
   const [quickBuffSelectedTrigger, setQuickBuffSelectedTrigger] = useState(triggerOrder[0]);
   const [windowState, setWindowState] = useState(defaultCenteredRect());
@@ -319,7 +307,6 @@ function App() {
   const hudAdjustOpenRef = useRef(false);
   const hudDragRef = useRef(null);
   const hudDragPosRef = useRef({
-    donut: { x: 48, y: 48 },
     cycle: { x: 48, y: 152 },
     chain: { x: 48, y: 216 }
   });
@@ -394,10 +381,6 @@ function App() {
   useEffect(() => {
     if (!hudAdjustOpenRef.current) {
       setHudDragPos({
-        donut: {
-          x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
-          y: Number(byPath(sb, ['config', 'hudPosY'], 48))
-        },
         cycle: {
           x: Number(byPath(sb, ['config', 'hudCyclePosX'], 48)),
           y: Number(byPath(sb, ['config', 'hudCyclePosY'], 152))
@@ -412,22 +395,28 @@ function App() {
 
   const hudSizeForTarget = (target) => {
     if (target === 'cycle') return Number(byPath(sb, ['config', 'hudCycleSize'], 56));
-    if (target === 'chain') return Number(byPath(sb, ['config', 'hudChainSize'], 56));
-    return Number(byPath(sb, ['config', 'hudDonutSize'], 88));
+    return Number(byPath(sb, ['config', 'hudChainSize'], 56));
   };
 
-  const clampHudPos = (x, y, size) => {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const nextX = Math.max(0, Math.min(width - size, x));
-    const nextY = Math.max(0, Math.min(height - size, y));
+  const hudDimensionsForTarget = (target) => {
+    const size = hudSizeForTarget(target);
+    if (target === 'cycle') return { width: Math.round(size * 3.1), height: size };
+    return { width: Math.round(size * 3.2), height: size };
+  };
+
+  const clampHudPos = (x, y, boxWidth, boxHeight) => {
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const nextX = Math.max(0, Math.min(viewportWidth - boxWidth, x));
+    const nextY = Math.max(0, Math.min(viewportHeight - boxHeight, y));
     return { x: nextX, y: nextY };
   };
 
   const finalizeHudAdjust = (closeMenuAfter) => {
     HUD_TARGETS.forEach((target) => {
       const pos = hudDragPosRef.current[target] || { x: 48, y: 48 };
-      const clamped = clampHudPos(pos.x, pos.y, hudSizeForTarget(target));
+      const dims = hudDimensionsForTarget(target);
+      const clamped = clampHudPos(pos.x, pos.y, dims.width, dims.height);
       hudAction('saveHudPosition', {
         target,
         x: clamped.x,
@@ -444,10 +433,6 @@ function App() {
   const startHudAdjustMode = () => {
     setSettingsOpen(false);
     setHudDragPos({
-      donut: {
-        x: Number(byPath(sb, ['config', 'hudPosX'], 48)),
-        y: Number(byPath(sb, ['config', 'hudPosY'], 48))
-      },
       cycle: {
         x: Number(byPath(sb, ['config', 'hudCyclePosX'], 48)),
         y: Number(byPath(sb, ['config', 'hudCyclePosY'], 152))
@@ -457,7 +442,7 @@ function App() {
         y: Number(byPath(sb, ['config', 'hudChainPosY'], 216))
       }
     });
-    setHudDragTarget('donut');
+    setHudDragTarget('cycle');
     setHudAdjustOpen(true);
     hudAction('enterDragMode');
   };
@@ -631,8 +616,8 @@ function App() {
     const onMove = (event) => {
       if (!hudDragRef.current || !hudAdjustOpenRef.current) return;
       const drag = hudDragRef.current;
-      const size = hudSizeForTarget(drag.target);
-      const next = clampHudPos(drag.left + (event.clientX - drag.x), drag.top + (event.clientY - drag.y), size);
+      const dims = hudDimensionsForTarget(drag.target);
+      const next = clampHudPos(drag.left + (event.clientX - drag.x), drag.top + (event.clientY - drag.y), dims.width, dims.height);
       setHudDragPos((prev) => ({ ...prev, [drag.target]: next }));
       hudAction('saveHudPosition', { target: drag.target, x: next.x, y: next.y, commit: false });
     };
@@ -674,15 +659,6 @@ function App() {
     else next.add(spellKey);
     const items = Array.from(next);
     setSetting('spellBinding', 'blacklist', items, { items });
-  };
-
-  const onCooldownChange = (value) => {
-    if (!currentWeapon.key) return;
-    setSetting('spellBinding', 'weapon', Number(value), {
-      key: currentWeapon.key,
-      id: 'triggerCooldownSec',
-      value: Number(value)
-    });
   };
 
   const onOnlyCombatChange = (checked) => {
@@ -946,8 +922,6 @@ function App() {
                   <div className="attack-slot-grid compact-slot-grid">
                     {attackSlots.map(({ id, label, slot, data }) => {
                       const isConc = String(data.castingType || '') === 'Concentration';
-                      const isPowerOrShout = isCooldownSpellType(data.spellType);
-                      const supportsCastCount = !!data.supportsCastCount && !isConc;
                       return (
                         <div className="preview-window attack-slot-card compact-slot-card" key={`slot-${id}`}>
                           <div className="slot-header">
@@ -967,30 +941,17 @@ function App() {
                             {data.enabled && (
                               <>
                                 <div className="preview-meta">Cost: {formatSlotCostText(data)}{!isConc ? ` | Net: ${Math.max(0, Number(data.netCost || 0)).toFixed(0)}` : ''}</div>
-                                {isCooldownSpellType(data.spellType) && <div className="preview-meta">{normalizeMetric(data.metric)}</div>}
-                                {!isPowerOrShout && (
+                                {isConc && (
                                   <label className="inline slot-slider-inline">
-                                    <span>{isConc ? 'Hold' : 'Interval'} {Number(isConc ? data.castHoldSec : data.castIntervalSec || 0).toFixed(2)}s</span>
+                                    <span>Hold {Number(data.castHoldSec || 0).toFixed(2)}s</span>
                                     <input
+                                      className="thin-range compact-range"
                                       type="range"
-                                      min={isConc ? '0.3' : '0.0'}
-                                      max={isConc ? '10' : '1.0'}
-                                      step="0.05"
-                                      value={Number(isConc ? data.castHoldSec : data.castIntervalSec || 0)}
-                                      onChange={(e) => onSlotSettingChange(slot, isConc ? 'castHoldSec' : 'castIntervalSec', Number(e.target.value || 0))}
-                                    />
-                                  </label>
-                                )}
-                                {supportsCastCount && (
-                                  <label className="inline slot-slider-inline">
-                                    <span>Casts x{Math.max(1, Number(data.castCount || 1))}</span>
-                                    <input
-                                      type="range"
-                                      min="1"
+                                      min="0.3"
                                       max="10"
-                                      step="1"
-                                      value={Math.max(1, Number(data.castCount || 1))}
-                                      onChange={(e) => onSlotSettingChange(slot, 'castCount', Math.max(1, Number(e.target.value || 1)))}
+                                      step="0.05"
+                                      value={Number(data.castHoldSec || 0)}
+                                      onChange={(e) => onSlotSettingChange(slot, 'castHoldSec', Number(e.target.value || 0))}
                                     />
                                   </label>
                                 )}
@@ -1003,19 +964,6 @@ function App() {
                   </div>
                 </div>
                 <div className="row">
-                  <label className="inline">
-                    Cooldown
-                    <input
-                      className="thin-range"
-                      type="range"
-                      min="0.5"
-                      max="5"
-                      step="0.5"
-                      value={Number(byPath(sb, ['currentWeapon', 'triggerCooldownSec'], 1.5))}
-                      onChange={(e) => onCooldownChange(e.target.value)}
-                    />
-                  </label>
-                  <span>{Number(byPath(sb, ['currentWeapon', 'triggerCooldownSec'], 1.5)).toFixed(1)}s</span>
                   <label className="inline checkbox-inline">
                     <input
                       type="checkbox"
@@ -1400,8 +1348,6 @@ function App() {
 
               {settingsTab === 'uiHud' && (
                 <div className="setting-grid">
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'hudDonutEnabled'], true)} onChange={(e) => setSetting('spellBinding', 'hudDonutEnabled', e.target.checked)} /> HUD Donut Enabled</label>
-                  <label className="checkbox-inline"><input type="checkbox" checked={!!byPath(sb, ['config', 'hudDonutOnlyUnsheathed'], true)} onChange={(e) => setSetting('spellBinding', 'hudDonutOnlyUnsheathed', e.target.checked)} /> HUD Only Unsheathed</label>
                   <div className="row">
                     <button className="btn" onClick={resetWindowLayout}>Reset Window Layout</button>
                     {windowState.isFullscreen && <button className="btn" onClick={toggleFullscreen}>Exit Fullscreen</button>}
@@ -1454,17 +1400,6 @@ function App() {
           <div className="hud-adjust-head">Drag the UI elements, adjust sizes, then click Done.</div>
           <div className="hud-adjust-controls">
             <label className="inline">
-              Donut Size
-              <input
-                type="range"
-                min="48"
-                max="220"
-                step="2"
-                value={Number(byPath(sb, ['config', 'hudDonutSize'], 88))}
-                onChange={(e) => setSetting('spellBinding', 'hudDonutSize', Number(e.target.value || 88))}
-              />
-            </label>
-            <label className="inline">
               Cycle Size
               <input
                 type="range"
@@ -1493,31 +1428,11 @@ function App() {
       {hudAdjustOpen && (
         <>
           <div
-            className="hud-adjust-donut"
-            style={{
-              left: `${hudDragPos.donut?.x ?? 48}px`,
-              top: `${hudDragPos.donut?.y ?? 48}px`,
-              width: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`,
-              height: `${Number(byPath(sb, ['config', 'hudDonutSize'], 88))}px`
-            }}
-            onMouseDown={(e) => {
-              setHudDragTarget('donut');
-              hudDragRef.current = { target: 'donut', x: e.clientX, y: e.clientY, left: hudDragPos.donut?.x ?? 48, top: hudDragPos.donut?.y ?? 48 };
-              e.preventDefault();
-            }}
-          >
-            <svg viewBox="0 0 100 100">
-              <circle className="track" cx="50" cy="50" r="42" />
-              <circle className="progress" cx="50" cy="50" r="42" />
-            </svg>
-            <div className="label">1.5s</div>
-          </div>
-          <div
-            className={`hud-adjust-chip ${hudDragTarget === 'cycle' ? 'active' : ''}`}
+            className={`hud-adjust-chip hud-adjust-card ${hudDragTarget === 'cycle' ? 'active' : ''}`}
             style={{
               left: `${hudDragPos.cycle?.x ?? 48}px`,
               top: `${hudDragPos.cycle?.y ?? 152}px`,
-              width: `${Number(byPath(sb, ['config', 'hudCycleSize'], 56))}px`,
+              width: `${Math.round(Number(byPath(sb, ['config', 'hudCycleSize'], 56)) * 3.1)}px`,
               height: `${Number(byPath(sb, ['config', 'hudCycleSize'], 56))}px`
             }}
             onMouseDown={(e) => {
@@ -1526,14 +1441,15 @@ function App() {
               e.preventDefault();
             }}
           >
-            Light
+            <span className="hud-adjust-card-title">Bash</span>
+            <span className="hud-adjust-card-subtext">Reanimate Corpse</span>
           </div>
           <div
-            className={`hud-adjust-chip ${hudDragTarget === 'chain' ? 'active' : ''}`}
+            className={`hud-adjust-chip hud-adjust-card hud-adjust-chain ${hudDragTarget === 'chain' ? 'active' : ''}`}
             style={{
               left: `${hudDragPos.chain?.x ?? 48}px`,
               top: `${hudDragPos.chain?.y ?? 216}px`,
-              width: `${Number(byPath(sb, ['config', 'hudChainSize'], 56))}px`,
+              width: `${Math.round(Number(byPath(sb, ['config', 'hudChainSize'], 56)) * 3.2)}px`,
               height: `${Number(byPath(sb, ['config', 'hudChainSize'], 56))}px`
             }}
             onMouseDown={(e) => {
@@ -1542,7 +1458,11 @@ function App() {
               e.preventDefault();
             }}
           >
-            Chain 1
+            <span className="hud-adjust-card-title">Chain 1</span>
+            <span className="hud-adjust-card-subtext">Ice Spike</span>
+            <span className="hud-adjust-progress-track">
+              <span className="hud-adjust-progress-fill" style={{ width: '50%' }} />
+            </span>
           </div>
         </>
       )}

@@ -1,30 +1,45 @@
 html, body, #root { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
 .root { position: fixed; inset: 0; pointer-events: none; }
-.donut { position: absolute; border-radius: 50%; pointer-events: auto; cursor: move; }
-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.track { fill: none; stroke: rgba(117, 142, 164, 0.25); stroke-width: 10; }
-.progress { fill: none; stroke: #8eb2d2; stroke-width: 10; stroke-linecap: round; stroke-dasharray: 263.89; stroke-dashoffset: 263.89; }
-.label {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: #e6eef6;
-  font: 600 13px "Segoe UI", Tahoma, sans-serif;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
 .mini-hud {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.55);
-  border-radius: 999px;
+  border-radius: 14px;
   background: rgba(0, 0, 0, 0.62);
   color: #e6eef6;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   text-align: center;
-  padding: 0 8px;
+  padding: 6px 10px;
+  width: fit-content;
+  min-width: 140px;
+  max-width: min(420px, 72vw);
   font: 700 12px "Segoe UI", Tahoma, sans-serif;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.mini-hud.cycle-hud {
+  border-radius: 16px;
+  gap: 2px;
+}
+.mini-hud .cycle-title {
+  font: 700 11px "Segoe UI", Tahoma, sans-serif;
+  letter-spacing: 0.2px;
+}
+.mini-hud .cycle-subtext {
+  font: 600 10px "Segoe UI", Tahoma, sans-serif;
+  opacity: 0.9;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: min(392px, 68vw);
+}
+.mini-hud.cycle-hud.error {
+  border-color: rgba(255, 104, 104, 0.92);
+  background: rgba(116, 20, 20, 0.86);
+  color: #ffd7d7;
+}
+.mini-hud.cycle-hud.error .cycle-subtext {
+  opacity: 1;
 }
 .mini-hud.recording {
   border-color: rgba(255, 96, 96, 0.85);
@@ -35,4 +50,28 @@ svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   border-color: rgba(93, 186, 110, 0.85);
   background: rgba(26, 111, 50, 0.8);
   color: #d4ffe0;
+  gap: 2px;
+  border-radius: 14px;
+}
+.mini-hud.chain-hud { min-width: 150px; }
+.chain-spell {
+  font: 600 10px "Segoe UI", Tahoma, sans-serif;
+  opacity: 0.95;
+  max-width: min(392px, 68vw);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.chain-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(117, 142, 164, 0.25);
+  overflow: hidden;
+}
+.chain-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #8eb2d2;
+  width: 0%;
 }

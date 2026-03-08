@@ -149,6 +149,7 @@ namespace SMART_CAST
 		[[nodiscard]] bool IsRecording() const;
 		[[nodiscard]] bool IsPlaying() const;
 		[[nodiscard]] std::int32_t GetActiveChainIndex1Based() const;
+		[[nodiscard]] bool GetPlaybackHudState(std::string& a_spellNameOut, float& a_progress01Out) const;
 
 	private:
 		struct RuntimeState

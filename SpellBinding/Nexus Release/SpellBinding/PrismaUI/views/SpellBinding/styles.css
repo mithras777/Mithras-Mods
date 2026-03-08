@@ -183,9 +183,29 @@ body {
 .slot-slider-inline {
   width: 100%;
   justify-content: space-between;
+  align-items: center;
+  gap: 6px;
 }
 .slot-slider-inline input[type='range'] {
-  width: 52%;
+  width: 50%;
+}
+.compact-range {
+  height: 10px;
+}
+.compact-range::-webkit-slider-runnable-track {
+  height: 3px;
+}
+.compact-range::-webkit-slider-thumb {
+  margin-top: -4px;
+  width: 9px;
+  height: 9px;
+}
+.compact-range::-moz-range-track {
+  height: 3px;
+}
+.compact-range::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
 }
 .slot-header {
   display: flex;
@@ -719,57 +739,49 @@ input[type='checkbox']:checked::before { transform: scale(1); }
   gap: 8px;
   align-items: center;
 }
-.hud-adjust-donut {
-  position: fixed;
-  border-radius: 50%;
-  cursor: move;
-  z-index: 52;
-}
-.hud-adjust-donut svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-.hud-adjust-donut .track {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.2);
-  stroke-width: 10;
-}
-.hud-adjust-donut .progress {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 10;
-  stroke-linecap: round;
-  stroke-dasharray: 263.89;
-  stroke-dashoffset: 131.945;
-}
-.hud-adjust-donut .label {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: var(--text);
-  font: 600 13px "Segoe UI", Tahoma, sans-serif;
-}
 .hud-adjust-chip {
   position: fixed;
   z-index: 52;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 14px;
   background: rgba(0, 0, 0, 0.6);
   color: var(--text);
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
   font-size: 11px;
   font-weight: 700;
   cursor: move;
   user-select: none;
   text-align: center;
-  padding: 0 8px;
+  padding: 6px 10px;
 }
 .hud-adjust-chip.active {
   border-color: var(--line-strong);
   box-shadow: 0 0 0 1px rgba(67, 151, 250, 0.45);
+}
+.hud-adjust-card-title {
+  font-size: 11px;
+}
+.hud-adjust-card-subtext {
+  font-size: 10px;
+  color: var(--muted);
+}
+.hud-adjust-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(117, 142, 164, 0.25);
+  overflow: hidden;
+}
+.hud-adjust-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #8eb2d2;
 }
 
 .toast {

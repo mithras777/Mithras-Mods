@@ -2,6 +2,7 @@
 
 #include "event/AttackAnimationEventSink.h"
 #include "overhaul/SpellbladeOverhaulManager.h"
+#include "smartcast/SmartCastController.h"
 #include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
 
@@ -629,6 +630,17 @@ namespace SBIND
 			Notify("SpellBinding: selected spell type is not supported");
 			return false;
 		}
+		if (IsBoundWeaponSpell(spell)) {
+			{
+				std::scoped_lock lock(m_lock);
+				m_runtime.cycleHudIsError = true;
+				m_runtime.cycleHudErrorText = "Blocked: Bound spell";
+				m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+				m_runtime.lastError = "Bound weapon spells cannot be slotted";
+			}
+			PushHUDSnapshot();
+			return false;
+		}
 
 		const std::string formKey = BuildFormKey(spell);
 		if (formKey.empty()) {
@@ -667,6 +679,9 @@ namespace SBIND
 				1u,
 				true
 			};
+			m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+			m_runtime.cycleHudIsError = false;
+			m_runtime.cycleHudErrorText.clear();
 			m_runtime.lastError.clear();
 		}
 
@@ -684,6 +699,8 @@ namespace SBIND
 	{
 		std::scoped_lock lock(m_lock);
 		m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+		m_runtime.cycleHudIsError = false;
+		m_runtime.cycleHudErrorText.clear();
 	}
 	}
 
@@ -705,6 +722,17 @@ namespace SBIND
 			auto* player = RE::PlayerCharacter::GetSingleton();
 			auto* spell = ResolveSpell(spellFormKey);
 			if (!player || !spell || !IsSupportedSpell(spell)) {
+				return false;
+			}
+			if (IsBoundWeaponSpell(spell)) {
+				{
+					std::scoped_lock lock(m_lock);
+					m_runtime.cycleHudIsError = true;
+					m_runtime.cycleHudErrorText = "Blocked: Bound spell";
+					m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+					m_runtime.lastError = "Bound weapon spells cannot be slotted";
+				}
+				PushHUDSnapshot();
 				return false;
 			}
 			if (IsBlacklisted(spellFormKey)) {
@@ -729,8 +757,12 @@ namespace SBIND
 					1u,
 					true
 				};
+				m_runtime.lastCycleSwitchWorldTimeSec = m_runtime.worldTimeSec;
+				m_runtime.cycleHudIsError = false;
+				m_runtime.cycleHudErrorText.clear();
 			}
 			PushUISnapshot();
+			PushHUDSnapshot();
 			return true;
 		} catch (...) {
 			return false;
@@ -1311,12 +1343,6 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 			PlayCueBlocked();
 			return false;
 		}
-		if (const auto cdIt = m_runtime.weaponCooldownReadyAt.find(a_key);
-		    cdIt != m_runtime.weaponCooldownReadyAt.end() && m_runtime.worldTimeSec < cdIt->second) {
-			SetLastErrorLocked("Internal cooldown active");
-			PlayCueBlocked();
-			return false;
-		}
 
 		auto* spell = ResolveSpell(slotBinding->spellFormKey);
 		if (!spell || !a_player->HasSpell(spell)) {
@@ -1330,27 +1356,7 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 			StopActiveConcentration(a_player, true);
 		}
 		if (spellType == RE::MagicSystem::SpellType::kPower || spellType == RE::MagicSystem::SpellType::kVoicePower) {
-			if (a_player->IsInCastPowerList(spell)) {
-				SetLastErrorLocked("Power is on cooldown");
-				PlayCueBlocked();
-				return false;
-			}
-			if (spellType == RE::MagicSystem::SpellType::kPower) {
-				const float nowDays = GetGameDaysPassed();
-				if (const auto dayIt = m_runtime.powerCooldownGameDayUntil.find(slotBinding->spellFormKey);
-				    dayIt != m_runtime.powerCooldownGameDayUntil.end() && nowDays < dayIt->second) {
-					SetLastErrorLocked("Power is on daily cooldown");
-					PlayCueBlocked();
-					return false;
-				}
-			} else {
-				if (const auto cdIt = m_runtime.powerCooldownUntil.find(slotBinding->spellFormKey);
-				    cdIt != m_runtime.powerCooldownUntil.end() && m_runtime.worldTimeSec < cdIt->second) {
-					SetLastErrorLocked("Shout cooldown active");
-					PlayCueBlocked();
-					return false;
-				}
-			}
+			// SpellBinding no longer enforces power/shout cooldown gating.
 		}
 
 		auto* avOwner = a_player->AsActorValueOwner();
@@ -1367,7 +1373,7 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 			PlayCueBlocked();
 			return false;
 		}
-		const auto castCount = (SupportsCastCount(spell) && !isConcentration) ? std::clamp(slotBinding->castCount, 1u, 10u) : 1u;
+		const auto castCount = isConcentration ? 1u : 1u;
 
 		auto source = RE::MagicSystem::CastingSource::kInstant;
 		auto* caster = a_player->GetMagicCaster(source);
@@ -1405,13 +1411,6 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		}
 
 		slotBinding->spellType = static_cast<std::uint32_t>(spellType);
-		if (spellType == RE::MagicSystem::SpellType::kVoicePower) {
-			float cd = 0.85f;
-			cd = std::max(cd, a_player->GetVoiceRecoveryTime());
-			m_runtime.powerCooldownUntil[slotBinding->spellFormKey] = m_runtime.worldTimeSec + cd;
-		} else if (spellType == RE::MagicSystem::SpellType::kPower) {
-			m_runtime.powerCooldownGameDayUntil[slotBinding->spellFormKey] = GetGameDaysPassed() + 1.0f;
-		}
 		if (isConcentration) {
 			m_runtime.activeConcentrationSpellKey = slotBinding->spellFormKey;
 			m_runtime.concentrationCastOnSelf = castOnSelf;
@@ -1421,8 +1420,6 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 			m_runtime.concentrationTickTimer = 0.30f;
 		}
 
-		const float cdSec = std::clamp(profileIt->second.triggerCooldownSec, 0.5f, 5.0f);
-		m_runtime.weaponCooldownReadyAt[a_key] = m_runtime.worldTimeSec + cdSec;
 		m_runtime.lastTriggerWeapon = a_key.displayName;
 		m_runtime.lastTriggerSpell = slotBinding->displayName;
 		m_runtime.lastMagickaCost = spentMagicka;
@@ -1500,6 +1497,24 @@ bool Manager::IsSupportedSpell(const RE::SpellItem* a_spell)
 		       type == RE::MagicSystem::SpellType::kLesserPower ||
 	       type == RE::MagicSystem::SpellType::kPower ||
 	       type == RE::MagicSystem::SpellType::kVoicePower;
+}
+
+bool Manager::IsBoundWeaponSpell(const RE::SpellItem* a_spell)
+{
+	if (!a_spell) {
+		return false;
+	}
+
+	const char* rawName = a_spell->GetName();
+	if (!rawName) {
+		return false;
+	}
+
+	std::string name(rawName);
+	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) {
+		return static_cast<char>(std::tolower(ch));
+	});
+	return name.rfind("bound ", 0) == 0;
 }
 
 bool Manager::IsDestructionSpell(const RE::SpellItem* a_spell)
@@ -1655,8 +1670,8 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 						{ "spellType", SpellTypeLabel(slot.spellType) },
 						{ "metric", "N/A" },
 						{ "castHoldSec", slot.castHoldSec },
-						{ "castIntervalSec", slot.castIntervalSec },
-						{ "castCount", slot.castCount },
+						{ "castIntervalSec", 0.0f },
+						{ "castCount", 1u },
 						{ "school", "Other" },
 						{ "castingType", "FireAndForget" },
 						{ "baseCost", 0.0f },
@@ -1674,12 +1689,13 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 						else if (school == RE::ActorValue::kAlteration) out["school"] = "Alteration";
 						const bool conc = resolved->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
 						const float baseCost = player ? std::max(0.0f, resolved->CalculateMagickaCost(player)) : 0.0f;
-						const auto casts = SupportsCastCount(resolved) ? std::clamp(slot.castCount, 1u, 10u) : 1u;
 						out["castingType"] = conc ? "Concentration" : "FireAndForget";
 						out["baseCost"] = baseCost;
 						out["costPerSecond"] = conc ? baseCost : 0.0f;
-						out["netCost"] = conc ? baseCost : (baseCost * static_cast<float>(casts));
-						out["supportsCastCount"] = SupportsCastCount(resolved);
+						out["netCost"] = baseCost;
+						out["castIntervalSec"] = 0.0f;
+						out["castCount"] = 1u;
+						out["supportsCastCount"] = false;
 					}
 					return out;
 				};
@@ -1690,11 +1706,7 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 				};
 				root["currentWeapon"]["triggerCooldownSec"] = it->second.triggerCooldownSec;
 				root["currentWeapon"]["onlyInCombat"] = it->second.onlyInCombat;
-				if (const auto cdIt = m_runtime.weaponCooldownReadyAt.find(*current); cdIt != m_runtime.weaponCooldownReadyAt.end()) {
-					root["currentWeapon"]["cooldownRemainingSec"] = std::max(0.0f, cdIt->second - m_runtime.worldTimeSec);
-				} else {
-					root["currentWeapon"]["cooldownRemainingSec"] = 0.0f;
-				}
+				root["currentWeapon"]["cooldownRemainingSec"] = 0.0f;
 			}
 		}
 
@@ -1767,50 +1779,35 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 	{
 		json root{};
 		auto* player = RE::PlayerCharacter::GetSingleton();
-		float total = kDefaultWeaponCooldown;
-		float remaining = 0.0f;
-		bool donutVisible = m_config.hudDonutEnabled;
+		std::string cycleSpellName = "None";
 
 		const auto current = m_runtime.rightWeapon.has_value() ? m_runtime.rightWeapon : (m_runtime.leftWeapon.has_value() ? m_runtime.leftWeapon : m_runtime.unarmedKey);
 		if (current.has_value()) {
 			if (const auto pit = m_bindings.find(*current); pit != m_bindings.end()) {
-				total = std::clamp(pit->second.triggerCooldownSec, 0.5f, 5.0f);
-			}
-			if (const auto cdIt = m_runtime.weaponCooldownReadyAt.find(*current); cdIt != m_runtime.weaponCooldownReadyAt.end()) {
-				remaining = std::max(0.0f, cdIt->second - m_runtime.worldTimeSec);
+				if (const auto* slot = GetSlotBinding(pit->second, m_config.currentBindSlotMode); slot && slot->enabled) {
+					if (!slot->displayName.empty()) {
+						cycleSpellName = slot->displayName;
+					}
+				}
 			}
 		}
 
-		if (m_config.hudDonutOnlyUnsheathed && player) {
-			const auto* actorState = player->AsActorState();
-			if (actorState && !actorState->IsWeaponDrawn()) {
-				donutVisible = false;
-			}
-		}
-		if (remaining <= 0.01f && !m_runtime.hudDragModeActive) {
-			donutVisible = false;
-		}
-
-		const bool cycleVisible = (m_runtime.worldTimeSec - m_runtime.lastCycleSwitchWorldTimeSec) <= 2.0f;
+		const bool isMagicMenuOpen = player && RE::UI::GetSingleton() && RE::UI::GetSingleton()->IsMenuOpen(RE::MagicMenu::MENU_NAME);
+		const bool cycleVisible = isMagicMenuOpen || (m_runtime.worldTimeSec - m_runtime.lastCycleSwitchWorldTimeSec) <= 2.0f;
 		const bool inCombat = player ? player->IsInCombat() : false;
 		const bool chainPopupVisible = (m_runtime.worldTimeSec - m_runtime.lastChainSwitchWorldTimeSec) <= 2.0f;
 		const bool chainPlayingRecently = (m_runtime.worldTimeSec - m_runtime.lastChainPlayingWorldTimeSec) <= 2.0f;
 		const bool chainVisible = m_runtime.chainRecordingActive || m_runtime.chainPlayingActive || chainPlayingRecently || chainPopupVisible || (m_config.hudChainAlwaysShowInCombat && inCombat);
+		std::string chainCurrentSpell{};
+		float chainStepProgress = 0.0f;
+		const bool hasPlaybackHudState = SMART_CAST::Controller::GetSingleton()->GetPlaybackHudState(chainCurrentSpell, chainStepProgress);
+		(void)hasPlaybackHudState;
 
-		root["donut"] = {
-			{ "visible", donutVisible && !m_runtime.hudDragModeActive },
-			{ "progress", total <= 0.01f ? 0.0f : std::clamp(remaining / total, 0.0f, 1.0f) },
-			{ "remainingSec", remaining },
-			{ "x", m_config.hudPosX },
-			{ "y", m_config.hudPosY },
-			{ "size", m_config.hudDonutSize },
-			{ "anchor", m_config.hudAnchor },
-			{ "showSeconds", m_config.hudShowCooldownSeconds },
-			{ "dragMode", m_runtime.hudDragModeActive }
-		};
 		root["cycleHud"] = {
 			{ "visible", cycleVisible },
 			{ "text", AttackSlotLabel(m_config.currentBindSlotMode) },
+			{ "subtext", m_runtime.cycleHudIsError ? m_runtime.cycleHudErrorText : cycleSpellName },
+			{ "isError", m_runtime.cycleHudIsError },
 			{ "x", m_config.hudCyclePosX },
 			{ "y", m_config.hudCyclePosY },
 			{ "size", m_config.hudCycleSize },
@@ -1819,6 +1816,8 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 		root["chainHud"] = {
 			{ "visible", chainVisible },
 			{ "text", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText },
+			{ "currentSpell", chainCurrentSpell },
+			{ "stepProgress", chainStepProgress },
 			{ "x", m_config.hudChainPosX },
 			{ "y", m_config.hudChainPosY },
 			{ "size", m_config.hudChainSize },
@@ -1830,16 +1829,16 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 			{ "playingChainText", m_runtime.lastChainHudText.empty() ? "Chain 1" : m_runtime.lastChainHudText }
 		};
 
-		// Legacy donut fields for compatibility while web HUD parser migrates.
-		root["visible"] = root["donut"]["visible"];
-		root["progress"] = root["donut"]["progress"];
-		root["remainingSec"] = root["donut"]["remainingSec"];
-		root["x"] = root["donut"]["x"];
-		root["y"] = root["donut"]["y"];
-		root["size"] = root["donut"]["size"];
-		root["anchor"] = root["donut"]["anchor"];
-		root["showSeconds"] = root["donut"]["showSeconds"];
-		root["dragMode"] = root["donut"]["dragMode"];
+		// Legacy fields kept inert for compatibility.
+		root["visible"] = false;
+		root["progress"] = 0.0f;
+		root["remainingSec"] = 0.0f;
+		root["x"] = m_config.hudPosX;
+		root["y"] = m_config.hudPosY;
+		root["size"] = m_config.hudDonutSize;
+		root["anchor"] = m_config.hudAnchor;
+		root["showSeconds"] = false;
+		root["dragMode"] = m_runtime.hudDragModeActive;
 		return root.dump();
 	}
 

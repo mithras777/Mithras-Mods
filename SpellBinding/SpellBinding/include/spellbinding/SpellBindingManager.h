@@ -201,6 +201,8 @@ namespace SBIND
 			float lastMagickaCost{ 0.0f };
 			bool lastWasPowerAttack{ false };
 			float lastCycleSwitchWorldTimeSec{ -1000.0f };
+			bool cycleHudIsError{ false };
+			std::string cycleHudErrorText{};
 			float lastChainSwitchWorldTimeSec{ -1000.0f };
 			float lastChainPlayingWorldTimeSec{ -1000.0f };
 			std::string lastChainHudText{ "Chain 1" };
@@ -246,6 +248,7 @@ namespace SBIND
 		void PlayCueBlocked() const;
 
 		[[nodiscard]] static bool IsSupportedSpell(const RE::SpellItem* a_spell);
+		[[nodiscard]] static bool IsBoundWeaponSpell(const RE::SpellItem* a_spell);
 		[[nodiscard]] static bool IsDestructionSpell(const RE::SpellItem* a_spell);
 		[[nodiscard]] static bool SupportsCastCount(const RE::SpellItem* a_spell);
 		[[nodiscard]] static float GetGameDaysPassed();

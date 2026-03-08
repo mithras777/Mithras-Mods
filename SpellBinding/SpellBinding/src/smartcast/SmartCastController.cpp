@@ -523,6 +523,47 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 	bool Controller::IsRecording() const { return m_runtime.mode == Mode::kRecording; }
 	bool Controller::IsPlaying() const { return m_runtime.mode == Mode::kPlaying; }
 	std::int32_t Controller::GetActiveChainIndex1Based() const { return m_runtime.activeChainIndex + 1; }
+	bool Controller::GetPlaybackHudState(std::string& a_spellNameOut, float& a_progress01Out) const
+	{
+		a_spellNameOut.clear();
+		a_progress01Out = 0.0f;
+		if (m_runtime.mode != Mode::kPlaying) {
+			return false;
+		}
+
+		const auto playbackIdx = m_runtime.playbackChainIndex >= 0 ? m_runtime.playbackChainIndex : m_runtime.activeChainIndex;
+		const auto chainIdx = static_cast<std::size_t>(playbackIdx);
+		if (playbackIdx < 0 || chainIdx >= m_config.chains.size()) {
+			return false;
+		}
+		const auto& chain = m_config.chains[chainIdx];
+		if (chain.steps.empty()) {
+			return false;
+		}
+
+		std::string spellKey;
+		if (!m_runtime.activeConcentrationSpell.empty()) {
+			spellKey = m_runtime.activeConcentrationSpell;
+		} else {
+			std::size_t lastPlayedStep = m_runtime.playbackStepIndex > 0 ? (m_runtime.playbackStepIndex - 1) : 0;
+			lastPlayedStep = std::min(lastPlayedStep, chain.steps.size() - 1);
+			spellKey = chain.steps[lastPlayedStep].spellFormID;
+		}
+		if (!spellKey.empty()) {
+			if (auto* spell = ResolveSpell(spellKey)) {
+				const auto* name = spell->GetName();
+				a_spellNameOut = (name && name[0] != '\0') ? name : spellKey;
+			} else {
+				a_spellNameOut = spellKey;
+			}
+		}
+
+		const float delay = std::clamp(chain.stepDelaySec, 0.5f, 3.0f);
+		if (delay > 0.0f) {
+			a_progress01Out = Clamp01(1.0f - (m_runtime.stepDelayTimer / delay));
+		}
+		return true;
+	}
 	float Controller::Clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 	float Controller::Quantize(float v, float step) { return step <= 0.0f ? v : (std::round(v / step) * step); }
 
@@ -658,13 +699,19 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 		}
 
 		const bool samePlayCancelKey = (m_config.global.playback.playKey == m_config.global.playback.cancelKey);
-		if (allowPlaybackHotkeys && playPressed) {
-			if (cycleModifierDown) {
-				const auto chainCount = static_cast<std::int32_t>(m_config.chains.size());
-				if (chainCount > 0) {
-					m_runtime.activeChainIndex = (m_runtime.activeChainIndex + 1) % chainCount;
+		if (playPressed && cycleModifierDown) {
+			const auto chainCount = static_cast<std::int32_t>(m_config.chains.size());
+			if (chainCount > 0) {
+				m_runtime.activeChainIndex = (m_runtime.activeChainIndex + 1) % chainCount;
+				std::string chainName = std::format("Chain {}", m_runtime.activeChainIndex + 1);
+				const auto& configured = m_config.chains[static_cast<std::size_t>(m_runtime.activeChainIndex)].name;
+				if (!configured.empty()) {
+					chainName = configured;
 				}
-			} else if (m_runtime.mode == Mode::kPlaying) {
+				SBIND::Manager::GetSingleton()->NotifyChainSwitch(m_runtime.activeChainIndex + 1, chainName);
+			}
+		} else if (allowPlaybackHotkeys && playPressed) {
+			if (m_runtime.mode == Mode::kPlaying) {
 				StopPlayback(true);
 			} else {
 				StartPlayback(activeChain);
