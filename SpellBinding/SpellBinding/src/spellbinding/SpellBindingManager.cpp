@@ -385,13 +385,17 @@ namespace SBIND
 		if (!a_player || a_deltaTime <= 0.0f) {
 			return;
 		}
-		SB_EVENT::AttackAnimationEventSink::Register();
 
 		const auto config = GetConfig();
 		{
 			std::scoped_lock lock(m_lock);
 			m_runtime.worldTimeSec += a_deltaTime;
 			m_runtime.wasAttacking = a_player->IsAttacking();
+			const bool powerAttackActive = IsPowerAttackActive(a_player);
+			if (!powerAttackActive) {
+				m_runtime.powerAttackLatched = false;
+			}
+			m_runtime.wasPowerAttackActive = powerAttackActive;
 			if (!m_runtime.wasAttacking) {
 				m_runtime.attackChainActive = false;
 				m_runtime.pendingLightAttack = false;
@@ -413,7 +417,14 @@ namespace SBIND
 			if (m_runtime.pendingLightAttack && m_runtime.worldTimeSec >= m_runtime.pendingLightReadyAtWorldTimeSec) {
 				m_runtime.pendingLightAttack = false;
 				const bool shouldPromotePower = IsPowerAttackActive(a_player);
-				triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, shouldPromotePower ? AttackSlot::kPower : AttackSlot::kLight, shouldPromotePower);
+				if (shouldPromotePower && m_runtime.powerAttackLatched) {
+					triggeredPendingLight = false;
+				} else {
+					triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, shouldPromotePower ? AttackSlot::kPower : AttackSlot::kLight, shouldPromotePower);
+					if (triggeredPendingLight && shouldPromotePower) {
+						m_runtime.powerAttackLatched = true;
+					}
+				}
 			}
 		}
 		if (triggeredPendingLight) {
@@ -510,17 +521,27 @@ namespace SBIND
 		bool attemptedTrigger = false;
 		{
 			std::scoped_lock lock(m_lock);
-			if (m_runtime.pendingLightAttack && IsPowerAttackActive(player, tag, payload)) {
+			if (m_runtime.pendingLightAttack && IsPowerAttackActive(player)) {
 				m_runtime.pendingLightAttack = false;
-				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+				if (!m_runtime.powerAttackLatched) {
+					attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+					if (attemptedTrigger) {
+						m_runtime.powerAttackLatched = true;
+					}
+				}
 			} else
 			if (hasBashStart) {
 				m_runtime.pendingLightAttack = false;
 				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kBash, false);
 			} else if (hasAttackStart) {
-				if (IsPowerAttackActive(player, tag, payload)) {
+				if (IsPowerAttackActive(player)) {
 					m_runtime.pendingLightAttack = false;
-					attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+					if (!m_runtime.powerAttackLatched) {
+						attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+						if (attemptedTrigger) {
+							m_runtime.powerAttackLatched = true;
+						}
+					}
 				} else {
 				m_runtime.pendingLightAttack = true;
 				m_runtime.pendingLightReadyAtWorldTimeSec = m_runtime.worldTimeSec + kPendingLightDelaySec;
@@ -529,7 +550,12 @@ namespace SBIND
 			} else {
 				const AttackSlot attackSlot = ResolveAttackSlot(tag, payload, player);
 				m_runtime.pendingLightAttack = false;
-				attemptedTrigger = TryTriggerAttackSlotLocked(player, attackSlot, attackSlot == AttackSlot::kPower);
+				if (attackSlot != AttackSlot::kPower || !m_runtime.powerAttackLatched) {
+					attemptedTrigger = TryTriggerAttackSlotLocked(player, attackSlot, attackSlot == AttackSlot::kPower);
+					if (attemptedTrigger && attackSlot == AttackSlot::kPower) {
+						m_runtime.powerAttackLatched = true;
+					}
+				}
 			}
 		}
 		if (attemptedTrigger) {
@@ -1246,6 +1272,7 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 {
 		(void)a_tag;
 		(void)a_payload;
+
 		if (!a_player) {
 			return false;
 		}
@@ -1314,12 +1341,28 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 			StopActiveConcentration(a_player, false);
 			return;
 		}
+		auto* avOwner = a_player->AsActorValueOwner();
+		if (!avOwner) {
+			StopActiveConcentration(a_player, false);
+			return;
+		}
 
 		auto combatTarget = a_player->GetActorRuntimeData().currentCombatTarget.get();
 		RE::TESObjectREFR* target = m_runtime.concentrationCastOnSelf ? static_cast<RE::TESObjectREFR*>(a_player) : combatTarget.get();
 
-		caster->currentSpellCost = std::max(0.0f, spell->CalculateMagickaCost(a_player));
+		const float magickaPerSec = std::max(0.0f, spell->CalculateMagickaCost(a_player));
+		const float tickCost = magickaPerSec * 0.30f;
+		if (tickCost > 0.0f && avOwner->GetActorValue(RE::ActorValue::kMagicka) + 0.001f < tickCost) {
+			StopActiveConcentration(a_player, true);
+			return;
+		}
+
+		caster->currentSpellCost = magickaPerSec;
 		caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, m_runtime.concentrationCastOnSelf ? nullptr : a_player);
+		if (tickCost > 0.0f) {
+			avOwner->DamageActorValue(RE::ActorValue::kMagicka, tickCost);
+			m_runtime.lastMagickaCost = tickCost;
+		}
 		m_runtime.concentrationTickTimer = 0.30f;
 	}
 
@@ -1367,13 +1410,14 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		}
 
 		const float magickaCost = std::max(0.0f, spell->CalculateMagickaCost(a_player));
-		const float preMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
-		if (!isConcentration && preMagicka + 0.001f < magickaCost) {
+		const auto castCount = isConcentration ? 1u : 1u;
+		const float concentrationTickCost = magickaCost * 0.30f;
+		const float requiredMagicka = isConcentration ? concentrationTickCost : (magickaCost * static_cast<float>(castCount));
+		if (requiredMagicka > 0.0f && avOwner->GetActorValue(RE::ActorValue::kMagicka) + 0.001f < requiredMagicka) {
 			SetLastErrorLocked("Not enough magicka");
 			PlayCueBlocked();
 			return false;
 		}
-		const auto castCount = isConcentration ? 1u : 1u;
 
 		auto source = RE::MagicSystem::CastingSource::kInstant;
 		auto* caster = a_player->GetMagicCaster(source);
@@ -1400,14 +1444,17 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		}
 
 		float spentMagicka = 0.0f;
-		if (!isConcentration && (spellType == RE::MagicSystem::SpellType::kSpell || spellType == RE::MagicSystem::SpellType::kLesserPower)) {
-			const float postMagicka = avOwner->GetActorValue(RE::ActorValue::kMagicka);
-			const float engineSpent = std::max(0.0f, preMagicka - postMagicka);
-			const float manualNeeded = std::max(0.0f, magickaCost - engineSpent);
-			if (manualNeeded > 0.001f) {
-				avOwner->DamageActorValue(RE::ActorValue::kMagicka, manualNeeded);
+		if (isConcentration) {
+			if (concentrationTickCost > 0.0f) {
+				avOwner->DamageActorValue(RE::ActorValue::kMagicka, concentrationTickCost);
+				spentMagicka = concentrationTickCost;
 			}
-			spentMagicka = engineSpent + manualNeeded;
+		} else {
+			const float totalCost = magickaCost * static_cast<float>(castCount);
+			if (totalCost > 0.0f) {
+				avOwner->DamageActorValue(RE::ActorValue::kMagicka, totalCost);
+				spentMagicka = totalCost;
+			}
 		}
 
 		slotBinding->spellType = static_cast<std::uint32_t>(spellType);

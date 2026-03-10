@@ -6,6 +6,12 @@ function call(name, payload = '') {
   if (typeof fn === 'function') fn(payload);
 }
 
+function hudDimensionsForChip(type, size) {
+  const h = Math.max(36, Math.min(200, Number(size || 56)));
+  const w = type === 'cycle' ? Math.round(h * 3.1) : Math.round(h * 3.2);
+  return { width: w, height: h };
+}
+
 function Hud() {
   const [state, setState] = useState({
     cycleHud: {
@@ -100,7 +106,13 @@ function Hud() {
       {state.cycleHud.visible && (
         <div
           className={['mini-hud', 'cycle-hud', state.cycleHud.isError ? 'error' : ''].join(' ').trim()}
-          style={{ left: `${state.cycleHud.x}px`, top: `${state.cycleHud.y}px`, minHeight: `${state.cycleHud.size}px`, pointerEvents: state.cycleHud.dragMode ? 'auto' : 'none' }}
+          style={{
+            left: `${state.cycleHud.x}px`,
+            top: `${state.cycleHud.y}px`,
+            width: `${hudDimensionsForChip('cycle', state.cycleHud.size).width}px`,
+            height: `${hudDimensionsForChip('cycle', state.cycleHud.size).height}px`,
+            pointerEvents: state.cycleHud.dragMode ? 'auto' : 'none'
+          }}
           onMouseDown={(e) => {
             if (!state.cycleHud.dragMode) return;
             setDrag({ target: 'cycleHud', x: e.clientX, y: e.clientY, left: state.cycleHud.x, top: state.cycleHud.y });
@@ -118,7 +130,13 @@ function Hud() {
             state.chainHud.isRecording ? 'recording' : '',
             state.chainHud.isPlaying ? 'playing' : ''
           ].join(' ').trim()}
-          style={{ left: `${state.chainHud.x}px`, top: `${state.chainHud.y}px`, minHeight: `${state.chainHud.size}px`, pointerEvents: state.chainHud.dragMode ? 'auto' : 'none' }}
+          style={{
+            left: `${state.chainHud.x}px`,
+            top: `${state.chainHud.y}px`,
+            width: `${hudDimensionsForChip('chain', state.chainHud.size).width}px`,
+            height: `${hudDimensionsForChip('chain', state.chainHud.size).height}px`,
+            pointerEvents: state.chainHud.dragMode ? 'auto' : 'none'
+          }}
           onMouseDown={(e) => {
             if (!state.chainHud.dragMode) return;
             setDrag({ target: 'chainHud', x: e.clientX, y: e.clientY, left: state.chainHud.x, top: state.chainHud.y });

@@ -181,12 +181,16 @@ namespace SBIND
 		struct RuntimeState
 		{
 			bool wasAttacking{ false };
+			bool wasPowerAttackActive{ false };
 			bool attackChainActive{ false };
+			bool powerAttackLatched{ false };
 			bool pendingLightAttack{ false };
 			bool menuBlocked{ false };
 			bool hudDragModeActive{ false };
 			float worldTimeSec{ 0.0f };
 			float lastAttackTriggerWorldTimeSec{ -1000.0f };
+			float lastAttackAnimationEventWorldTimeSec{ -1000.0f };
+			float lastAttackSinkRecoveryWorldTimeSec{ -1000.0f };
 			float pendingLightReadyAtWorldTimeSec{ 0.0f };
 			AttackSlot lastResolvedAttackSlot{ AttackSlot::kLight };
 			std::optional<BindingKey> rightWeapon{};

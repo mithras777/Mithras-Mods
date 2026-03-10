@@ -5,59 +5,68 @@
 
 namespace SB_EVENT
 {
-	namespace
-	{
-		bool g_registered = false;
+	namespace {
+		static thread_local int g_inProcessEvent = 0;
 
-		bool BindToPlayer(bool a_forceRebind)
+		struct ProcessEventGuard
 		{
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			auto* sink = AttackAnimationEventSink::GetSingleton();
-			if (!player || !sink) {
-				LOG_WARN("SpellBinding: failed to bind attack animation sink (player not ready)");
-				return false;
-			}
-
-			if (a_forceRebind) {
-				player->RemoveAnimationGraphEventSink(sink);
-				g_registered = false;
-			} else if (g_registered) {
-				return true;
-			}
-
-			if (!player->AddAnimationGraphEventSink(sink)) {
-				LOG_WARN("SpellBinding: AddAnimationGraphEventSink failed");
-				return false;
-			}
-
-			g_registered = true;
-			return true;
-		}
+			ProcessEventGuard() { ++g_inProcessEvent; }
+			~ProcessEventGuard() { --g_inProcessEvent; }
+		};
 	}
 
 	void AttackAnimationEventSink::Register()
 	{
-		if (BindToPlayer(false)) {
-			LOG_INFO("SpellBinding: attack animation sink registered");
+		if (g_installed) {
+			return;
 		}
+
+		REL::Relocation<std::uintptr_t> playerVtbl{ RE::VTABLE_PlayerCharacter[2] };
+		REL::Relocation<std::uintptr_t> characterVtbl{ RE::VTABLE_Character[2] };
+		g_playerProcessEvent = playerVtbl.write_vfunc(0x1, &PlayerProcessEvent);
+		g_characterProcessEvent = characterVtbl.write_vfunc(0x1, &CharacterProcessEvent);
+		g_installed = true;
+		LOG_INFO("SpellBinding: attack animation graph hooks installed");
 	}
 
 	void AttackAnimationEventSink::RebindToPlayer()
 	{
-		if (BindToPlayer(true)) {
-			LOG_INFO("SpellBinding: attack animation sink rebound");
-		}
+		// No-op on vfunc hook backend. Kept for compatibility with older call sites.
 	}
 
-	RE::BSEventNotifyControl AttackAnimationEventSink::ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*)
+	RE::BSEventNotifyControl AttackAnimationEventSink::ProcessEvent(RE::BSTEventSink<RE::BSAnimationGraphEvent>*,
+	                                                                RE::BSAnimationGraphEvent& a_event,
+	                                                                RE::BSTEventSource<RE::BSAnimationGraphEvent>*)
 	{
-		if (!a_event || !a_event->holder || !a_event->holder->IsPlayerRef()) {
+		// CastSpellImmediate can emit graph events; avoid recursive trigger processing.
+		if (g_inProcessEvent > 0) {
+			return RE::BSEventNotifyControl::kContinue;
+		}
+		ProcessEventGuard guard;
+
+		if (!a_event.holder || !a_event.holder->IsPlayerRef()) {
 			return RE::BSEventNotifyControl::kContinue;
 		}
 
-		const char* tag = a_event->tag.c_str();
-		const char* payload = a_event->payload.c_str();
+		const char* tag = a_event.tag.c_str();
+		const char* payload = a_event.payload.c_str();
 		SBIND::Manager::GetSingleton()->OnAttackAnimationEvent(tag ? tag : "", payload ? payload : "");
 		return RE::BSEventNotifyControl::kContinue;
+	}
+
+	RE::BSEventNotifyControl AttackAnimationEventSink::PlayerProcessEvent(RE::BSTEventSink<RE::BSAnimationGraphEvent>* a_this,
+	                                                                      RE::BSAnimationGraphEvent& a_event,
+	                                                                      RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_source)
+	{
+		ProcessEvent(a_this, a_event, a_source);
+		return g_playerProcessEvent(a_this, a_event, a_source);
+	}
+
+	RE::BSEventNotifyControl AttackAnimationEventSink::CharacterProcessEvent(RE::BSTEventSink<RE::BSAnimationGraphEvent>* a_this,
+	                                                                         RE::BSAnimationGraphEvent& a_event,
+	                                                                         RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_source)
+	{
+		ProcessEvent(a_this, a_event, a_source);
+		return g_characterProcessEvent(a_this, a_event, a_source);
 	}
 }

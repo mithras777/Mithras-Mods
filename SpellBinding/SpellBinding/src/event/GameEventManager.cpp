@@ -1,6 +1,5 @@
 #include "event/GameEventManager.h"
 
-#include "event/AttackAnimationEventSink.h"
 #include "spellbinding/SpellBindingManager.h"
 #include "util/LogUtil.h"
 
@@ -39,10 +38,6 @@ namespace GAME_EVENT {
 			++m_openBlockingMenus;
 		} else if (m_openBlockingMenus > 0) {
 			--m_openBlockingMenus;
-		}
-
-		if (!a_event->opening && menuName == RE::LoadingMenu::MENU_NAME) {
-			SB_EVENT::AttackAnimationEventSink::RebindToPlayer();
 		}
 
 		SBIND::Manager::GetSingleton()->OnMenuStateChanged(IsBlockingMenuOpen());

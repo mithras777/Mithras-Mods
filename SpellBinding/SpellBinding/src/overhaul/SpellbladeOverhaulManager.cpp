@@ -1035,6 +1035,32 @@ namespace SB_OVERHAUL
 						cfg.global.maxChains = std::max(1, static_cast<int>(cfg.chains.size()));
 						SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
 					}
+				} else if (action == "removeStep") {
+					auto cfg = SMART_CAST::Controller::GetSingleton()->GetConfig();
+					const auto idx = std::max(0, payload.value("index", 1) - 1);
+					const auto step = std::max(0, payload.value("step", 0));
+					if (idx < static_cast<int>(cfg.chains.size())) {
+						auto& steps = cfg.chains[static_cast<std::size_t>(idx)].steps;
+						if (step < static_cast<int>(steps.size())) {
+							steps.erase(steps.begin() + step);
+							SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
+						}
+					}
+				} else if (action == "moveStep") {
+					auto cfg = SMART_CAST::Controller::GetSingleton()->GetConfig();
+					const auto idx = std::max(0, payload.value("index", 1) - 1);
+					const auto step = std::max(0, payload.value("step", 0));
+					const auto direction = payload.value("direction", std::string{ "up" });
+					if (idx < static_cast<int>(cfg.chains.size())) {
+						auto& steps = cfg.chains[static_cast<std::size_t>(idx)].steps;
+						if (step < static_cast<int>(steps.size())) {
+							const int target = direction == "down" ? (step + 1) : (step - 1);
+							if (target >= 0 && target < static_cast<int>(steps.size())) {
+								std::swap(steps[static_cast<std::size_t>(step)], steps[static_cast<std::size_t>(target)]);
+								SMART_CAST::Controller::GetSingleton()->SetConfig(cfg, true);
+							}
+						}
+					}
 				}
 				PushUISnapshot();
 				return;

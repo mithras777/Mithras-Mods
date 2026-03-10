@@ -1055,6 +1055,7 @@ function App() {
                             <th>Spell</th>
                             <th>Cost</th>
                             <th>Adjust</th>
+                            <th>Order</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1093,6 +1094,33 @@ function App() {
                                       />
                                     </label>
                                   )}
+                                </td>
+                                <td>
+                                  <div className="inline">
+                                    <button
+                                      className="ghost-x-btn"
+                                      onClick={() => doAction('smartCast', 'moveStep', { index: smartCastActiveChain, step: idx, direction: 'up' })}
+                                      disabled={idx === 0}
+                                      aria-label={`Move ${spellName} up`}
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      className="ghost-x-btn"
+                                      onClick={() => doAction('smartCast', 'moveStep', { index: smartCastActiveChain, step: idx, direction: 'down' })}
+                                      disabled={idx === (selectedChain.steps || []).length - 1}
+                                      aria-label={`Move ${spellName} down`}
+                                    >
+                                      ↓
+                                    </button>
+                                    <button
+                                      className="ghost-x-btn ghost-danger-btn"
+                                      onClick={() => doAction('smartCast', 'removeStep', { index: smartCastActiveChain, step: idx })}
+                                      aria-label={`Remove ${spellName}`}
+                                    >
+                                      <X size={14} strokeWidth={2.25} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1432,8 +1460,8 @@ function App() {
             style={{
               left: `${hudDragPos.cycle?.x ?? 48}px`,
               top: `${hudDragPos.cycle?.y ?? 152}px`,
-              width: `${Math.round(Number(byPath(sb, ['config', 'hudCycleSize'], 56)) * 3.1)}px`,
-              height: `${Number(byPath(sb, ['config', 'hudCycleSize'], 56))}px`
+              width: `${hudDimensionsForTarget('cycle').width}px`,
+              height: `${hudDimensionsForTarget('cycle').height}px`
             }}
             onMouseDown={(e) => {
               setHudDragTarget('cycle');
@@ -1449,8 +1477,8 @@ function App() {
             style={{
               left: `${hudDragPos.chain?.x ?? 48}px`,
               top: `${hudDragPos.chain?.y ?? 216}px`,
-              width: `${Math.round(Number(byPath(sb, ['config', 'hudChainSize'], 56)) * 3.2)}px`,
-              height: `${Number(byPath(sb, ['config', 'hudChainSize'], 56))}px`
+              width: `${hudDimensionsForTarget('chain').width}px`,
+              height: `${hudDimensionsForTarget('chain').height}px`
             }}
             onMouseDown={(e) => {
               setHudDragTarget('chain');

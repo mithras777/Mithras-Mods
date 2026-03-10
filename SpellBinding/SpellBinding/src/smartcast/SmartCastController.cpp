@@ -583,6 +583,18 @@ void Controller::StartRecording(std::int32_t a_chainIndex1Based)
 	bool Controller::IsKeyDown(const std::string& key) const
 	{
 		if (key.empty() || key == "None") return false;
+		if (key.rfind("Key", 0) == 0 && key.size() == 4) {
+			const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(key[3])));
+			if (c >= 'A' && c <= 'Z') {
+				return (::GetAsyncKeyState(static_cast<int>(c)) & 0x8000) != 0;
+			}
+		}
+		if (key.rfind("Digit", 0) == 0 && key.size() == 6) {
+			const char c = key[5];
+			if (c >= '0' && c <= '9') {
+				return (::GetAsyncKeyState(static_cast<int>(c)) & 0x8000) != 0;
+			}
+		}
 		if (key.size() == 1) {
 			char c = static_cast<char>(std::toupper(static_cast<unsigned char>(key[0])));
 			if (c >= 'A' && c <= 'Z') {

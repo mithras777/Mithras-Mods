@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <unordered_set>
 
 namespace GAME_EVENT {
 
@@ -13,6 +15,7 @@ namespace GAME_EVENT {
 
 	private:
 		std::uint32_t m_openBlockingMenus{ 0 };
+		std::unordered_set<std::string> m_openBlockingMenuNames{};
 		virtual RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>* a_eventSource) override;
 	};
 }
