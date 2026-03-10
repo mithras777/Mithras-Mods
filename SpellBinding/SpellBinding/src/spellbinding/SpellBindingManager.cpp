@@ -511,6 +511,8 @@ namespace SBIND
 		if (isEndLike) {
 			std::scoped_lock lock(m_lock);
 			m_runtime.pendingLightAttack = false;
+			// End markers delimit attack windows; allow the next attack in a combo chain.
+			m_runtime.attackChainActive = false;
 			if (debugMode) {
 				LOG_INFO("SpellBinding Debug: end-like attack event ignored");
 			}
@@ -543,6 +545,10 @@ namespace SBIND
 			const bool powerAttackActive = IsPowerAttackActive(player);
 			const bool powerAttackEdge = powerAttackActive && !m_runtime.wasPowerAttackActive;
 			m_runtime.wasPowerAttackActive = powerAttackActive;
+			if (powerAttackEdge) {
+				// Permit light -> power transitions inside a continuous combo.
+				m_runtime.attackChainActive = false;
+			}
 
 			if (hasBashStart) {
 				m_runtime.pendingLightAttack = false;
@@ -1342,6 +1348,7 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		if (m_runtime.activeConcentrationSpellKey.empty()) {
 			return;
 		}
+		const bool debugMode = m_config.debugMode;
 
 		if (!a_player ||
 		    m_runtime.menuBlocked ||
@@ -1384,7 +1391,18 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 
 		const float magickaPerSec = std::max(0.0f, spell->CalculateMagickaCost(a_player));
 		const float tickCost = magickaPerSec * 0.30f;
-		if (tickCost > 0.0f && avOwner->GetActorValue(RE::ActorValue::kMagicka) + 0.001f < tickCost) {
+		const float magickaBefore = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+		if (debugMode) {
+			LOG_INFO("SpellBinding Debug: magicka check [concentration tick] spell='{}' current={:.2f} tickCost={:.2f} mps={:.2f}",
+				spell->GetName() ? spell->GetName() : "<unknown>",
+				magickaBefore,
+				tickCost,
+				magickaPerSec);
+		}
+		if (tickCost > 0.0f && magickaBefore + 0.001f < tickCost) {
+			if (debugMode) {
+				LOG_INFO("SpellBinding Debug: magicka blocked [concentration tick] current={:.2f} required={:.2f}", magickaBefore, tickCost);
+			}
 			StopActiveConcentration(a_player, true);
 			return;
 		}
@@ -1394,6 +1412,15 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		if (tickCost > 0.0f) {
 			avOwner->DamageActorValue(RE::ActorValue::kMagicka, tickCost);
 			m_runtime.lastMagickaCost = tickCost;
+			if (debugMode) {
+				const float magickaAfter = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+				LOG_INFO("SpellBinding Debug: magicka spent [concentration tick] amount={:.2f} before={:.2f} after={:.2f}",
+					tickCost,
+					magickaBefore,
+					magickaAfter);
+			}
+		} else if (debugMode) {
+			LOG_INFO("SpellBinding Debug: magicka spent [concentration tick] amount=0.00 (zero-cost tick)");
 		}
 		m_runtime.concentrationTickTimer = 0.30f;
 	}
@@ -1427,6 +1454,7 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		}
 		const auto spellType = spell->GetSpellType();
 		const bool isConcentration = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+		const bool debugMode = m_config.debugMode;
 		if (!m_runtime.activeConcentrationSpellKey.empty()) {
 			StopActiveConcentration(a_player, true);
 		}
@@ -1445,7 +1473,21 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 		const auto castCount = isConcentration ? 1u : 1u;
 		const float concentrationTickCost = magickaCost * 0.30f;
 		const float requiredMagicka = isConcentration ? concentrationTickCost : (magickaCost * static_cast<float>(castCount));
-		if (requiredMagicka > 0.0f && avOwner->GetActorValue(RE::ActorValue::kMagicka) + 0.001f < requiredMagicka) {
+		const float magickaBefore = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+		if (debugMode) {
+			LOG_INFO("SpellBinding Debug: magicka check [cast] spell='{}' slot={} concentration={} type={} current={:.2f} baseCost={:.2f} required={:.2f}",
+				spell->GetName() ? spell->GetName() : "<unknown>",
+				AttackSlotLabel(a_slot),
+				isConcentration,
+				static_cast<std::uint32_t>(spellType),
+				magickaBefore,
+				magickaCost,
+				requiredMagicka);
+		}
+		if (requiredMagicka > 0.0f && magickaBefore + 0.001f < requiredMagicka) {
+			if (debugMode) {
+				LOG_INFO("SpellBinding Debug: magicka blocked [cast] current={:.2f} required={:.2f}", magickaBefore, requiredMagicka);
+			}
 			SetLastErrorLocked("Not enough magicka");
 			PlayCueBlocked();
 			return false;
@@ -1487,6 +1529,16 @@ bool Manager::IsPowerAttackActive(RE::PlayerCharacter* a_player, std::string_vie
 				avOwner->DamageActorValue(RE::ActorValue::kMagicka, totalCost);
 				spentMagicka = totalCost;
 			}
+		}
+		if (debugMode) {
+			const float magickaAfter = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+			LOG_INFO("SpellBinding Debug: magicka spent [cast] spell='{}' amount={:.2f} before={:.2f} after={:.2f} concentration={} casts={}",
+				spell->GetName() ? spell->GetName() : "<unknown>",
+				spentMagicka,
+				magickaBefore,
+				magickaAfter,
+				isConcentration,
+				castCount);
 		}
 
 		slotBinding->spellType = static_cast<std::uint32_t>(spellType);

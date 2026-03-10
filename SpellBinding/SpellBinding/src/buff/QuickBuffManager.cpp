@@ -3,6 +3,7 @@
 #include "event/GameEventManager.h"
 #include "mastery_shout/MasteryManager.h"
 #include "mastery_spell/MasteryManager.h"
+#include "spellbinding/SpellBindingManager.h"
 #include "util/LogUtil.h"
 #include "RE/C/CrosshairPickData.h"
 
@@ -739,11 +740,45 @@ namespace QUICK_BUFF
 				pending.remainingSec = 0.0f;
 				continue;
 			}
-
-				caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, pending.castOnSelf ? nullptr : a_player);
-				NotifyMasteryCast(spell);
-				pending.tickTimer = kConcentrationTick;
+			auto* avOwner = a_player->AsActorValueOwner();
+			if (!avOwner) {
+				pending.remainingSec = 0.0f;
+				continue;
 			}
+			const bool debugMode = SBIND::Manager::GetSingleton()->GetConfig().debugMode;
+			const float magickaPerSec = std::max(0.0f, spell->CalculateMagickaCost(a_player));
+			const float tickCost = magickaPerSec * kConcentrationTick;
+			const float magickaBefore = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+			if (debugMode) {
+				LOG_INFO("QuickBuff Debug: magicka check [concentration tick] spell='{}' current={:.2f} tickCost={:.2f} mps={:.2f}",
+					spell->GetName() ? spell->GetName() : "<unknown>",
+					magickaBefore,
+					tickCost,
+					magickaPerSec);
+			}
+			if (tickCost > 0.0f && magickaBefore + 0.001f < tickCost) {
+				if (debugMode) {
+					LOG_INFO("QuickBuff Debug: magicka blocked [concentration tick] current={:.2f} required={:.2f}", magickaBefore, tickCost);
+				}
+				pending.remainingSec = 0.0f;
+				continue;
+			}
+
+			caster->currentSpellCost = magickaPerSec;
+			caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, pending.castOnSelf ? nullptr : a_player);
+			NotifyMasteryCast(spell);
+			if (tickCost > 0.0f) {
+				avOwner->DamageActorValue(RE::ActorValue::kMagicka, tickCost);
+			}
+			if (debugMode) {
+				const float magickaAfter = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+				LOG_INFO("QuickBuff Debug: magicka spent [concentration tick] amount={:.2f} before={:.2f} after={:.2f}",
+					tickCost,
+					magickaBefore,
+					magickaAfter);
+			}
+			pending.tickTimer = kConcentrationTick;
+		}
 
 		m_pendingConcentration.erase(
 			std::remove_if(
@@ -862,9 +897,33 @@ namespace QUICK_BUFF
 		if (!caster) {
 			return false;
 		}
+		auto* avOwner = a_player->AsActorValueOwner();
+		if (!avOwner) {
+			return false;
+		}
 
-		if (a_spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
-			caster->currentSpellCost = std::max(0.0f, a_spell->CalculateMagickaCost(a_player));
+		const bool isConcentration = a_spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+		const float magickaCost = std::max(0.0f, a_spell->CalculateMagickaCost(a_player));
+		const float requiredMagicka = isConcentration ? (magickaCost * 0.30f) : magickaCost;
+		const float magickaBefore = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+		const bool debugMode = SBIND::Manager::GetSingleton()->GetConfig().debugMode;
+		if (debugMode) {
+			LOG_INFO("QuickBuff Debug: magicka check [cast] spell='{}' concentration={} current={:.2f} baseCost={:.2f} required={:.2f}",
+				a_spell->GetName() ? a_spell->GetName() : "<unknown>",
+				isConcentration,
+				magickaBefore,
+				magickaCost,
+				requiredMagicka);
+		}
+		if (requiredMagicka > 0.0f && magickaBefore + 0.001f < requiredMagicka) {
+			if (debugMode) {
+				LOG_INFO("QuickBuff Debug: magicka blocked [cast] current={:.2f} required={:.2f}", magickaBefore, requiredMagicka);
+			}
+			return false;
+		}
+
+		if (isConcentration) {
+			caster->currentSpellCost = magickaCost;
 		}
 		caster->CastSpellImmediate(a_spell, false, a_target, 1.0f, false, 0.0f, a_castOnSelf ? nullptr : a_player);
 		if (a_spell->GetDelivery() == RE::MagicSystem::Delivery::kTargetLocation &&
@@ -872,6 +931,18 @@ namespace QUICK_BUFF
 		    a_player->IsCasting(a_spell)) {
 			a_player->InterruptCast(false);
 			return false;
+		}
+		if (requiredMagicka > 0.0f) {
+			avOwner->DamageActorValue(RE::ActorValue::kMagicka, requiredMagicka);
+		}
+		if (debugMode) {
+			const float magickaAfter = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+			LOG_INFO("QuickBuff Debug: magicka spent [cast] spell='{}' amount={:.2f} before={:.2f} after={:.2f} concentration={}",
+				a_spell->GetName() ? a_spell->GetName() : "<unknown>",
+				requiredMagicka,
+				magickaBefore,
+				magickaAfter,
+				isConcentration);
 		}
 		NotifyMasteryCast(a_spell);
 		return true;

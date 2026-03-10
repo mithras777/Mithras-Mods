@@ -8,6 +8,7 @@
 #include "mastery_spell/MasteryManager.h"
 #include "spellbinding/SpellBindingManager.h"
 #include "ui/PrismaBridge.h"
+#include "util/LogUtil.h"
 
 #include <Windows.h>
 #include <algorithm>
@@ -842,6 +843,9 @@ bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* sp
 	if (!player || !spell) return false;
 	auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
 	if (!caster) return false;
+	auto* avOwner = player->AsActorValueOwner();
+	if (!avOwner) return false;
+	const bool debugMode = SBIND::Manager::GetSingleton()->GetConfig().debugMode;
 
 		RE::TESObjectREFR* target = player;
 		bool castOnSelf = true;
@@ -855,8 +859,27 @@ bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* sp
 		castOnSelf = false;
 	}
 
-	if (spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) {
-		caster->currentSpellCost = std::max(0.0f, spell->CalculateMagickaCost(player));
+	const bool isConcentration = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
+	const float magickaCost = std::max(0.0f, spell->CalculateMagickaCost(player));
+	const float requiredMagicka = isConcentration ? (magickaCost * 0.30f) : magickaCost;
+	const float magickaBefore = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+	if (debugMode) {
+		LOG_INFO("SmartCast Debug: magicka check [cast] spell='{}' concentration={} current={:.2f} baseCost={:.2f} required={:.2f}",
+			spell->GetName() ? spell->GetName() : "<unknown>",
+			isConcentration,
+			magickaBefore,
+			magickaCost,
+			requiredMagicka);
+	}
+	if (requiredMagicka > 0.0f && magickaBefore + 0.001f < requiredMagicka) {
+		if (debugMode) {
+			LOG_INFO("SmartCast Debug: magicka blocked [cast] current={:.2f} required={:.2f}", magickaBefore, requiredMagicka);
+		}
+		return false;
+	}
+
+	if (isConcentration) {
+		caster->currentSpellCost = magickaCost;
 	}
 	caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, castOnSelf ? nullptr : player);
 	if (spell->GetDelivery() == RE::MagicSystem::Delivery::kTargetLocation &&
@@ -864,6 +887,18 @@ bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* sp
 	    player->IsCasting(spell)) {
 		player->InterruptCast(false);
 		return false;
+	}
+	if (requiredMagicka > 0.0f) {
+		avOwner->DamageActorValue(RE::ActorValue::kMagicka, requiredMagicka);
+	}
+	if (debugMode) {
+		const float magickaAfter = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+		LOG_INFO("SmartCast Debug: magicka spent [cast] spell='{}' amount={:.2f} before={:.2f} after={:.2f} concentration={}",
+			spell->GetName() ? spell->GetName() : "<unknown>",
+			requiredMagicka,
+			magickaBefore,
+			magickaAfter,
+			isConcentration);
 	}
 	if (targetOut) *targetOut = castOnSelf ? RE::ObjectRefHandle{} : target->CreateRefHandle();
 	if (castOnSelfOut) *castOnSelfOut = castOnSelf;
@@ -909,15 +944,47 @@ bool Controller::CastSpellForStep(RE::PlayerCharacter* player, RE::SpellItem* sp
 			if (m_runtime.concentrationTickTimer <= 0.0f && !m_runtime.activeConcentrationSpell.empty()) {
 				if (auto* spell = ResolveSpell(m_runtime.activeConcentrationSpell)) {
 					auto* caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-					if (caster) {
+					auto* avOwner = player->AsActorValueOwner();
+					const bool debugMode = SBIND::Manager::GetSingleton()->GetConfig().debugMode;
+					if (caster && avOwner) {
 						auto targetPtr = m_runtime.playbackTarget.get();
 						auto* target = m_runtime.playbackCastOnSelf ? static_cast<RE::TESObjectREFR*>(player) : targetPtr.get();
 						if (target) {
-							caster->currentSpellCost = std::max(0.0f, spell->CalculateMagickaCost(player));
+							const float magickaPerSec = std::max(0.0f, spell->CalculateMagickaCost(player));
+							const float tickCost = magickaPerSec * 0.30f;
+							const float magickaBefore = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+							if (debugMode) {
+								LOG_INFO("SmartCast Debug: magicka check [concentration tick] spell='{}' current={:.2f} tickCost={:.2f} mps={:.2f}",
+									spell->GetName() ? spell->GetName() : "<unknown>",
+									magickaBefore,
+									tickCost,
+									magickaPerSec);
+							}
+							if (tickCost > 0.0f && magickaBefore + 0.001f < tickCost) {
+								if (debugMode) {
+									LOG_INFO("SmartCast Debug: magicka blocked [concentration tick] current={:.2f} required={:.2f}", magickaBefore, tickCost);
+								}
+								StopPlayback(true);
+								return;
+							}
+							caster->currentSpellCost = magickaPerSec;
 							caster->CastSpellImmediate(spell, false, target, 1.0f, false, 0.0f, m_runtime.playbackCastOnSelf ? nullptr : player);
 							SBO::MASTERY_SPELL::Manager::GetSingleton()->OnDirectSpellCast(spell);
 							SBO::MASTERY_SHOUT::Manager::GetSingleton()->OnDirectSpellCast(spell->GetFormID());
+							if (tickCost > 0.0f) {
+								avOwner->DamageActorValue(RE::ActorValue::kMagicka, tickCost);
+							}
+							if (debugMode) {
+								const float magickaAfter = avOwner->GetActorValue(RE::ActorValue::kMagicka);
+								LOG_INFO("SmartCast Debug: magicka spent [concentration tick] amount={:.2f} before={:.2f} after={:.2f}",
+									tickCost,
+									magickaBefore,
+									magickaAfter);
+							}
 						}
+					} else {
+						StopPlayback(true);
+						return;
 					}
 				}
 				m_runtime.concentrationTickTimer = 0.30f;

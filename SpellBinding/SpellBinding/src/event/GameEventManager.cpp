@@ -13,6 +13,8 @@ namespace GAME_EVENT {
 			       a_name == "TrueHUD" ||
 			       a_name == "Cursor Menu" ||
 			       a_name == "CombatAlertOverlayMenu" ||
+			       a_name == "LootMenu" ||
+			       a_name == "QuickLootMenu" ||
 			       a_name == "LoadWaitSpinner" ||
 			       a_name == "Fader Menu" ||
 			       a_name == "Mist Menu";
