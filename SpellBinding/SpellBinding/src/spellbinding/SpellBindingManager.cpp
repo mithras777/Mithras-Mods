@@ -278,6 +278,8 @@ namespace SBIND
 				config.hudChainAlwaysShowInCombat = parsed.value("value", config.hudChainAlwaysShowInCombat);
 			} else if (id == "blacklistEnabled") {
 				config.blacklistEnabled = parsed.value("value", config.blacklistEnabled);
+			} else if (id == "debugMode") {
+				config.debugMode = parsed.value("value", config.debugMode);
 			} else if (id == "currentBindSlotMode") {
 				config.currentBindSlotMode = ParseAttackSlot(parsed.value("value", static_cast<std::uint32_t>(config.currentBindSlotMode)));
 			}
@@ -387,11 +389,16 @@ namespace SBIND
 		}
 
 		const auto config = GetConfig();
+		const bool debugMode = config.debugMode;
+		bool powerAttackActive = false;
 		{
 			std::scoped_lock lock(m_lock);
 			m_runtime.worldTimeSec += a_deltaTime;
 			m_runtime.wasAttacking = a_player->IsAttacking();
-			const bool powerAttackActive = IsPowerAttackActive(a_player);
+			powerAttackActive = IsPowerAttackActive(a_player);
+			if (debugMode && powerAttackActive != m_runtime.wasPowerAttackActive) {
+				LOG_INFO("SpellBinding Debug: power attack state changed -> {}", powerAttackActive ? "active" : "inactive");
+			}
 			if (!powerAttackActive) {
 				m_runtime.powerAttackLatched = false;
 			}
@@ -416,14 +423,17 @@ namespace SBIND
 			UpdateActiveConcentration(a_player, a_deltaTime);
 			if (m_runtime.pendingLightAttack && m_runtime.worldTimeSec >= m_runtime.pendingLightReadyAtWorldTimeSec) {
 				m_runtime.pendingLightAttack = false;
-				const bool shouldPromotePower = IsPowerAttackActive(a_player);
-				if (shouldPromotePower && m_runtime.powerAttackLatched) {
-					triggeredPendingLight = false;
-				} else {
-					triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, shouldPromotePower ? AttackSlot::kPower : AttackSlot::kLight, shouldPromotePower);
-					if (triggeredPendingLight && shouldPromotePower) {
+				const bool shouldPromotePower = powerAttackActive && !m_runtime.powerAttackLatched;
+				if (shouldPromotePower) {
+					triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, AttackSlot::kPower, true);
+					if (triggeredPendingLight) {
 						m_runtime.powerAttackLatched = true;
 					}
+				} else if (!powerAttackActive) {
+					triggeredPendingLight = TryTriggerAttackSlotLocked(a_player, AttackSlot::kLight, false);
+				}
+				if (debugMode) {
+					LOG_INFO("SpellBinding Debug: pending attack resolved -> powerActive={}, promotedPower={}, triggered={}", powerAttackActive, shouldPromotePower, triggeredPendingLight);
 				}
 			}
 		}
@@ -451,6 +461,9 @@ namespace SBIND
 	{
 		std::scoped_lock lock(m_lock);
 		m_runtime.menuBlocked = a_blockingMenuOpen;
+		if (m_config.debugMode) {
+			LOG_INFO("SpellBinding Debug: menu blocked -> {}", a_blockingMenuOpen);
+		}
 	}
 
 	void Manager::OnAttackAnimationEvent(std::string_view a_tag, std::string_view a_payload)
@@ -464,6 +477,7 @@ namespace SBIND
 		if (!config.enabled || player->IsDead()) {
 			return;
 		}
+		const bool debugMode = config.debugMode;
 
 		auto toLower = [](std::string_view text) {
 			std::string out(text);
@@ -472,6 +486,9 @@ namespace SBIND
 		};
 		const auto tag = toLower(a_tag);
 		const auto payload = toLower(a_payload);
+		if (debugMode) {
+			LOG_INFO("SpellBinding Debug: attack event tag='{}' payload='{}'", tag, payload);
+		}
 
 		const bool hasAttackWord =
 			tag.find("attack") != std::string::npos ||
@@ -493,8 +510,10 @@ namespace SBIND
 			payload.find("release") != std::string::npos;
 		if (isEndLike) {
 			std::scoped_lock lock(m_lock);
-			m_runtime.attackChainActive = false;
 			m_runtime.pendingLightAttack = false;
+			if (debugMode) {
+				LOG_INFO("SpellBinding Debug: end-like attack event ignored");
+			}
 			return;
 		}
 
@@ -521,41 +540,52 @@ namespace SBIND
 		bool attemptedTrigger = false;
 		{
 			std::scoped_lock lock(m_lock);
-			if (m_runtime.pendingLightAttack && IsPowerAttackActive(player)) {
-				m_runtime.pendingLightAttack = false;
-				if (!m_runtime.powerAttackLatched) {
-					attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
-					if (attemptedTrigger) {
-						m_runtime.powerAttackLatched = true;
-					}
-				}
-			} else
+			const bool powerAttackActive = IsPowerAttackActive(player);
+			const bool powerAttackEdge = powerAttackActive && !m_runtime.wasPowerAttackActive;
+			m_runtime.wasPowerAttackActive = powerAttackActive;
+
 			if (hasBashStart) {
 				m_runtime.pendingLightAttack = false;
 				attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kBash, false);
 			} else if (hasAttackStart) {
-				if (IsPowerAttackActive(player)) {
+				if (powerAttackEdge && !m_runtime.powerAttackLatched) {
 					m_runtime.pendingLightAttack = false;
-					if (!m_runtime.powerAttackLatched) {
+					attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
+					if (attemptedTrigger) {
+						m_runtime.powerAttackLatched = true;
+					}
+				} else {
+					m_runtime.pendingLightAttack = true;
+					m_runtime.pendingLightReadyAtWorldTimeSec = m_runtime.worldTimeSec + kPendingLightDelaySec;
+					if (debugMode) {
+						LOG_INFO("SpellBinding Debug: queued pending light (powerActive={}, powerEdge={}, latched={})", powerAttackActive, powerAttackEdge, m_runtime.powerAttackLatched);
+					}
+					return;
+				}
+			} else {
+				const AttackSlot attackSlot = ResolveAttackSlot(tag, payload, player);
+				if (attackSlot == AttackSlot::kPower) {
+					if (powerAttackEdge && !m_runtime.powerAttackLatched) {
+						m_runtime.pendingLightAttack = false;
 						attemptedTrigger = TryTriggerAttackSlotLocked(player, AttackSlot::kPower, true);
 						if (attemptedTrigger) {
 							m_runtime.powerAttackLatched = true;
 						}
+					} else {
+						m_runtime.pendingLightAttack = true;
+						m_runtime.pendingLightReadyAtWorldTimeSec = m_runtime.worldTimeSec + kPendingLightDelaySec;
+						if (debugMode) {
+							LOG_INFO("SpellBinding Debug: deferred power slot (powerActive={}, powerEdge={}, latched={})", powerAttackActive, powerAttackEdge, m_runtime.powerAttackLatched);
+						}
+						return;
 					}
 				} else {
-				m_runtime.pendingLightAttack = true;
-				m_runtime.pendingLightReadyAtWorldTimeSec = m_runtime.worldTimeSec + kPendingLightDelaySec;
-				return;
+					m_runtime.pendingLightAttack = false;
+					attemptedTrigger = TryTriggerAttackSlotLocked(player, attackSlot, false);
 				}
-			} else {
-				const AttackSlot attackSlot = ResolveAttackSlot(tag, payload, player);
-				m_runtime.pendingLightAttack = false;
-				if (attackSlot != AttackSlot::kPower || !m_runtime.powerAttackLatched) {
-					attemptedTrigger = TryTriggerAttackSlotLocked(player, attackSlot, attackSlot == AttackSlot::kPower);
-					if (attemptedTrigger && attackSlot == AttackSlot::kPower) {
-						m_runtime.powerAttackLatched = true;
-					}
-				}
+			}
+			if (debugMode) {
+				LOG_INFO("SpellBinding Debug: event resolved (powerActive={}, powerEdge={}, latched={}, triggered={})", powerAttackActive, powerAttackEdge, m_runtime.powerAttackLatched, attemptedTrigger);
 			}
 		}
 		if (attemptedTrigger) {
@@ -992,6 +1022,7 @@ namespace SBIND
 		m_config.hudChainAlwaysShowInCombat = cfgNode.value("hudChainAlwaysShowInCombat", m_config.hudChainAlwaysShowInCombat);
 		m_config.blacklistEnabled = cfgNode.value("blacklistEnabled", m_config.blacklistEnabled);
 		m_config.blacklistedSpellKeys = cfgNode.value("blacklistedSpellKeys", m_config.blacklistedSpellKeys);
+		m_config.debugMode = cfgNode.value("debugMode", m_config.debugMode);
 		m_config.currentBindSlotMode = ParseAttackSlot(cfgNode.value("currentBindSlotMode", static_cast<std::uint32_t>(m_config.currentBindSlotMode)));
 
 		if (root.contains("ui") && root["ui"].is_object()) {
@@ -1044,6 +1075,7 @@ namespace SBIND
 			{ "hudChainAlwaysShowInCombat", cfgCopy.hudChainAlwaysShowInCombat },
 			{ "blacklistEnabled", cfgCopy.blacklistEnabled },
 			{ "blacklistedSpellKeys", cfgCopy.blacklistedSpellKeys },
+			{ "debugMode", cfgCopy.debugMode },
 			{ "currentBindSlotMode", static_cast<std::uint32_t>(cfgCopy.currentBindSlotMode) }
 		};
 		const json windowNode = {
@@ -1685,7 +1717,8 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 			{ "hudChainPosY", m_config.hudChainPosY },
 			{ "hudChainSize", m_config.hudChainSize },
 			{ "hudChainAlwaysShowInCombat", m_config.hudChainAlwaysShowInCombat },
-			{ "blacklistEnabled", m_config.blacklistEnabled }
+			{ "blacklistEnabled", m_config.blacklistEnabled },
+			{ "debugMode", m_config.debugMode }
 		};
 		root["bindMode"] = {
 			{ "slot", static_cast<std::uint32_t>(m_config.currentBindSlotMode) },

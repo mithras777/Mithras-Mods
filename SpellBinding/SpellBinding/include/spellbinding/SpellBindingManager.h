@@ -116,6 +116,7 @@ namespace SBIND
 		bool hudChainAlwaysShowInCombat{ false };
 		bool blacklistEnabled{ true };
 		std::vector<std::string> blacklistedSpellKeys{};
+		bool debugMode{ false };
 		AttackSlot currentBindSlotMode{ AttackSlot::kLight };
 	};
 

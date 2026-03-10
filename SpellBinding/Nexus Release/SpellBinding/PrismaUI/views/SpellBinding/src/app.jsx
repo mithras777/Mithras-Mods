@@ -1330,6 +1330,14 @@ function App() {
                   <label>UI Toggle Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.uiToggleKey')}>{captureLabel('sb.uiToggleKey')}</button></label>
                   <label>Bind Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.bindKey')}>{captureLabel('sb.bindKey')}</button></label>
                   <label>Cycle Modifier Key <button className="btn hotkey-btn" onClick={() => setCaptureField('sb.cycleSlotModifierKey')}>{captureLabel('sb.cycleSlotModifierKey')}</button></label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={!!byPath(sb, ['config', 'debugMode'], false)}
+                      onChange={(e) => setSetting('spellBinding', 'debugMode', e.target.checked)}
+                    />
+                    Debug Mode
+                  </label>
                 </div>
               )}
 
