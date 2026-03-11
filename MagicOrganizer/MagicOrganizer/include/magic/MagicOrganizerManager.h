@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <chrono>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace SKSE
@@ -17,6 +19,7 @@ namespace MITHRAS::MAGIC_ORGANIZER
 	{
 		bool enabled{ true };
 		std::uint32_t hotkey{ 0x23 };  // H
+		bool globalHiddenLists{ false };
 	};
 
 	struct SpellEntry
@@ -46,6 +49,8 @@ namespace MITHRAS::MAGIC_ORGANIZER
 		void SetConfig(const OrganizerConfig& a_config, bool a_save);
 		void SetEnabled(bool a_enabled);
 		void SetHotkey(std::uint32_t a_hotkey);
+		void SetGlobalHiddenLists(bool a_enabled);
+		void Tick();
 
 		void SetCaptureHotkey(bool a_capture);
 		[[nodiscard]] bool IsCapturingHotkey() const;
@@ -78,6 +83,8 @@ namespace MITHRAS::MAGIC_ORGANIZER
 
 		void NormalizeConfig();
 		void ApplyTrackedFlags();
+		void MaybeRunReconcile(bool a_force);
+		void ReconcileOwnedHiddenEntries();
 		void RefreshMagicMenuIfOpen() const;
 
 		[[nodiscard]] static bool IsFormIDHidden(const std::vector<RE::FormID>& a_hidden, RE::FormID a_formID);
@@ -97,6 +104,10 @@ namespace MITHRAS::MAGIC_ORGANIZER
 		std::vector<RE::FormID> m_hiddenSpellFormIDs{};
 		std::vector<RE::FormID> m_hiddenPowerShoutFormIDs{};
 		std::vector<RE::FormID> m_hiddenEffectFormIDs{};
+		std::unordered_set<RE::FormID> m_removedByOrganizerSpells{};
+		std::unordered_set<RE::FormID> m_removedByOrganizerPowers{};
+		std::unordered_set<RE::FormID> m_removedByOrganizerShouts{};
+		std::chrono::steady_clock::time_point m_nextReconcileAt{};
 		bool m_captureHotkey{ false };
 	};
 }

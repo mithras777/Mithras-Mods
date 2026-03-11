@@ -46,6 +46,7 @@ namespace MO_INPUT
 		}
 
 		auto* manager = MITHRAS::MAGIC_ORGANIZER::Manager::GetSingleton();
+		manager->Tick();
 		for (auto* input = *a_event; input; input = input->next) {
 			if (input->GetEventType() != RE::INPUT_EVENT_TYPE::kButton) {
 				continue;
