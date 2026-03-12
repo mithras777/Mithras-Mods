@@ -21,6 +21,10 @@ namespace MC::UI
 		using TextUnformattedFn = void (*)(const char*, const char*);
 		using TextFn = void (*)(const char*, ...);
 		using SeparatorTextFn = void (*)(const char*);
+		using BeginTabBarFn = bool (*)(const char*, int);
+		using EndTabBarFn = void (*)();
+		using BeginTabItemFn = bool (*)(const char*, bool*, int);
+		using EndTabItemFn = void (*)();
 
 		HMODULE g_smfModule{ nullptr };
 		bool g_registered = false;
@@ -33,6 +37,10 @@ namespace MC::UI
 		TextUnformattedFn g_textUnformatted{ nullptr };
 		TextFn g_text{ nullptr };
 		SeparatorTextFn g_separatorText{ nullptr };
+		BeginTabBarFn g_beginTabBar{ nullptr };
+		EndTabBarFn g_endTabBar{ nullptr };
+		BeginTabItemFn g_beginTabItem{ nullptr };
+		EndTabItemFn g_endTabItem{ nullptr };
 
 		bool ResolveApis()
 		{
@@ -57,6 +65,10 @@ namespace MC::UI
 			g_textUnformatted = reinterpret_cast<TextUnformattedFn>(::GetProcAddress(g_smfModule, "igTextUnformatted"));
 			g_text = reinterpret_cast<TextFn>(::GetProcAddress(g_smfModule, "igText"));
 			g_separatorText = reinterpret_cast<SeparatorTextFn>(::GetProcAddress(g_smfModule, "igSeparatorText"));
+			g_beginTabBar = reinterpret_cast<BeginTabBarFn>(::GetProcAddress(g_smfModule, "igBeginTabBar"));
+			g_endTabBar = reinterpret_cast<EndTabBarFn>(::GetProcAddress(g_smfModule, "igEndTabBar"));
+			g_beginTabItem = reinterpret_cast<BeginTabItemFn>(::GetProcAddress(g_smfModule, "igBeginTabItem"));
+			g_endTabItem = reinterpret_cast<EndTabItemFn>(::GetProcAddress(g_smfModule, "igEndTabItem"));
 
 			return g_addSectionItem != nullptr;
 		}
@@ -85,6 +97,12 @@ namespace MC::UI
 			return g_sliderInt ? g_sliderInt(a_label, a_value, a_min, a_max, a_format, 0) : false;
 		}
 
+		void __stdcall RenderGeneral();
+		void __stdcall RenderCombat();
+		void __stdcall RenderOverlay();
+		void __stdcall RenderDebug();
+		void __stdcall RenderSettings();
+
 		void __stdcall RenderGeneral()
 		{
 			auto* cfg = MC::DIRECTIONAL::Config::GetSingleton();
@@ -103,6 +121,37 @@ namespace MC::UI
 			if (changed) {
 				controller->SetEnabled(data.enabled);
 				cfg->Save();
+			}
+		}
+
+		void __stdcall RenderSettings()
+		{
+			if (g_beginTabBar && g_endTabBar && g_beginTabItem && g_endTabItem) {
+				if (g_beginTabBar("MordhauCombatTabs", 0)) {
+					if (g_beginTabItem("General", nullptr, 0)) {
+						RenderGeneral();
+						g_endTabItem();
+					}
+					if (g_beginTabItem("Combat", nullptr, 0)) {
+						RenderCombat();
+						g_endTabItem();
+					}
+					if (g_beginTabItem("Overlay", nullptr, 0)) {
+						RenderOverlay();
+						g_endTabItem();
+					}
+					if (g_beginTabItem("Debug", nullptr, 0)) {
+						RenderDebug();
+						g_endTabItem();
+					}
+					g_endTabBar();
+				}
+			} else {
+				// Fallback when tab exports are unavailable.
+				RenderGeneral();
+				RenderCombat();
+				RenderOverlay();
+				RenderDebug();
 			}
 		}
 
@@ -176,16 +225,10 @@ namespace MC::UI
 
 		if (g_setSection) {
 			g_setSection("MordhauCombat");
-			g_addSectionItem("General", &RenderGeneral);
-			g_addSectionItem("Combat", &RenderCombat);
-			g_addSectionItem("Overlay", &RenderOverlay);
-			g_addSectionItem("Debug", &RenderDebug);
+			g_addSectionItem("Settings", &RenderSettings);
 		} else {
 			// Fallback for older SKSEMenuFramework builds without SetSection export.
-			g_addSectionItem("MordhauCombat/General", &RenderGeneral);
-			g_addSectionItem("MordhauCombat/Combat", &RenderCombat);
-			g_addSectionItem("MordhauCombat/Overlay", &RenderOverlay);
-			g_addSectionItem("MordhauCombat/Debug", &RenderDebug);
+			g_addSectionItem("MordhauCombat/Settings", &RenderSettings);
 		}
 
 		g_registered = true;

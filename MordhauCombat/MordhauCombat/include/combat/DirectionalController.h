@@ -30,7 +30,7 @@ namespace MC::DIRECTIONAL
 		Controller();
 
 		void UpdateBuckets();
-		void PublishGraphVariables(RE::PlayerCharacter* a_player) const;
+		void PublishGraphVariables(RE::PlayerCharacter* a_player);
 		void ApplyWeaponSpeedScalar(RE::PlayerCharacter* a_player, float a_scalar);
 		void ClearAttackRuntime(RE::PlayerCharacter* a_player);
 		bool IsContextValid(RE::PlayerCharacter* a_player) const;
@@ -46,6 +46,7 @@ namespace MC::DIRECTIONAL
 		float m_lastNormInputX{ 0.0f };
 		float m_lastNormInputY{ 0.0f };
 		float m_appliedWeaponSpeedMod{ 0.0f };
+		float m_lastGraphVarWarnTime{ -9999.0f };
 		std::atomic_bool m_enabled{ true };
 	};
 }

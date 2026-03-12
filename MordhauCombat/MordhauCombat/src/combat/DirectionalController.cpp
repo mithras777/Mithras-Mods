@@ -272,19 +272,29 @@ namespace MC::DIRECTIONAL
 		m_cursor.bucket = ResolveBucket(m_cursor.x, m_cursor.y, config.deadzone);
 	}
 
-	void Controller::PublishGraphVariables(RE::PlayerCharacter* a_player) const
+	void Controller::PublishGraphVariables(RE::PlayerCharacter* a_player)
 	{
 		if (!a_player) {
 			return;
 		}
 
-		a_player->SetGraphVariableBool("MC_Enabled", m_enabled.load());
-		a_player->SetGraphVariableFloat("MC_DirX", m_cursor.x);
-		a_player->SetGraphVariableFloat("MC_DirY", m_cursor.y);
-		a_player->SetGraphVariableInt("MC_DirBucket", static_cast<std::int32_t>(m_cursor.bucket));
-		a_player->SetGraphVariableInt("MC_DirLatchedBucket", static_cast<std::int32_t>(m_latched.bucket));
-		a_player->SetGraphVariableBool("MC_IsDirAttack", m_latched.active);
-		a_player->SetGraphVariableFloat("MC_DragAccelScalar", m_dragScalar);
+		const bool okEnabled = a_player->SetGraphVariableBool("MC_Enabled", m_enabled.load());
+		const bool okDirX = a_player->SetGraphVariableFloat("MC_DirX", m_cursor.x);
+		const bool okDirY = a_player->SetGraphVariableFloat("MC_DirY", m_cursor.y);
+		const bool okDirBucket = a_player->SetGraphVariableInt("MC_DirBucket", static_cast<std::int32_t>(m_cursor.bucket));
+		const bool okLatched = a_player->SetGraphVariableInt("MC_DirLatchedBucket", static_cast<std::int32_t>(m_latched.bucket));
+		const bool okDirAttack = a_player->SetGraphVariableBool("MC_IsDirAttack", m_latched.active);
+		const bool okDrag = a_player->SetGraphVariableFloat("MC_DragAccelScalar", m_dragScalar);
+
+		if (!(okEnabled && okDirX && okDirY && okDirBucket && okLatched && okDirAttack && okDrag) &&
+		    Config::GetSingleton()->GetData().debugMode) {
+			const float now = GAME::HELPER::Get_DeltaWorldTime();
+			if ((now - m_lastGraphVarWarnTime) > 2.0f) {
+				m_lastGraphVarWarnTime = now;
+				LOG_WARN("MordhauCombat: one or more MC_* graph variables failed to set (behavior graph missing custom vars?)");
+				RE::SendHUDMessage::ShowHUDMessage("MC Debug: graph vars failed (see log)");
+			}
+		}
 	}
 
 	void Controller::ApplyWeaponSpeedScalar(RE::PlayerCharacter* a_player, float a_scalar)
