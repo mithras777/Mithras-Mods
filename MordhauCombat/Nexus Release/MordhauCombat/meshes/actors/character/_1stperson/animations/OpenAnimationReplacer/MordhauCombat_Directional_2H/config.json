@@ -1,0 +1,8 @@
+﻿{
+    "name":  "Mordhau Combat Directional 2H (1st Person)",
+    "author":  "Mithras",
+    "description":  "Player-only first-person directional light attack routing for two-handed weapons.",
+    "priority":  260100010,
+    "ignoreDontConvertAnnotationsToTriggersFlag":  true,
+    "triggersFromAnnotationsOnly":  true
+}

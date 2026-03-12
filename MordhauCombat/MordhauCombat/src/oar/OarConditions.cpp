@@ -21,8 +21,8 @@ namespace MC::OAR
 			return false;
 		}
 
-		const auto latched = MC::DIRECTIONAL::Controller::GetSingleton()->GetLatchedState();
-		return latched.active;
+		// Keep directional routing active while the gameplay context is valid.
+		return MC::DIRECTIONAL::Controller::GetSingleton()->ShouldShowOverlay();
 	}
 
 	bool IsPowerAttackCondition::EvaluateImpl(RE::TESObjectREFR* a_refr, RE::hkbClipGenerator*, void*) const
@@ -50,8 +50,8 @@ namespace MC::OAR
 
 	RE::BSString DirectionBucketCondition::GetCurrent(RE::TESObjectREFR*) const
 	{
-		const auto latched = MC::DIRECTIONAL::Controller::GetSingleton()->GetLatchedState();
-		return std::to_string(static_cast<int>(latched.bucket)).data();
+		const auto cursor = MC::DIRECTIONAL::Controller::GetSingleton()->GetCursorState();
+		return std::to_string(static_cast<int>(cursor.bucket)).data();
 	}
 
 	bool DirectionBucketCondition::EvaluateImpl(RE::TESObjectREFR* a_refr, RE::hkbClipGenerator*, void*) const
@@ -60,12 +60,8 @@ namespace MC::OAR
 			return false;
 		}
 
-		const auto latched = MC::DIRECTIONAL::Controller::GetSingleton()->GetLatchedState();
-		if (!latched.active) {
-			return false;
-		}
-
-		const float currentBucket = static_cast<float>(static_cast<int>(latched.bucket));
+		const auto cursor = MC::DIRECTIONAL::Controller::GetSingleton()->GetCursorState();
+		const float currentBucket = static_cast<float>(static_cast<int>(cursor.bucket));
 		const float requiredBucket = bucketComponent->GetNumericValue(a_refr);
 		return comparisonComponent->GetComparisonResult(currentBucket, requiredBucket);
 	}

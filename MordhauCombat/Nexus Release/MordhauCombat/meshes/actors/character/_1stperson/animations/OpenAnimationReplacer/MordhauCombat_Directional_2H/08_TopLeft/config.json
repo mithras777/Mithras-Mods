@@ -1,0 +1,38 @@
+﻿{
+    "name":  "Mordhau Directional 08_TopLeft",
+    "description":  "Directional light attack routing for bucket TopLeft (2H)",
+    "priority":  260100018,
+    "ignoreDontConvertAnnotationsToTriggersFlag":  true,
+    "triggersFromAnnotationsOnly":  true,
+    "conditions":  [
+                       {
+                           "condition":  "IsActorBase",
+                           "requiredVersion":  "1.0.0.0",
+                           "Actor base":  {
+                                              "pluginName":  "Skyrim.esm",
+                                              "formID":  "7"
+                                          }
+                       },
+                       {
+                           "condition":  "IsWeaponDrawn",
+                           "requiredVersion":  "1.0.0.0"
+                       },
+                       {
+                           "condition":  "MordhauIsDirectionalAttack",
+                           "requiredVersion":  "1.0.0.0"
+                       },
+                       {
+                           "condition":  "MordhauIsPowerAttack",
+                           "requiredVersion":  "1.0.0.0",
+                           "negated":  true
+                       },
+                       {
+                           "condition":  "MordhauDirectionBucket",
+                           "requiredVersion":  "1.0.0.0",
+                           "Comparison":  "=",
+                           "Bucket":  {
+                                          "value":  8
+                                      }
+                       }
+                   ]
+}
