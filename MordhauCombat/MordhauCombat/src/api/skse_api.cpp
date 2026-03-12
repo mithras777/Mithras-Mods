@@ -5,6 +5,7 @@
 #include "event/AttackAnimationEventSink.h"
 #include "event/GameEventManager.h"
 #include "input/InputEventSink.h"
+#include "oar/OarConditionBridge.h"
 #include "ui/SmfMenuBridge.h"
 #include "util/LogUtil.h"
 
@@ -34,6 +35,10 @@ namespace SKSE {
 	static void SKSEPlugin_Message(SKSE::MessagingInterface::Message* a_message)
 	{
 		switch (a_message->type) {
+			case SKSE::MessagingInterface::kPostLoad: {
+				MC::OAR::RegisterConditions();
+				break;
+			}
 
 			case SKSE::MessagingInterface::kPostPostLoad: {
 #if defined(SKSE_SUPPORT_XBYAK)

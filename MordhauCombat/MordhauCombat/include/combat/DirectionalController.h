@@ -46,7 +46,6 @@ namespace MC::DIRECTIONAL
 		float m_lastNormInputX{ 0.0f };
 		float m_lastNormInputY{ 0.0f };
 		float m_appliedWeaponSpeedMod{ 0.0f };
-		float m_lastGraphVarWarnTime{ -9999.0f };
 		std::atomic_bool m_enabled{ true };
 	};
 }
