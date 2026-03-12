@@ -1,0 +1,69 @@
+{
+    "name": "Mordhau Directional 06_BottomLeft",
+    "description": "Directional light attack routing for bucket 6",
+    "priority": 260100006,
+    "ignoreDontConvertAnnotationsToTriggersFlag": true,
+    "triggersFromAnnotationsOnly": true,
+    "conditions": [
+        {
+            "condition": "IsActorBase",
+            "requiredVersion": "1.0.0.0",
+            "Actor base": {
+                "pluginName": "Skyrim.esm",
+                "formID": "7"
+            }
+        },
+        {
+            "condition": "IsEquippedType",
+            "requiredVersion": "1.0.0.0",
+            "Type": {
+                "value": 1.0
+            },
+            "Left hand": false
+        },
+        {
+            "condition": "IsAttacking",
+            "requiredVersion": "1.0.0.0"
+        },
+        {
+            "condition": "IsWeaponDrawn",
+            "requiredVersion": "1.0.0.0"
+        },
+        {
+            "condition": "CompareValues",
+            "requiredVersion": "1.0.0.0",
+            "Value A": {
+                "graphVariable": "MC_Enabled",
+                "graphVariableType": "Bool"
+            },
+            "Comparison": "=",
+            "Value B": {
+                "value": 1.0
+            }
+        },
+        {
+            "condition": "CompareValues",
+            "requiredVersion": "1.0.0.0",
+            "Value A": {
+                "graphVariable": "MC_IsDirAttack",
+                "graphVariableType": "Bool"
+            },
+            "Comparison": "=",
+            "Value B": {
+                "value": 1.0
+            }
+        },
+        {
+            "condition": "CompareValues",
+            "requiredVersion": "1.0.0.0",
+            "Value A": {
+                "graphVariable": "MC_DirLatchedBucket",
+                "graphVariableType": "Int"
+            },
+            "Comparison": "=",
+            "Value B": {
+                "value": 6
+            }
+        }
+    ]
+}

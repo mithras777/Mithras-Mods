@@ -55,7 +55,6 @@ namespace MC::UI
 			ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 			const ImU32 color = IM_COL32(245, 245, 245, 235);
 			drawList->AddLine(center, end, color, 2.6f);
-			drawList->AddCircleFilled(end, 2.25f, color, 12);
 		}
 
 		struct D3DInitHook
