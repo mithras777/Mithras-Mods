@@ -4,6 +4,7 @@
 	#include "PrismaUI/PrismaUI_API.h"
 #else
 	#include <cstdint>
+	#include <Windows.h>
 
 	using PrismaView = std::uint32_t;
 
@@ -32,7 +33,21 @@
 
 		inline void* RequestPluginAPI(InterfaceVersion)
 		{
-			return nullptr;
+			using RequestPluginAPIFunc = void* (*)(InterfaceVersion);
+			static RequestPluginAPIFunc s_request = []() -> RequestPluginAPIFunc {
+				HMODULE mod = GetModuleHandleA("PrismaUI.dll");
+				if (!mod) {
+					mod = GetModuleHandleA("PrismaUI");
+				}
+				if (!mod) {
+					mod = LoadLibraryA("Data\\SKSE\\Plugins\\PrismaUI.dll");
+				}
+				if (!mod) {
+					return nullptr;
+				}
+				return reinterpret_cast<RequestPluginAPIFunc>(GetProcAddress(mod, "RequestPluginAPI"));
+			}();
+			return s_request ? s_request(InterfaceVersion::V1) : nullptr;
 		}
 	}
 #endif

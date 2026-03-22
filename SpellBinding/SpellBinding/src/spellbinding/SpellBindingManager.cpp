@@ -48,23 +48,33 @@ namespace SBIND
 
 	void Manager::Initialize()
 	{
-		std::scoped_lock lock(m_lock);
-		m_config = {};
-		m_config.version = kConfigVersion;
-		m_runtime = {};
-		m_runtime.unarmedKey = BuildUnarmedKey();
+		{
+			std::scoped_lock lock(m_lock);
+			m_config = {};
+			m_config.version = kConfigVersion;
+			m_runtime = {};
+			m_runtime.unarmedKey = BuildUnarmedKey();
+		}
 		LoadConfig();
-		ClampConfig(m_config);
+		{
+			std::scoped_lock lock(m_lock);
+			ClampConfig(m_config);
+		}
 	}
 
 	void Manager::OnRevert()
 	{
-		std::scoped_lock lock(m_lock);
-		m_bindings.clear();
-		m_runtime = {};
-		m_runtime.unarmedKey = BuildUnarmedKey();
+		{
+			std::scoped_lock lock(m_lock);
+			m_bindings.clear();
+			m_runtime = {};
+			m_runtime.unarmedKey = BuildUnarmedKey();
+		}
 		LoadConfig();
-		ClampConfig(m_config);
+		{
+			std::scoped_lock lock(m_lock);
+			ClampConfig(m_config);
+		}
 	}
 
 	void Manager::Serialize(SKSE::SerializationInterface* a_intfc) const

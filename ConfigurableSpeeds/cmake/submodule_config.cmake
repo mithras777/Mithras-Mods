@@ -19,7 +19,7 @@ endif()
 include(submodule/xbyak_config)
 
 # JSON Support
-#include(submodule/nlohmann-json_config)
+include(submodule/nlohmann-json_config)
 
 # SimpleIni Support
 #include(submodule/simpleini_config)
