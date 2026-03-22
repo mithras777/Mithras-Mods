@@ -1,22 +1,61 @@
 {
-  "name": "Mordhau TwoHanded Top",
-  "description": "Two-handed bucket Top",
-  "priority": 210002001,
-  "ignoreDontConvertAnnotationsToTriggersFlag": true,
-  "hasCustomBlendTimeOnLoop": true,
-  "blendTimeOnLoop": 0.550000011920929,
-  "conditions": [
-    {
-      "condition": "OR",
-      "requiredVersion": "1.0.0.0",
-      "Conditions": [
-        { "condition": "IsEquippedType", "requiredVersion": "1.0.0.0", "Type": { "value": 5 }, "Left hand": false },
-        { "condition": "IsEquippedType", "requiredVersion": "1.0.0.0", "Type": { "value": 6 }, "Left hand": false }
-      ]
-    },
-    { "condition": "MordhauIsDirectionalAttack", "requiredVersion": "1.0.0" },
-    { "condition": "MordhauIsPowerAttack", "requiredVersion": "1.0.0", "negated": true },
-    { "condition": "MordhauDirectionBucket", "requiredVersion": "1.0.0", "Comparison": "=", "Bucket": { "value": 1 } },
-    { "condition": "IsWeaponDrawn", "requiredVersion": "1.0.0.0" }
-  ]
+    "name":  "Mordhau TwoHanded Top",
+    "description":  "Two-handed bucket Top",
+    "priority":  2147483632,
+    "ignoreDontConvertAnnotationsToTriggersFlag":  true,
+    "hasCustomBlendTimeOnLoop":  true,
+    "blendTimeOnLoop":  0.550000011920929,
+    "conditions":  [
+                       {
+                           "condition":  "OR",
+                           "requiredVersion":  "1.0.0.0",
+                           "Conditions":  [
+                                              {
+                                                  "condition":  "IsEquippedType",
+                                                  "requiredVersion":  "1.0.0.0",
+                                                  "Type":  {
+                                                               "value":  5
+                                                           },
+                                                  "Left hand":  false
+                                              },
+                                              {
+                                                  "condition":  "IsEquippedType",
+                                                  "requiredVersion":  "1.0.0.0",
+                                                  "Type":  {
+                                                               "value":  6
+                                                           },
+                                                  "Left hand":  false
+                                              },
+                                              {
+                                                  "condition":  "IsEquippedType",
+                                                  "requiredVersion":  "1.0.0.0",
+                                                  "Type":  {
+                                                               "value":  10
+                                                           },
+                                                  "Left hand":  false
+                                              }
+                                          ]
+                       },
+                       {
+                           "condition":  "MordhauIsDirectionalAttack",
+                           "requiredVersion":  "1.0.0"
+                       },
+                       {
+                           "condition":  "MordhauIsPowerAttack",
+                           "requiredVersion":  "1.0.0",
+                           "negated":  true
+                       },
+                       {
+                           "condition":  "MordhauDirectionBucket",
+                           "requiredVersion":  "1.0.0",
+                           "Comparison":  "=",
+                           "Bucket":  {
+                                          "value":  1
+                                      }
+                       },
+                       {
+                           "condition":  "IsWeaponDrawn",
+                           "requiredVersion":  "1.0.0.0"
+                       }
+                   ]
 }

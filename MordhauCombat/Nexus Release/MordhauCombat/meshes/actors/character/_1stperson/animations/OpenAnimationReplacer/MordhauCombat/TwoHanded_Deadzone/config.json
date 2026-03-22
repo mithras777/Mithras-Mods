@@ -1,22 +1,61 @@
 {
-  "name": "Mordhau TwoHanded Deadzone",
-  "description": "Two-handed deadzone/center fallback using Bottom animation set",
-  "priority": 210002009,
-  "ignoreDontConvertAnnotationsToTriggersFlag": true,
-  "hasCustomBlendTimeOnLoop": true,
-  "blendTimeOnLoop": 0.550000011920929,
-  "conditions": [
-    {
-      "condition": "OR",
-      "requiredVersion": "1.0.0.0",
-      "Conditions": [
-        { "condition": "IsEquippedType", "requiredVersion": "1.0.0.0", "Type": { "value": 5 }, "Left hand": false },
-        { "condition": "IsEquippedType", "requiredVersion": "1.0.0.0", "Type": { "value": 6 }, "Left hand": false }
-      ]
-    },
-    { "condition": "MordhauIsDirectionalAttack", "requiredVersion": "1.0.0" },
-    { "condition": "MordhauDirectionBucket", "requiredVersion": "1.0.0", "Comparison": "=", "Bucket": { "value": 0 } },
-    { "condition": "MordhauIsPowerAttack", "requiredVersion": "1.0.0", "negated": true },
-    { "condition": "IsWeaponDrawn", "requiredVersion": "1.0.0.0" }
-  ]
+    "name":  "Mordhau TwoHanded Deadzone",
+    "description":  "Two-handed deadzone/center fallback using Bottom animation set",
+    "priority":  2147483635,
+    "ignoreDontConvertAnnotationsToTriggersFlag":  true,
+    "hasCustomBlendTimeOnLoop":  true,
+    "blendTimeOnLoop":  0.550000011920929,
+    "conditions":  [
+                       {
+                           "condition":  "OR",
+                           "requiredVersion":  "1.0.0.0",
+                           "Conditions":  [
+                                              {
+                                                  "condition":  "IsEquippedType",
+                                                  "requiredVersion":  "1.0.0.0",
+                                                  "Type":  {
+                                                               "value":  5
+                                                           },
+                                                  "Left hand":  false
+                                              },
+                                              {
+                                                  "condition":  "IsEquippedType",
+                                                  "requiredVersion":  "1.0.0.0",
+                                                  "Type":  {
+                                                               "value":  6
+                                                           },
+                                                  "Left hand":  false
+                                              },
+                                              {
+                                                  "condition":  "IsEquippedType",
+                                                  "requiredVersion":  "1.0.0.0",
+                                                  "Type":  {
+                                                               "value":  10
+                                                           },
+                                                  "Left hand":  false
+                                              }
+                                          ]
+                       },
+                       {
+                           "condition":  "MordhauIsDirectionalAttack",
+                           "requiredVersion":  "1.0.0"
+                       },
+                       {
+                           "condition":  "MordhauDirectionBucket",
+                           "requiredVersion":  "1.0.0",
+                           "Comparison":  "=",
+                           "Bucket":  {
+                                          "value":  0
+                                      }
+                       },
+                       {
+                           "condition":  "MordhauIsPowerAttack",
+                           "requiredVersion":  "1.0.0",
+                           "negated":  true
+                       },
+                       {
+                           "condition":  "IsWeaponDrawn",
+                           "requiredVersion":  "1.0.0.0"
+                       }
+                   ]
 }
