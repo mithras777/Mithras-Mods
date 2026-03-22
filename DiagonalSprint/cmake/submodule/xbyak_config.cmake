@@ -12,12 +12,16 @@ include(FetchContent)
 
 set(FETCHCONTENT_QUIET FALSE)
 
-FetchContent_Populate(
-	${XBYAK_NAME}
-	GIT_REPOSITORY  ${XBYAK_REPO_URL}
-	GIT_TAG         ${XBYAK_REPO_TAG}
-	SOURCE_DIR      ${XBYAK_ROOT_DIR}
-)
+if(EXISTS "${XBYAK_ROOT_DIR}/xbyak/xbyak.h")
+	message(STATUS "Reusing existing ${XBYAK_NAME} at ${XBYAK_ROOT_DIR}")
+else()
+	FetchContent_Populate(
+		${XBYAK_NAME}
+		GIT_REPOSITORY  ${XBYAK_REPO_URL}
+		GIT_TAG         ${XBYAK_REPO_TAG}
+		SOURCE_DIR      ${XBYAK_ROOT_DIR}
+	)
+endif()
 
 # Tie this to CommonLibSSE for SKSE_SUPPORT_XBYAK
 target_include_directories(

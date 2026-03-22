@@ -11,6 +11,8 @@ set(PROJECT_SOURCE_ROOT_DIR   "${PROJECT_ROOT_DIR}/src")
 set(PROJECT_PCH_ROOT_DIR      "${PROJECT_ROOT_DIR}/pch")
 set(PROJECT_RESOURCE_ROOT_DIR "${PROJECT_ROOT_DIR}/resource")
 set(PROJECT_EXTERN_ROOT_DIR   "${PROJECT_ROOT_DIR}/extern")
+# Shared extern source used by Mithras workflow (contains SKSEMenuFramework and reusable deps)
+set(MITHRAS_SHARED_EXTERN_ROOT_DIR "${PROJECT_SOURCE_DIR}/../SpellBinding/SpellBinding/extern")
 # Set defaults for version components if not defined
 set(VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(VERSION_MINOR ${PROJECT_VERSION_MINOR})
@@ -104,6 +106,14 @@ target_include_directories(
 		${PROJECT_PCH_ROOT_DIR}
 		${PROJECT_EXTERN_ROOT_DIR}
 )
+
+if(EXISTS "${MITHRAS_SHARED_EXTERN_ROOT_DIR}")
+	message(STATUS "Using shared extern include path: ${MITHRAS_SHARED_EXTERN_ROOT_DIR}")
+	target_include_directories(
+		${PROJECT_NAME} PRIVATE
+			${MITHRAS_SHARED_EXTERN_ROOT_DIR}
+	)
+endif()
 # Setup precompiled header, cmake does it weird.
 if(MSVC)
 	set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "/YuPCH.h")
@@ -117,4 +127,35 @@ set_target_properties(
 		RUNTIME_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug,${PROJECT_SOURCE_DIR}/.bin/x64-release>"
 		LIBRARY_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.bin/x64-debug,${PROJECT_SOURCE_DIR}/.bin/x64-release>"
 		ARCHIVE_OUTPUT_DIRECTORY "$<IF:$<CONFIG:Debug>,${PROJECT_SOURCE_DIR}/.lib/x64-debug,${PROJECT_SOURCE_DIR}/.lib/x64-release>"
+)
+
+# Mirror release/debug outputs into a Nexus-ready folder structure.
+set(NEXUS_RELEASE_PLUGIN_DIR "${PROJECT_SOURCE_DIR}/Nexus Release/${PROJECT_NAME}/SKSE/Plugins")
+add_custom_command(
+	TARGET ${PROJECT_NAME}
+	POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory "${NEXUS_RELEASE_PLUGIN_DIR}"
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"$<TARGET_FILE:${PROJECT_NAME}>"
+		"${NEXUS_RELEASE_PLUGIN_DIR}/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
+)
+
+if(MSVC)
+	add_custom_command(
+		TARGET ${PROJECT_NAME}
+		POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_PDB_FILE:${PROJECT_NAME}>"
+			"${NEXUS_RELEASE_PLUGIN_DIR}/$<TARGET_PDB_FILE_NAME:${PROJECT_NAME}>"
+	)
+endif()
+
+# Create Nexus-ready zip: "Nexus Release/<ModName>.zip"
+set(NEXUS_RELEASE_ROOT_DIR "${PROJECT_SOURCE_DIR}/Nexus Release")
+set(NEXUS_RELEASE_ZIP_PATH "${NEXUS_RELEASE_ROOT_DIR}/${PROJECT_NAME}.zip")
+add_custom_command(
+	TARGET ${PROJECT_NAME}
+	POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E tar "cf" "${NEXUS_RELEASE_ZIP_PATH}" --format=zip "${PROJECT_NAME}"
+	WORKING_DIRECTORY "${NEXUS_RELEASE_ROOT_DIR}"
 )

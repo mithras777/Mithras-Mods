@@ -12,7 +12,7 @@
 #include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
 
-#include "json/single_include/nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <format>

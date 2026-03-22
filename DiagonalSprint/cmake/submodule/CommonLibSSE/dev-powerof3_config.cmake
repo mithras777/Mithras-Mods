@@ -13,12 +13,16 @@ include(FetchContent)
 
 set(FETCHCONTENT_QUIET FALSE)
 
-FetchContent_Populate(
-	${COMMONLIBSSE_NAME}
-	GIT_REPOSITORY          ${COMMONLIBSSE_REPO_URL}
-	GIT_TAG                 ${COMMONLIBSSE_REPO_TAG}
-	SOURCE_DIR              ${COMMONLIBSSE_ROOT_DIR}
-)
+if(EXISTS "${COMMONLIBSSE_ROOT_DIR}/include/RE/Skyrim.h")
+	message(STATUS "Reusing existing ${COMMONLIBSSE_NAME} at ${COMMONLIBSSE_ROOT_DIR}")
+else()
+	FetchContent_Populate(
+		${COMMONLIBSSE_NAME}
+		GIT_REPOSITORY          ${COMMONLIBSSE_REPO_URL}
+		GIT_TAG                 ${COMMONLIBSSE_REPO_TAG}
+		SOURCE_DIR              ${COMMONLIBSSE_ROOT_DIR}
+	)
+endif()
 #################################################
 # Dependencies
 #################################################

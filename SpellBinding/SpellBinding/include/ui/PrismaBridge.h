@@ -1,6 +1,41 @@
 #pragma once
 
-#include "PrismaUI/PrismaUI_API.h"
+#if __has_include("PrismaUI/PrismaUI_API.h")
+	#include "PrismaUI/PrismaUI_API.h"
+#else
+	#include <cstdint>
+
+	using PrismaView = std::uint32_t;
+
+	namespace PRISMA_UI_API
+	{
+		enum class InterfaceVersion : std::uint32_t
+		{
+			V1 = 1
+		};
+
+		class IVPrismaUI1
+		{
+		public:
+			virtual ~IVPrismaUI1() = default;
+			virtual bool IsValid(PrismaView) = 0;
+			virtual PrismaView CreateView(const char*, void(*)(PrismaView)) = 0;
+			virtual void Show(PrismaView) = 0;
+			virtual void Hide(PrismaView) = 0;
+			virtual bool IsHidden(PrismaView) = 0;
+			virtual void SetOrder(PrismaView, std::int32_t) = 0;
+			virtual bool Focus(PrismaView, bool, bool) = 0;
+			virtual bool HasFocus(PrismaView) = 0;
+			virtual void InteropCall(PrismaView, const char*, const char*) = 0;
+			virtual void RegisterJSListener(PrismaView, const char*, void(*)(const char*)) = 0;
+		};
+
+		inline void* RequestPluginAPI(InterfaceVersion)
+		{
+			return nullptr;
+		}
+	}
+#endif
 
 #include <string>
 

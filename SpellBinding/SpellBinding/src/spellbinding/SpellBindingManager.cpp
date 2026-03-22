@@ -9,7 +9,7 @@
 #include "RE/C/Calendar.h"
 #include "RE/M/MagicMenu.h"
 
-#include "json/single_include/nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>

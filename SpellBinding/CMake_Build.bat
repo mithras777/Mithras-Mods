@@ -546,9 +546,24 @@ if %ERRORLEVEL% GEQ 4 (
 )
 
 echo [SUCCESS] Dependencies copied to %PROJECT_EXTERN_TARGET%.
-echo [INFO] Next steps:
-echo        1. cmake --preset %CONFIG_PRESET%
-echo        2. cmake --build --preset %CONFIG_PRESET%-rel
+
+echo [INFO] Running configure: cmake --preset %CONFIG_PRESET%
+cmake --preset %CONFIG_PRESET%
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] CMake configuration failed with preset %CONFIG_PRESET%.
+    pause
+    exit /b 1
+)
+
+echo [INFO] Running release build: cmake --build --preset %CONFIG_PRESET%-rel
+cmake --build --preset %CONFIG_PRESET%-rel
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Release build failed with preset %CONFIG_PRESET%-rel.
+    pause
+    exit /b 1
+)
+
+echo [SUCCESS] Initial configure and release build completed.
 pause
 exit /b 0
 

@@ -6,7 +6,5 @@
 # Ignore extern directory inside SpellBinding
 /SpellBinding/extern/
 
-# Ignore release packaging artifacts
-/Nexus Release/SpellBinding.zip
-/Nexus Release/SpellBinding/SKSE/Plugins/SpellBinding.dll
-/Nexus Release/SpellBinding/SKSE/Plugins/SpellBinding.pdb
+# Ignore frontend dependencies
+/SpellBinding/web/SpellBinding/node_modules/

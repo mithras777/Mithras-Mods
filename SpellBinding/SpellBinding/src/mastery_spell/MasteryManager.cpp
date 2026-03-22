@@ -8,7 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <format>
-#include "json/single_include/nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 
 namespace SBO::MASTERY_SPELL
 {

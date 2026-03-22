@@ -12,12 +12,16 @@ include(FetchContent)
 
 set(FETCHCONTENT_QUIET FALSE)
 
-FetchContent_Populate(
-	${SPDLOG_NAME}
-	GIT_REPOSITORY  ${SPDLOG_REPO_URL}
-	GIT_TAG         ${SPDLOG_REPO_TAG}
-	SOURCE_DIR      ${SPDLOG_ROOT_DIR}
-)
+if(EXISTS "${SPDLOG_ROOT_DIR}/include/spdlog/spdlog.h")
+	message(STATUS "Reusing existing ${SPDLOG_NAME} at ${SPDLOG_ROOT_DIR}")
+else()
+	FetchContent_Populate(
+		${SPDLOG_NAME}
+		GIT_REPOSITORY  ${SPDLOG_REPO_URL}
+		GIT_TAG         ${SPDLOG_REPO_TAG}
+		SOURCE_DIR      ${SPDLOG_ROOT_DIR}
+	)
+endif()
 #################################################
 # Find files
 #################################################

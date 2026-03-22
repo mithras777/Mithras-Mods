@@ -17,7 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <format>
-#include "json/single_include/nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 
 namespace SMART_CAST
 {

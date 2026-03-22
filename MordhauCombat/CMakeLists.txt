@@ -35,7 +35,7 @@ include(project_config)
 # =========================
 set(COMMONLIB_VARIANT "vs2022-ng")
 option(SKYRIM_SUPPORT_AE "Enables support for Skyrim AE" ON)
-option(INSTALL_IMGUI "Installs imgui framework" ON)
+option(INSTALL_IMGUI "Installs imgui framework" OFF)
 
 # =========================
 # Submodules / Dependencies

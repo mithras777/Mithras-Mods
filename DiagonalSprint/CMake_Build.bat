@@ -518,6 +518,55 @@ set GitIgnore_Line6=/%PROJECT_NAME%/extern/
 >> .gitignore echo !GitIgnore_Line5!
 >> .gitignore echo !GitIgnore_Line6!
 
+:: =================================
+:: Auto-copy shared dependencies (assume no download)
+:: =================================
+echo.
+echo [INFO] Auto-copying shared dependencies from SpellBinding...
+set "SHARED_EXTERN_SOURCE=%~dp0..\SpellBinding\SpellBinding\extern"
+set "PROJECT_EXTERN_TARGET=%PROJECT_NAME%\extern"
+
+if not exist "%SHARED_EXTERN_SOURCE%" (
+    echo [WARNING] Shared extern source not found:
+    echo           %SHARED_EXTERN_SOURCE%
+    echo [WARNING] Skipping auto-copy. Copy dependencies manually before configure.
+    pause
+    exit /b 0
+)
+
+if not exist "%PROJECT_EXTERN_TARGET%" (
+    mkdir "%PROJECT_EXTERN_TARGET%" >nul 2>&1
+)
+
+xcopy "%SHARED_EXTERN_SOURCE%\*" "%PROJECT_EXTERN_TARGET%\" /E /I /Y >nul
+if %ERRORLEVEL% GEQ 4 (
+    echo [ERROR] Failed to copy shared dependencies.
+    pause
+    exit /b 1
+)
+
+echo [SUCCESS] Dependencies copied to %PROJECT_EXTERN_TARGET%.
+
+echo [INFO] Running configure: cmake --preset %CONFIG_PRESET%
+cmake --preset %CONFIG_PRESET%
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] CMake configuration failed with preset %CONFIG_PRESET%.
+    pause
+    exit /b 1
+)
+
+echo [INFO] Running release build: cmake --build --preset %CONFIG_PRESET%-rel
+cmake --build --preset %CONFIG_PRESET%-rel
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Release build failed with preset %CONFIG_PRESET%-rel.
+    pause
+    exit /b 1
+)
+
+echo [SUCCESS] Initial configure and release build completed.
+pause
+exit /b 0
+
 :build_configuration
 :: =================================
 :: Build configuration

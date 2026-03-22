@@ -8,8 +8,12 @@ set(DIRECTXTK_ROOT_DIR "${COMMONLIBSSE_EXTERN_ROOT_DIR}/${DIRECTXTK_NAME}")
 #################################################
 # Fetch Project
 #################################################
-FetchContent_Populate_No_Submodules(
-	GIT_REPOSITORY ${DIRECTXTK_REPO_URL}
-	GIT_TAG        ${DIRECTXTK_REPO_TAG}
-	SOURCE_DIR     ${DIRECTXTK_ROOT_DIR}
-)
+if(EXISTS "${DIRECTXTK_ROOT_DIR}/Inc")
+	message(STATUS "Reusing existing ${DIRECTXTK_NAME} at ${DIRECTXTK_ROOT_DIR}")
+else()
+	FetchContent_Populate_No_Submodules(
+		GIT_REPOSITORY ${DIRECTXTK_REPO_URL}
+		GIT_TAG        ${DIRECTXTK_REPO_TAG}
+		SOURCE_DIR     ${DIRECTXTK_ROOT_DIR}
+	)
+endif()
