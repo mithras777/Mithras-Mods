@@ -59,6 +59,9 @@ namespace MC::OAR
 		if (!IsPlayerContext(a_refr)) {
 			return false;
 		}
+		if (!MC::DIRECTIONAL::Controller::GetSingleton()->ShouldShowOverlay()) {
+			return false;
+		}
 
 		const auto cursor = MC::DIRECTIONAL::Controller::GetSingleton()->GetCursorState();
 		const float currentBucket = static_cast<float>(static_cast<int>(cursor.bucket));

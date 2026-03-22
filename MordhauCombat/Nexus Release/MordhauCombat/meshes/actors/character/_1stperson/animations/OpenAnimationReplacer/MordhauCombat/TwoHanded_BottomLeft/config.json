@@ -1,0 +1,22 @@
+{
+  "name": "Mordhau TwoHanded BottomLeft",
+  "description": "Two-handed bucket BottomLeft",
+  "priority": 210002006,
+  "ignoreDontConvertAnnotationsToTriggersFlag": true,
+  "hasCustomBlendTimeOnLoop": true,
+  "blendTimeOnLoop": 0.550000011920929,
+  "conditions": [
+    {
+      "condition": "OR",
+      "requiredVersion": "1.0.0.0",
+      "Conditions": [
+        { "condition": "IsEquippedType", "requiredVersion": "1.0.0.0", "Type": { "value": 5 }, "Left hand": false },
+        { "condition": "IsEquippedType", "requiredVersion": "1.0.0.0", "Type": { "value": 6 }, "Left hand": false }
+      ]
+    },
+    { "condition": "MordhauIsDirectionalAttack", "requiredVersion": "1.0.0" },
+    { "condition": "MordhauIsPowerAttack", "requiredVersion": "1.0.0", "negated": true },
+    { "condition": "MordhauDirectionBucket", "requiredVersion": "1.0.0", "Comparison": "=", "Bucket": { "value": 6 } },
+    { "condition": "IsWeaponDrawn", "requiredVersion": "1.0.0.0" }
+  ]
+}
