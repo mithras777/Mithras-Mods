@@ -3,6 +3,8 @@
 #include "plugin.h"
 #include "util/LogUtil.h"
 
+#include "RE/T/ThumbstickEvent.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -218,6 +220,13 @@ namespace DIAGONAL
 		RE::INPUT_DEVICE jumpDevice = RE::INPUT_DEVICE::kNone;
 
 		for (auto* event = *a_event; event; event = event->next) {
+			if (event->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick) {
+				if (auto* thumbstick = event->AsThumbstickEvent(); thumbstick && thumbstick->IsLeft()) {
+					m_lastMoveDevice = event->GetDevice();
+				}
+				continue;
+			}
+
 			if (event->GetEventType() != RE::INPUT_EVENT_TYPE::kButton) {
 				continue;
 			}
