@@ -33,6 +33,7 @@ namespace DIAGONAL
 		constexpr float kUphillDotThreshold = 0.10f;
 		constexpr float kFovResyncThreshold = 0.25f;
 		constexpr float kControllerStrafeDeadzone = 0.20f;
+		constexpr float kDegToRad = 0.017453292519943295f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -101,7 +102,8 @@ namespace DIAGONAL
 			a_os << "{\n";
 			a_os << "  \"enabled\": " << (a_cfg.enabled ? "true" : "false") << ",\n";
 			a_os << "  \"lateralSpeed\": " << a_cfg.lateralSpeed << ",\n";
-			a_os << "  \"freeAirControl\": " << (a_cfg.freeAirControl ? "true" : "false") << "\n";
+			a_os << "  \"freeAirControl\": " << (a_cfg.freeAirControl ? "true" : "false") << ",\n";
+			a_os << "  \"controllerDiagonalConeDegrees\": " << a_cfg.controllerDiagonalConeDegrees << "\n";
 			a_os << "}\n";
 		}
 
@@ -185,6 +187,7 @@ namespace DIAGONAL
 			std::scoped_lock lock(m_lock);
 			m_config = a_config;
 			m_config.lateralSpeed = ClampFloat(m_config.lateralSpeed, 0.5f, 10.0f);
+			m_config.controllerDiagonalConeDegrees = ClampFloat(m_config.controllerDiagonalConeDegrees, 15.0f, 85.0f);
 		}
 
 		if (a_writeJson) {
@@ -227,10 +230,13 @@ namespace DIAGONAL
 			const auto& userEvent = button->GetUserEvent();
 			if (userEvent == userEvents->strafeLeft) {
 				m_strafeLeftDown = button->IsPressed();
+				m_lastMoveDevice = event->GetDevice();
 			} else if (userEvent == userEvents->strafeRight) {
 				m_strafeRightDown = button->IsPressed();
+				m_lastMoveDevice = event->GetDevice();
 			} else if (userEvent == userEvents->forward) {
 				m_forwardDown = button->IsPressed();
+				m_lastMoveDevice = event->GetDevice();
 			} else if (userEvent == userEvents->sprint) {
 				m_sprintDown = button->IsPressed();
 			} else if (userEvent == userEvents->jump) {
@@ -248,7 +254,7 @@ namespace DIAGONAL
 		}
 
 		const float heldStrafeInput = GetStrafeInput();
-		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
+		const bool hasSprintIntent = m_sprintDown && HasForwardIntent() && std::abs(heldStrafeInput) > kEpsilon;
 		if (!m_sprintAssistActive && hasSprintIntent && IsAssistContextValid(player)) {
 			m_sprintAssistActive = true;
 			m_sprintAssistTimer = kSprintAssistDuration;
@@ -333,7 +339,7 @@ namespace DIAGONAL
 		}
 
 		const float heldStrafeInput = GetStrafeInput();
-		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
+		const bool hasSprintIntent = m_sprintDown && HasForwardIntent() && std::abs(heldStrafeInput) > kEpsilon;
 		const bool jumpSafetyLock = m_jumpIntentActive || jumpingState || !onGroundState || m_warpCooldownTimer > 0.0f;
 		const bool jumpDiagonalIntent = (jumpSafetyLock || (jumpingState && m_jumpSuppressTimer > 0.0f)) && std::abs(heldStrafeInput) > kEpsilon;
 
@@ -387,6 +393,7 @@ namespace DIAGONAL
 		m_strafeRightDown = false;
 		m_forwardDown = false;
 		m_sprintDown = false;
+		m_lastMoveDevice = RE::INPUT_DEVICE::kNone;
 		m_jumpSuppressTimer = 0.0f;
 		m_jumpIntentActive = false;
 		m_jumpIntentTimer = 0.0f;
@@ -513,7 +520,24 @@ namespace DIAGONAL
 	bool FakeDiagonalSprint::ShouldUseSyntheticJump(RE::PlayerCharacter* a_player) const
 	{
 		const float heldStrafeInput = GetStrafeInput();
-		return m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon && IsAssistContextValid(a_player);
+		return m_sprintDown && HasForwardIntent() && std::abs(heldStrafeInput) > kEpsilon && IsAssistContextValid(a_player);
+	}
+
+	bool FakeDiagonalSprint::HasForwardIntent() const
+	{
+		auto* controls = RE::PlayerControls::GetSingleton();
+		if (controls && m_lastMoveDevice == RE::INPUT_DEVICE::kGamepad) {
+			const float moveForward = ClampFloat(controls->data.moveInputVec.y, -1.0f, 1.0f);
+			const float moveStrafe = ClampFloat(controls->data.moveInputVec.x, -1.0f, 1.0f);
+			const float magnitude = std::sqrt((moveForward * moveForward) + (moveStrafe * moveStrafe));
+			if (magnitude > kEpsilon) {
+				const float coneRadians = m_config.controllerDiagonalConeDegrees * kDegToRad;
+				const float minForward = std::cos(coneRadians);
+				return moveForward > kEpsilon && (moveForward / magnitude) >= minForward;
+			}
+		}
+
+		return m_forwardDown;
 	}
 
 	float FakeDiagonalSprint::GetStrafeInput() const
@@ -521,7 +545,7 @@ namespace DIAGONAL
 		const float digital = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
 
 		auto* controls = RE::PlayerControls::GetSingleton();
-		if (!controls) {
+		if (!controls || m_lastMoveDevice != RE::INPUT_DEVICE::kGamepad) {
 			return digital;
 		}
 
@@ -834,10 +858,12 @@ namespace DIAGONAL
 		ReadBool(text, "enabled", loaded.enabled);
 		ReadFloat(text, "lateralSpeed", loaded.lateralSpeed);
 		ReadBool(text, "freeAirControl", loaded.freeAirControl);
+		ReadFloat(text, "controllerDiagonalConeDegrees", loaded.controllerDiagonalConeDegrees);
 
 		std::scoped_lock lock(m_lock);
 		m_config = loaded;
 		m_config.lateralSpeed = ClampFloat(m_config.lateralSpeed, 0.5f, 10.0f);
+		m_config.controllerDiagonalConeDegrees = ClampFloat(m_config.controllerDiagonalConeDegrees, 15.0f, 85.0f);
 	}
 
 	std::filesystem::path FakeDiagonalSprint::GetConfigPath() const

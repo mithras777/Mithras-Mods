@@ -18,13 +18,15 @@ namespace UI
 			const DIAGONAL::FakeDiagonalConfig defaults{};
 			a_cfg.lateralSpeed = defaults.lateralSpeed;
 			a_cfg.freeAirControl = defaults.freeAirControl;
+			a_cfg.controllerDiagonalConeDegrees = defaults.controllerDiagonalConeDegrees;
 		}
 
 		bool ConfigChanged(const DIAGONAL::FakeDiagonalConfig& a_lhs, const DIAGONAL::FakeDiagonalConfig& a_rhs)
 		{
 			return a_lhs.enabled != a_rhs.enabled ||
 			       a_lhs.lateralSpeed != a_rhs.lateralSpeed ||
-			       a_lhs.freeAirControl != a_rhs.freeAirControl;
+			       a_lhs.freeAirControl != a_rhs.freeAirControl ||
+			       a_lhs.controllerDiagonalConeDegrees != a_rhs.controllerDiagonalConeDegrees;
 		}
 	}
 
@@ -64,6 +66,8 @@ namespace UI
 					if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
 						ImGui::SliderFloat("Lateral Speed", &cfg.lateralSpeed, 0.5f, 10.0f, "%.1f");
 						ImGui::Checkbox("Free Air Control", &cfg.freeAirControl);
+						ImGui::SliderFloat("Controller Diagonal Cone", &cfg.controllerDiagonalConeDegrees, 15.0f, 85.0f, "%.0f deg");
+						ImGui::TextDisabled("Higher values accept a wider stick angle; default is very forgiving.");
 						ImGui::Spacing();
 						if (ImGui::Button("Defaults##Controls")) {
 							ResetControlsDefaults(cfg);

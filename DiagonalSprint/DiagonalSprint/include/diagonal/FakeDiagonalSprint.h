@@ -11,6 +11,7 @@ namespace DIAGONAL
 		bool enabled{ true };
 		float lateralSpeed{ 4.1f };
 		bool freeAirControl{ true };
+		float controllerDiagonalConeDegrees{ 85.0f };
 	};
 
 	class FakeDiagonalSprint final : public REX::Singleton<FakeDiagonalSprint>
@@ -33,6 +34,7 @@ namespace DIAGONAL
 	private:
 		bool IsFeatureActive(RE::PlayerCharacter* a_player, const char** a_reason = nullptr) const;
 		bool IsAssistContextValid(RE::PlayerCharacter* a_player, const char** a_reason = nullptr) const;
+		bool HasForwardIntent() const;
 		bool ShouldUseSyntheticJump(RE::PlayerCharacter* a_player) const;
 		float GetStrafeInput() const;
 		bool PrepareSyntheticJump(RE::INPUT_DEVICE a_device);
@@ -56,6 +58,7 @@ namespace DIAGONAL
 		bool m_strafeRightDown{ false };
 		bool m_forwardDown{ false };
 		bool m_sprintDown{ false };
+		RE::INPUT_DEVICE m_lastMoveDevice{ RE::INPUT_DEVICE::kNone };
 		float m_jumpSuppressTimer{ 0.0f };
 		bool m_jumpIntentActive{ false };
 		float m_jumpIntentTimer{ 0.0f };
