@@ -34,6 +34,7 @@ namespace DIAGONAL
 		bool IsFeatureActive(RE::PlayerCharacter* a_player, const char** a_reason = nullptr) const;
 		bool IsAssistContextValid(RE::PlayerCharacter* a_player, const char** a_reason = nullptr) const;
 		bool ShouldUseSyntheticJump(RE::PlayerCharacter* a_player) const;
+		float GetStrafeInput() const;
 		bool PrepareSyntheticJump(RE::INPUT_DEVICE a_device);
 		void QueueSyntheticJumpPress(float a_heldSecs);
 		void QueueSyntheticJumpRelease();

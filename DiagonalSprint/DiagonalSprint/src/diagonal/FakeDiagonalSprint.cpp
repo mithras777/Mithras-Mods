@@ -32,6 +32,7 @@ namespace DIAGONAL
 		constexpr float kStairClimbBiasMax = 0.65f;
 		constexpr float kUphillDotThreshold = 0.10f;
 		constexpr float kFovResyncThreshold = 0.25f;
+		constexpr float kControllerStrafeDeadzone = 0.20f;
 
 		std::string ReadTextFile(const std::filesystem::path& a_path)
 		{
@@ -246,7 +247,7 @@ namespace DIAGONAL
 			}
 		}
 
-		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+		const float heldStrafeInput = GetStrafeInput();
 		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
 		if (!m_sprintAssistActive && hasSprintIntent && IsAssistContextValid(player)) {
 			m_sprintAssistActive = true;
@@ -331,7 +332,7 @@ namespace DIAGONAL
 			m_groundStableTimer = 0.0f;
 		}
 
-		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+		const float heldStrafeInput = GetStrafeInput();
 		const bool hasSprintIntent = m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon;
 		const bool jumpSafetyLock = m_jumpIntentActive || jumpingState || !onGroundState || m_warpCooldownTimer > 0.0f;
 		const bool jumpDiagonalIntent = (jumpSafetyLock || (jumpingState && m_jumpSuppressTimer > 0.0f)) && std::abs(heldStrafeInput) > kEpsilon;
@@ -511,8 +512,28 @@ namespace DIAGONAL
 
 	bool FakeDiagonalSprint::ShouldUseSyntheticJump(RE::PlayerCharacter* a_player) const
 	{
-		const float heldStrafeInput = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+		const float heldStrafeInput = GetStrafeInput();
 		return m_sprintDown && m_forwardDown && std::abs(heldStrafeInput) > kEpsilon && IsAssistContextValid(a_player);
+	}
+
+	float FakeDiagonalSprint::GetStrafeInput() const
+	{
+		const float digital = (m_strafeLeftDown != m_strafeRightDown) ? (m_strafeRightDown ? 1.0f : -1.0f) : 0.0f;
+
+		auto* controls = RE::PlayerControls::GetSingleton();
+		if (!controls) {
+			return digital;
+		}
+
+		float analog = ClampFloat(controls->data.moveInputVec.x, -1.0f, 1.0f);
+		if (std::abs(analog) < kControllerStrafeDeadzone) {
+			analog = 0.0f;
+		}
+
+		if (std::abs(analog) > std::abs(digital) + kEpsilon) {
+			return analog;
+		}
+		return digital;
 	}
 
 	bool FakeDiagonalSprint::PrepareSyntheticJump(RE::INPUT_DEVICE a_device)
