@@ -443,8 +443,10 @@ namespace SBIND
 		}
 
 		if (!config.enabled || a_player->IsDead()) {
-			std::scoped_lock lock(m_lock);
-			StopActiveConcentration(a_player, true);
+			{
+				std::scoped_lock lock(m_lock);
+				StopActiveConcentration(a_player, true);
+			}
 			PushHUDSnapshot();
 			return;
 		}
