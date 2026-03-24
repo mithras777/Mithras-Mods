@@ -255,7 +255,7 @@ namespace UI::PRISMA
 		if (!m_api || m_view == 0 || !m_viewReady) {
 			return false;
 		}
-		return true;
+		return m_api->IsValid(m_view) && !m_api->IsHidden(m_view);
 	}
 
 	bool Bridge::IsMenuFocused() const

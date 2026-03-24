@@ -48,7 +48,7 @@ namespace SMART_CAST
 
 	struct RecordConfig
 	{
-		std::string toggleKey{ "H" };
+		std::string toggleKey{ "B" };
 		std::string cancelKey{ "None" };
 		float maxIdleSec{ 4.0f };
 		bool recordOnlySuccessfulCasts{ true };
