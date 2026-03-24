@@ -3,6 +3,7 @@
 #include "overhaul/SpellbladeOverhaulManager.h"
 #include "spellbinding/SpellBindingManager.h"
 #include "util/LogUtil.h"
+#include "util/StringUtil.h"
 
 #include <format>
 
@@ -36,15 +37,16 @@ namespace UI::PRISMA
 			return;
 		}
 
-		if (m_view != 0 && m_api->IsValid(m_view)) {
+		if (m_viewReady && m_view != 0) {
 			return;
 		}
 
-		m_view = m_api->CreateView(kMenuViewPath, [](PrismaView) -> void {
+		m_view = m_api->CreateView(kMenuViewPath, [](PrismaView view) -> void {
 			auto* bridge = Bridge::GetSingleton();
 			if (bridge) {
-				bridge->RegisterListeners();
-				SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
+				bridge->RegisterListeners(view);
+				bridge->m_viewReady = true;
+				bridge->PushSnapshot(view, SB_OVERHAUL::Manager::GetSingleton()->BuildSnapshotJson());
 			}
 		});
 		if (m_view == 0) {
@@ -63,15 +65,15 @@ namespace UI::PRISMA
 			return;
 		}
 
-		if (m_hudView != 0 && m_api->IsValid(m_hudView)) {
+		if (m_hudViewReady && m_hudView != 0) {
 			return;
 		}
 
-		m_hudView = m_api->CreateView(kHudViewPath, [](PrismaView) -> void {
+		m_hudView = m_api->CreateView(kHudViewPath, [](PrismaView view) -> void {
 			auto* bridge = Bridge::GetSingleton();
 			if (bridge) {
-				bridge->RegisterHUDListeners();
-				SB_OVERHAUL::Manager::GetSingleton()->PushHUDSnapshot();
+				bridge->RegisterHUDListeners(view);
+				bridge->m_hudViewReady = true;
 			}
 		});
 		if (m_hudView == 0) {
@@ -79,51 +81,50 @@ namespace UI::PRISMA
 			return;
 		}
 
-		m_api->Show(m_hudView);
 		m_api->SetOrder(m_hudView, 40);
 		LOG_INFO("SpellBinding: Prisma HUD view created");
 	}
 
-	void Bridge::RegisterListeners()
+	void Bridge::RegisterListeners(PrismaView a_view)
 	{
-		if (!m_api || m_view == 0 || m_listenersRegistered) {
+		if (!m_api || a_view == 0 || m_listenersRegistered) {
 			return;
 		}
 
-		m_api->RegisterJSListener(m_view, "sbo_toggle_ui", [](const char*) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_toggle_ui", [](const char*) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->ToggleUI();
 		});
 
-		m_api->RegisterJSListener(m_view, "sbo_request_snapshot", [](const char*) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_request_snapshot", [](const char*) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->PushUISnapshot();
 		});
 
-		m_api->RegisterJSListener(m_view, "sbo_set_setting", [](const char* payload) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_set_setting", [](const char* payload) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->HandleSetSetting(payload ? payload : "");
 		});
 
-		m_api->RegisterJSListener(m_view, "sbo_action", [](const char* payload) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_action", [](const char* payload) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->HandleAction(payload ? payload : "");
 		});
 
-		m_api->RegisterJSListener(m_view, "sbo_hud_action", [](const char* payload) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_hud_action", [](const char* payload) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->HandleHudAction(payload ? payload : "");
 		});
 
 		m_listenersRegistered = true;
 	}
 
-	void Bridge::RegisterHUDListeners()
+	void Bridge::RegisterHUDListeners(PrismaView a_view)
 	{
-		if (!m_api || m_hudView == 0 || m_hudListenersRegistered) {
+		if (!m_api || a_view == 0 || m_hudListenersRegistered) {
 			return;
 		}
 
-		m_api->RegisterJSListener(m_hudView, "sbo_hud_drag_update", [](const char* payload) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_hud_drag_update", [](const char* payload) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->HandleHudAction(payload ? payload : "");
 		});
 
-		m_api->RegisterJSListener(m_hudView, "sbo_hud_drag_commit", [](const char* payload) -> void {
+		m_api->RegisterJSListener(a_view, "sbo_hud_drag_commit", [](const char* payload) -> void {
 			SB_OVERHAUL::Manager::GetSingleton()->HandleHudAction(payload ? payload : "");
 		});
 
@@ -161,10 +162,20 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureViewCreated();
-		if (m_view == 0 || !m_api->IsValid(m_view)) {
+		if (m_view == 0 || !m_viewReady) {
 			return;
 		}
-		m_api->InteropCall(m_view, "sbo_renderSnapshot", a_json.c_str());
+		const auto safeJson = UTIL::STRING::SanitizeUtf8(a_json);
+		m_api->InteropCall(m_view, "sbo_renderSnapshot", safeJson.c_str());
+	}
+
+	void Bridge::PushSnapshot(PrismaView a_view, const std::string& a_json)
+	{
+		if (!m_api || a_view == 0) {
+			return;
+		}
+
+		m_api->InteropCall(a_view, "sbo_renderSnapshot", a_json.c_str());
 	}
 
 	void Bridge::PushHUDSnapshot(const std::string& a_json)
@@ -173,10 +184,20 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureHUDViewCreated();
-		if (m_hudView == 0 || !m_api->IsValid(m_hudView)) {
+		if (m_hudView == 0 || !m_hudViewReady) {
 			return;
 		}
-		m_api->InteropCall(m_hudView, "sbo_renderHud", a_json.c_str());
+		const auto safeJson = UTIL::STRING::SanitizeUtf8(a_json);
+		m_api->InteropCall(m_hudView, "sbo_renderHud", safeJson.c_str());
+	}
+
+	void Bridge::PushHUDSnapshot(PrismaView a_view, const std::string& a_json)
+	{
+		if (!m_api || a_view == 0) {
+			return;
+		}
+
+		m_api->InteropCall(a_view, "sbo_renderHud", a_json.c_str());
 	}
 
 	void Bridge::ShowToast(const std::string& a_text)
@@ -185,10 +206,11 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureViewCreated();
-		if (m_view == 0 || !m_api->IsValid(m_view)) {
+		if (m_view == 0 || !m_viewReady) {
 			return;
 		}
-		m_api->InteropCall(m_view, "sbo_showToast", a_text.c_str());
+		const auto safeText = UTIL::STRING::SanitizeUtf8(a_text);
+		m_api->InteropCall(m_view, "sbo_showToast", safeText.c_str());
 	}
 
 	void Bridge::SendEscapeToMenu()
@@ -197,7 +219,7 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureViewCreated();
-		if (m_view == 0 || !m_api->IsValid(m_view) || m_api->IsHidden(m_view)) {
+		if (m_view == 0 || !m_viewReady) {
 			return;
 		}
 		m_api->InteropCall(m_view, "sbo_native_escape", "");
@@ -209,7 +231,7 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureViewCreated();
-		if (m_view == 0 || !m_api->IsValid(m_view) || m_api->IsHidden(m_view)) {
+		if (m_view == 0 || !m_viewReady) {
 			return;
 		}
 		m_api->InteropCall(m_view, "sbo_close_ui", "");
@@ -221,7 +243,7 @@ namespace UI::PRISMA
 			return;
 		}
 		EnsureViewCreated();
-		if (m_view == 0 || !m_api->IsValid(m_view)) {
+		if (m_view == 0 || !m_viewReady) {
 			return;
 		}
 		const auto json = std::format("{{\"focused\":{}}}", a_focused ? "true" : "false");
@@ -230,15 +252,15 @@ namespace UI::PRISMA
 
 	bool Bridge::IsMenuOpen() const
 	{
-		if (!m_api || m_view == 0 || !m_api->IsValid(m_view)) {
+		if (!m_api || m_view == 0 || !m_viewReady) {
 			return false;
 		}
-		return !m_api->IsHidden(m_view);
+		return true;
 	}
 
 	bool Bridge::IsMenuFocused() const
 	{
-		if (!m_api || m_view == 0 || !m_api->IsValid(m_view)) {
+		if (!m_api || m_view == 0 || !m_viewReady) {
 			return false;
 		}
 		return m_api->HasFocus(m_view);

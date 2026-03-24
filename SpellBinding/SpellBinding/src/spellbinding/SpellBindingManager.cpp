@@ -5,6 +5,7 @@
 #include "smartcast/SmartCastController.h"
 #include "ui/PrismaBridge.h"
 #include "util/LogUtil.h"
+#include "util/StringUtil.h"
 
 #include "RE/C/Calendar.h"
 #include "RE/M/MagicMenu.h"
@@ -42,6 +43,28 @@ namespace SBIND
 				case 1: return AttackSlot::kPower;
 				case 2: return AttackSlot::kBash;
 				default: return AttackSlot::kLight;
+			}
+		}
+
+		void SanitizeJsonStrings(json& a_json)
+		{
+			if (a_json.is_string()) {
+				a_json = UTIL::STRING::SanitizeUtf8(a_json.get_ref<const std::string&>());
+				return;
+			}
+
+			if (a_json.is_array()) {
+				for (auto& value : a_json) {
+					SanitizeJsonStrings(value);
+				}
+				return;
+			}
+
+			if (a_json.is_object()) {
+				for (auto& [key, value] : a_json.items()) {
+					(void)key;
+					SanitizeJsonStrings(value);
+				}
 			}
 		}
 	}
@@ -1914,6 +1937,7 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 				{ "hasSaved", m_uiWindow.hasSaved }
 			} }
 		};
+		SanitizeJsonStrings(root);
 		return root.dump();
 	}
 
@@ -1981,6 +2005,7 @@ bool Manager::SupportsCastCount(const RE::SpellItem* a_spell)
 		root["anchor"] = m_config.hudAnchor;
 		root["showSeconds"] = false;
 		root["dragMode"] = m_runtime.hudDragModeActive;
+		SanitizeJsonStrings(root);
 		return root.dump();
 	}
 

@@ -104,13 +104,27 @@ namespace GAME::ASSASSINATION {
 			return !victimSeesAttacker && !hasLOS;
 		}
 
+		[[nodiscard]] bool IsWithinLevelDifference(RE::Actor* a_attacker, RE::Actor* a_victim, const Config& a_config)
+		{
+			if (!a_attacker || !a_victim) {
+				return false;
+			}
+
+			const auto attackerLevel = static_cast<int>(a_attacker->GetLevel());
+			const auto victimLevel = static_cast<int>(a_victim->GetLevel());
+			const auto maxDifference = a_config.maxLevelDifference < 0 ? 0 : a_config.maxLevelDifference;
+			return victimLevel <= attackerLevel + maxDifference;
+		}
+
 		void ForceDeath(RE::Actor* a_victim, RE::Actor* a_attacker)
 		{
 			if (!a_victim) {
 				return;
 			}
 
-			a_victim->KillImpl(a_attacker, 100000.0f, true, false);
+			constexpr float lethalDamage = 100000.0f;
+			LOG_INFO("[Assassination] Applying lethal damage to {} via {}", a_victim->GetName(), lethalDamage);
+			a_victim->DoDamage(lethalDamage, a_attacker, true);
 		}
 
 		bool ShouldAssassinate(RE::Actor* a_attacker, RE::Actor* a_victim, const RE::TESHitEvent& a_event)
@@ -141,7 +155,11 @@ namespace GAME::ASSASSINATION {
 				return false;
 			}
 
-			return IsUnseenByVictim(a_attacker, a_victim, a_event);
+			if (!a_attacker->IsSneaking() || !IsUnseenByVictim(a_attacker, a_victim, a_event)) {
+				return false;
+			}
+
+			return IsWithinLevelDifference(a_attacker, a_victim, g_config);
 		}
 
 		class HitManager final : public RE::BSTEventSink<RE::TESHitEvent> {

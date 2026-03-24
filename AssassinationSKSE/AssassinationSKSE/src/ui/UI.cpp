@@ -10,6 +10,7 @@ namespace UI {
 		[[nodiscard]] bool ConfigChanged(const GAME::ASSASSINATION::Config& a_lhs, const GAME::ASSASSINATION::Config& a_rhs)
 		{
 			return a_lhs.enabled != a_rhs.enabled ||
+			       a_lhs.maxLevelDifference != a_rhs.maxLevelDifference ||
 			       a_lhs.melee != a_rhs.melee ||
 			       a_lhs.unarmed != a_rhs.unarmed ||
 			       a_lhs.bowsCrossbows != a_rhs.bowsCrossbows;
@@ -39,6 +40,8 @@ namespace UI {
 					if (ImGui::CollapsingHeader("Assassination", ImGuiTreeNodeFlags_DefaultOpen)) {
 						ImGui::Checkbox("Enabled", &cfg.enabled);
 						ImGui::TextDisabled("When disabled, the hit listener remains active but will never execute targets.");
+						ImGui::SliderInt("Max Level Difference", &cfg.maxLevelDifference, 0, 100);
+						ImGui::TextDisabled("0 = target must be your level or lower. 100 = target can be up to 100 levels above you.");
 					}
 					ImGui::EndTabItem();
 				}
