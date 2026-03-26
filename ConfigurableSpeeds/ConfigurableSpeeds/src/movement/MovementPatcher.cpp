@@ -1,7 +1,6 @@
 #include "movement/MovementPatcher.h"
 
 #include "RE/A/Actor.h"
-#include "RE/A/ActorState.h"
 #include "RE/M/MagicCaster.h"
 #include "RE/M/MagicSystem.h"
 #include "RE/P/PlayerCharacter.h"
@@ -20,15 +19,12 @@ namespace MOVEMENT
 		constexpr auto kNPC1HMForm = "Skyrim.esm|0x00069CD8";
 		constexpr auto kNPC2HMForm = "Skyrim.esm|0x00069CD9";
 
-		constexpr std::array<const char*, 8> kPlayerEntryNames{
+		constexpr std::array<const char*, 5> kPlayerEntryNames{
 			"Player_Default_MT",
 			"Player_Blocking_MT",
 			"Player_BowDrawn_MT",
-			"Player_Bow_MT",
 			"Player_MagicCasting_MT",
-			"Player_Magic_MT",
-			"Player_Sneaking_MT",
-			"Player_Sprinting_MT"
+			"Player_Sneaking_MT"
 		};
 
 		bool IsSprintEntry(std::string_view a_name)
@@ -45,23 +41,6 @@ namespace MOVEMENT
 				}
 			}
 			return nullptr;
-		}
-
-		std::size_t GetMovementDirectionIndex(const RE::ActorState& a_state)
-		{
-			if (a_state.actorState1.movingForward) {
-				return 2;
-			}
-			if (a_state.actorState1.movingBack) {
-				return 3;
-			}
-			if (a_state.actorState1.movingLeft) {
-				return 0;
-			}
-			if (a_state.actorState1.movingRight) {
-				return 1;
-			}
-			return 2;
 		}
 
 		bool IsBowEquipped(RE::PlayerCharacter& a_player)
@@ -99,12 +78,8 @@ namespace MOVEMENT
 				return kPlayerEntryNames[0];
 			}
 
-			if (actorState->actorState1.sprinting) {
-				return kPlayerEntryNames[7];
-			}
-
 			if (actorState->actorState1.sneaking) {
-				return kPlayerEntryNames[6];
+				return kPlayerEntryNames[4];
 			}
 
 			if (actorState->actorState2.wantBlocking || a_player.IsBlocking()) {
@@ -115,17 +90,10 @@ namespace MOVEMENT
 				if (actorState->IsWeaponDrawn()) {
 					return kPlayerEntryNames[2];
 				}
-				return kPlayerEntryNames[3];
 			}
 
 			if (IsMagicActive(a_player)) {
-				for (const auto source : { RE::MagicSystem::CastingSource::kLeftHand, RE::MagicSystem::CastingSource::kRightHand, RE::MagicSystem::CastingSource::kOther, RE::MagicSystem::CastingSource::kInstant }) {
-					const auto* caster = a_player.GetMagicCaster(source);
-					if (caster && caster->state != RE::MagicCaster::State::kNone) {
-						return kPlayerEntryNames[4];
-					}
-				}
-				return kPlayerEntryNames[5];
+				return kPlayerEntryNames[3];
 			}
 
 			return kPlayerEntryNames[0];
@@ -195,19 +163,13 @@ namespace MOVEMENT
 
 	float MovementPatcher::GetPlayerSpeedMultiplier(const SettingsData& a_settings, RE::PlayerCharacter& a_player) const
 	{
-		const auto* actorState = a_player.AsActorState();
-		if (!actorState) {
-			return 100.0f;
-		}
-
 		const auto playerEntryName = ResolvePlayerEntryName(a_player);
 		const auto* entry = FindEntryByName(a_settings, playerEntryName);
 		if (!entry || !entry->playerOnly || !entry->enabled) {
 			return 100.0f;
 		}
 
-		const auto directionIndex = GetMovementDirectionIndex(*actorState);
-		return entry->speeds[directionIndex][1];
+		return entry->playerSpeedMult;
 	}
 
 	void MovementPatcher::RestoreCurrentCache()

@@ -19,13 +19,6 @@ namespace UI::MCM
 		MOVEMENT::SettingsData g_defaults{};
 		bool g_dirty{ false };
 
-		constexpr std::array<const char*, 4> kDirections{
-			"Left",
-			"Right",
-			"Forward",
-			"Back"
-		};
-
 		std::string PrettyName(std::string_view a_name)
 		{
 			auto replaceAll = [](std::string& a_text, std::string_view a_from, std::string_view a_to) {
@@ -77,6 +70,23 @@ namespace UI::MCM
 			a_entry.speeds[2][1] = std::max({ a_entry.speeds[2][1], a_entry.speeds[0][1], a_entry.speeds[1][1] });
 		}
 
+		const char* PlayerSpeedLabel(std::string_view a_name)
+		{
+			if (a_name.find("Blocking") != std::string_view::npos) {
+				return "Blocking SpeedMult";
+			}
+			if (a_name.find("BowDrawn") != std::string_view::npos) {
+				return "Bow Drawn SpeedMult";
+			}
+			if (a_name.find("MagicCasting") != std::string_view::npos) {
+				return "Magic Casting SpeedMult";
+			}
+			if (a_name.find("Sneaking") != std::string_view::npos) {
+				return "Sneaking SpeedMult";
+			}
+			return "Default SpeedMult";
+		}
+
 		std::string CanonicalForm(std::string_view a_form)
 		{
 			std::string out(a_form);
@@ -118,6 +128,9 @@ namespace UI::MCM
 					return true;
 				}
 				if (l.playerOnly != r.playerOnly) {
+					return true;
+				}
+				if (l.playerOnly && l.playerSpeedMult != r.playerSpeedMult) {
 					return true;
 				}
 				for (std::size_t direction = 0; direction < 5; ++direction) {
@@ -166,32 +179,41 @@ namespace UI::MCM
 					ImGui::SameLine();
 					if (ImGui::Button("Reset")) {
 						if (const auto* defaults = FindDefaultEntry(entry.form)) {
-							for (std::size_t direction = 0; direction < 5; ++direction) {
-								entry.speeds[direction][0] = defaults->speeds[direction][0];
-								entry.speeds[direction][1] = defaults->speeds[direction][1];
+							if (a_playerOnly) {
+								entry.playerSpeedMult = defaults->playerSpeedMult;
+							} else {
+								for (std::size_t direction = 0; direction < 5; ++direction) {
+									entry.speeds[direction][0] = defaults->speeds[direction][0];
+									entry.speeds[direction][1] = defaults->speeds[direction][1];
+								}
 							}
 						}
 					}
-					if (IsSprintEntry(entry.name)) {
-						const auto* label = a_playerOnly ? "Sprinting SpeedMult" : "Sprinting";
-						ImGui::SliderFloat(label, &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
+					if (a_playerOnly) {
+						ImGui::SliderFloat(PlayerSpeedLabel(entry.name), &entry.playerSpeedMult, 1.0f, 2000.0f, "%.1f");
+					} else if (IsSprintEntry(entry.name)) {
+						ImGui::SliderFloat("Sprinting", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
 					} else if (entry.group == "Horses") {
-						const auto* label = a_playerOnly ? "Forward SpeedMult" : "Forward";
-						ImGui::SliderFloat(label, &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
+						ImGui::SliderFloat("Forward", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
 					} else {
 						bool lateralChanged = false;
+						constexpr std::array<const char*, 4> kDirections{
+							"Left",
+							"Right",
+							"Forward",
+							"Back"
+						};
 						for (std::size_t direction = 0; direction < kDirections.size(); ++direction) {
-							std::string label = std::string(kDirections[direction]);
-							label += a_playerOnly ? " SpeedMult##Player" : "##Run";
+							const char* baseLabel = kDirections[direction];
+							std::string label = baseLabel;
+							label += "##Run";
 							label += kDirections[direction];
 							if (ImGui::SliderFloat(label.c_str(), &entry.speeds[direction][1], 0.0f, 2000.0f, "%.1f")) {
 								lateralChanged = lateralChanged || direction == 0 || direction == 1;
 							}
 						}
 						if (lateralChanged) {
-							if (!a_playerOnly) {
-								EnforceLateralToForward(entry);
-							}
+							EnforceLateralToForward(entry);
 						}
 					}
 					ImGui::TreePop();

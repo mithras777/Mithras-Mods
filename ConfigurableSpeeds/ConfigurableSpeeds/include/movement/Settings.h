@@ -19,12 +19,13 @@ namespace MOVEMENT
 		std::string group{}; // Default / Combat / Horses
 		bool playerOnly{ false };
 		bool enabled{ true };
+		float playerSpeedMult{ 100.0f };
 		float speeds[5][2]{};
 	};
 
 	struct SettingsData
 	{
-		int version{ 8 };
+		int version{ 13 };
 		GeneralSettings general{};
 		std::vector<MovementEntry> entries{};
 	};

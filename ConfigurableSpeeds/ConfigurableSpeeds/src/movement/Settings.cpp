@@ -12,7 +12,6 @@
 #include <fstream>
 #include <sstream>
 #include <string_view>
-#include <unordered_map>
 
 namespace MOVEMENT
 {
@@ -106,6 +105,13 @@ namespace MOVEMENT
 			return entry;
 		}
 
+		MovementEntry MakeEntry(std::string_view a_name, std::string_view a_form, float a_playerSpeedMult)
+		{
+			MovementEntry entry = MakeEntry(a_name, a_form);
+			entry.playerSpeedMult = a_playerSpeedMult;
+			return entry;
+		}
+
 		MovementEntry MakeEntry(std::string_view a_name, std::string_view a_form, const SpeedMatrix& a_speeds)
 		{
 			MovementEntry entry = MakeEntry(a_name, a_form);
@@ -171,18 +177,23 @@ namespace MOVEMENT
 
 		nlohmann::json entries = nlohmann::json::array();
 		for (const auto& entry : snapshot.entries) {
-			nlohmann::json speeds = nlohmann::json::array();
-			for (std::size_t i = 0; i < 5; ++i) {
-				speeds.push_back({ entry.speeds[i][0], entry.speeds[i][1] });
-			}
-			entries.push_back({
+			nlohmann::json node = {
 				{ "name", entry.name },
 				{ "form", entry.form },
 				{ "group", entry.group },
 				{ "playerOnly", entry.playerOnly },
-				{ "enabled", entry.enabled },
-				{ "speeds", std::move(speeds) }
-			});
+				{ "enabled", entry.enabled }
+			};
+			if (entry.playerOnly) {
+				node["playerSpeedMult"] = entry.playerSpeedMult;
+			} else {
+				nlohmann::json speeds = nlohmann::json::array();
+				for (std::size_t i = 0; i < 5; ++i) {
+					speeds.push_back({ entry.speeds[i][0], entry.speeds[i][1] });
+				}
+				node["speeds"] = std::move(speeds);
+			}
+			entries.push_back(std::move(node));
 		}
 		root["entries"] = std::move(entries);
 
@@ -239,69 +250,92 @@ namespace MOVEMENT
 
 		const SettingsData defaults = Defaults();
 		SettingsData loaded = defaults;
-		bool shouldRewrite = false;
 
 		const auto loadedVersion = ReadOr<int>(root, "version", -1);
 		if (loadedVersion != defaults.version) {
 			LOG_INFO("[Movement] Config version mismatch (found {}, expected {}), regenerating defaults", loadedVersion, defaults.version);
-			shouldRewrite = true;
-		}
-
-		if (root.contains("general") && root["general"].is_object()) {
-			const auto& general = root["general"];
-			loaded.general.enabled = ReadOr<bool>(general, "enabled", loaded.general.enabled);
-			loaded.general.restoreOnDisable = ReadOr<bool>(general, "restoreOnDisable", loaded.general.restoreOnDisable);
-		}
-
-		if (!root.contains("entries") || !root["entries"].is_array()) {
-			LOG_INFO("[Movement] Config entries missing or invalid, regenerating defaults");
-			shouldRewrite = true;
-		}
-
-		std::unordered_map<std::string, const nlohmann::json*> entriesByForm;
-		if (root.contains("entries") && root["entries"].is_array()) {
-			const auto& entries = root["entries"];
-			if (entries.size() != defaults.entries.size()) {
-				shouldRewrite = true;
+			{
+				std::scoped_lock lock(m_lock);
+				m_settings = defaults;
 			}
-			entriesByForm.reserve(entries.size());
-			for (const auto& node : entries) {
-				if (!node.is_object()) {
-					continue;
-				}
-				const auto form = ReadOr<std::string>(node, "form", "");
-				if (form.empty()) {
-					continue;
-				}
-				entriesByForm.emplace(CanonicalFormKey(form), &node);
-			}
+			Save();
+			return;
 		}
 
+		if (!root.contains("general") || !root["general"].is_object() ||
+		    !root.contains("entries") || !root["entries"].is_array() ||
+		    root["entries"].size() != defaults.entries.size()) {
+			LOG_INFO("[Movement] Config schema mismatch, regenerating defaults");
+			{
+				std::scoped_lock lock(m_lock);
+				m_settings = defaults;
+			}
+			Save();
+			return;
+		}
+
+		const auto& entries = root["entries"];
 		for (std::size_t idx = 0; idx < defaults.entries.size(); ++idx) {
-			auto entry = defaults.entries[idx];
-			const auto entryKey = CanonicalFormKey(entry.form);
-			const auto found = entriesByForm.find(entryKey);
-			if (found != entriesByForm.end() && found->second && found->second->is_object()) {
-				const auto& node = *found->second;
-				entry.playerOnly = ReadOr<bool>(node, "playerOnly", entry.playerOnly);
-				entry.enabled = ReadOr<bool>(node, "enabled", entry.enabled);
+			const auto& node = entries[idx];
+			if (!node.is_object()) {
+				LOG_INFO("[Movement] Invalid entry format at index {}, regenerating defaults", idx);
+				{
+					std::scoped_lock lock(m_lock);
+					m_settings = defaults;
+				}
+				Save();
+				return;
+			}
 
-				if (node.contains("speeds") && node["speeds"].is_array()) {
-					const auto& speeds = node["speeds"];
-					for (std::size_t i = 0; i < 5 && i < speeds.size(); ++i) {
-						const auto& pair = speeds[i];
-						if (pair.is_array() && pair.size() >= 2) {
-							if (pair[0].is_number()) {
-								entry.speeds[i][0] = pair[0].get<float>();
-							}
-							if (pair[1].is_number()) {
-								entry.speeds[i][1] = pair[1].get<float>();
-							}
+			auto entry = defaults.entries[idx];
+			const auto form = ReadOr<std::string>(node, "form", "");
+			if (CanonicalFormKey(form) != CanonicalFormKey(entry.form)) {
+				LOG_INFO("[Movement] Entry form mismatch at index {}, regenerating defaults", idx);
+				{
+					std::scoped_lock lock(m_lock);
+					m_settings = defaults;
+				}
+				Save();
+				return;
+			}
+
+			entry.enabled = ReadOr<bool>(node, "enabled", entry.enabled);
+			entry.playerOnly = ReadOr<bool>(node, "playerOnly", entry.playerOnly);
+
+			if (entry.playerOnly) {
+				if (!node.contains("playerSpeedMult") || !node["playerSpeedMult"].is_number()) {
+					LOG_INFO("[Movement] Missing playerSpeedMult at index {}, regenerating defaults", idx);
+					{
+						std::scoped_lock lock(m_lock);
+						m_settings = defaults;
+					}
+					Save();
+					return;
+				}
+				entry.playerSpeedMult = ReadOr<float>(node, "playerSpeedMult", entry.playerSpeedMult);
+			} else {
+				if (!node.contains("speeds") || !node["speeds"].is_array()) {
+					LOG_INFO("[Movement] Missing speeds array at index {}, regenerating defaults", idx);
+					{
+						std::scoped_lock lock(m_lock);
+						m_settings = defaults;
+					}
+					Save();
+					return;
+				}
+
+				const auto& speeds = node["speeds"];
+				for (std::size_t i = 0; i < 5 && i < speeds.size(); ++i) {
+					const auto& pair = speeds[i];
+					if (pair.is_array() && pair.size() >= 2) {
+						if (pair[0].is_number()) {
+							entry.speeds[i][0] = pair[0].get<float>();
+						}
+						if (pair[1].is_number()) {
+							entry.speeds[i][1] = pair[1].get<float>();
 						}
 					}
 				}
-			} else if (!entry.playerOnly) {
-				shouldRewrite = true;
 			}
 
 			loaded.entries[idx] = std::move(entry);
@@ -312,15 +346,12 @@ namespace MOVEMENT
 			std::scoped_lock lock(m_lock);
 			m_settings = std::move(loaded);
 		}
-		if (shouldRewrite) {
-			Save();
-		}
 	}
 
 	SettingsData Settings::Defaults()
 	{
 		SettingsData data{};
-		data.version = 10;
+		data.version = 13;
 		data.entries = {
 			MakeEntry("Horse_Default_MT", "Skyrim.esm|0x0001CF24", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 125.110f, 450.000f }, { 108.080f, 108.080f }, { 1.571f, 4.712f }}}),
 			MakeEntry("Horse_Sprint_MT", "Skyrim.esm|0x0004408D", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 600.000f, 600.000f }, { 0.000f, 0.000f }, { 1.571f, 1.571f }}}),
@@ -332,14 +363,11 @@ namespace MOVEMENT
 			MakeEntry("NPC_Magic_MT", "Skyrim.esm|0x00069CDB", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 170.840f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_Sneaking_MT", "Skyrim.esm|0x0003580B", {{{ 41.440f, 200.000f }, { 41.440f, 200.000f }, { 47.200f, 222.000f }, { 43.380f, 150.000f }, { 1.571f, 3.142f }}}),
 			MakeEntry("NPC_Sprinting_MT", "Skyrim.esm|0x00034D9C", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 500.000f, 500.000f }, { 270.840f, 270.840f }, { 1.571f, 1.571f }}}),
-			MakeEntry("Player_Default_MT", "Player|Default", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_Blocking_MT", "Player|Blocking", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_BowDrawn_MT", "Player|BowDrawn", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_Bow_MT", "Player|Bow", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_MagicCasting_MT", "Player|MagicCasting", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_Magic_MT", "Player|Magic", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_Sneaking_MT", "Player|Sneaking", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
-			MakeEntry("Player_Sprinting_MT", "Player|Sprinting", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}})
+			MakeEntry("Player_Default_MT", "Player|Default", 100.000f),
+			MakeEntry("Player_Blocking_MT", "Player|Blocking", 100.000f),
+			MakeEntry("Player_BowDrawn_MT", "Player|BowDrawn", 100.000f),
+			MakeEntry("Player_MagicCasting_MT", "Player|MagicCasting", 100.000f),
+			MakeEntry("Player_Sneaking_MT", "Player|Sneaking", 100.000f)
 		};
 		return data;
 	}
@@ -350,6 +378,10 @@ namespace MOVEMENT
 			for (std::size_t i = 0; i < 5; ++i) {
 				entry.speeds[i][0] = std::clamp(entry.speeds[i][0], 0.0f, 2000.0f);
 				entry.speeds[i][1] = std::clamp(entry.speeds[i][1], 0.0f, 2000.0f);
+			}
+
+			if (entry.playerOnly) {
+				entry.playerSpeedMult = std::clamp(entry.playerSpeedMult, 1.0f, 2000.0f);
 			}
 
 			if (entry.group != "Horses" && entry.group != "Player" && !IsSprintEntry(entry.name)) {
