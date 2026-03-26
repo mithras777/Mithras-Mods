@@ -45,6 +45,7 @@ namespace SKSE {
 				break;
 			}
 			case SKSE::MessagingInterface::kDataLoaded: {
+				GAME::ASSASSINATION::Settings::GetSingleton()->Initialize();
 				// Register game events
 				GAME_EVENT::Manager::Register();
 				GAME::ASSASSINATION::Register();

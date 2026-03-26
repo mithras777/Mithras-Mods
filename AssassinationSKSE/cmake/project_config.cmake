@@ -111,6 +111,7 @@ target_include_directories(
 		${PROJECT_INCLUDE_ROOT_DIR}
 		${PROJECT_PCH_ROOT_DIR}
 		${PROJECT_EXTERN_ROOT_DIR}
+		${PROJECT_EXTERN_ROOT_DIR}/json/single_include
 )
 
 if(EXISTS "${MITHRAS_SHARED_EXTERN_ROOT_DIR}")

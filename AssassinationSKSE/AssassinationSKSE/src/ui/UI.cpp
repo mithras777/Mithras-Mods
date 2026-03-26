@@ -11,9 +11,13 @@ namespace UI {
 		{
 			return a_lhs.enabled != a_rhs.enabled ||
 			       a_lhs.maxLevelDifference != a_rhs.maxLevelDifference ||
+			       a_lhs.assassinationChance != a_rhs.assassinationChance ||
 			       a_lhs.melee != a_rhs.melee ||
 			       a_lhs.unarmed != a_rhs.unarmed ||
-			       a_lhs.bowsCrossbows != a_rhs.bowsCrossbows;
+			       a_lhs.bowsCrossbows != a_rhs.bowsCrossbows ||
+			       a_lhs.excludeBosses != a_rhs.excludeBosses ||
+			       a_lhs.excludeDragons != a_rhs.excludeDragons ||
+			       a_lhs.excludeGiants != a_rhs.excludeGiants;
 		}
 	}
 
@@ -42,6 +46,8 @@ namespace UI {
 						ImGui::TextDisabled("When disabled, the hit listener remains active but will never execute targets.");
 						ImGui::SliderInt("Max Level Difference", &cfg.maxLevelDifference, 0, 100);
 						ImGui::TextDisabled("0 = target must be your level or lower. 100 = target can be up to 100 levels above you.");
+						ImGui::SliderInt("Assassination Chance", &cfg.assassinationChance, 0, 100);
+						ImGui::TextDisabled("100 = always assassinate. 0 = never assassinate.");
 					}
 					ImGui::EndTabItem();
 				}
@@ -51,6 +57,18 @@ namespace UI {
 						ImGui::Checkbox("Melee", &cfg.melee);
 						ImGui::Checkbox("Unarmed", &cfg.unarmed);
 						ImGui::Checkbox("Bows / Crossbows", &cfg.bowsCrossbows);
+					}
+					ImGui::EndTabItem();
+				}
+
+				if (ImGui::BeginTabItem("Exclusions")) {
+					if (ImGui::CollapsingHeader("Target filters", ImGuiTreeNodeFlags_DefaultOpen)) {
+						ImGui::Checkbox("Exclude bosses", &cfg.excludeBosses);
+						ImGui::TextDisabled("Uses a best-effort boss heuristic based on unique, essential, protected, or boss-tagged targets.");
+						ImGui::Checkbox("Exclude dragons", &cfg.excludeDragons);
+						ImGui::TextDisabled("Matches dragon actors/races through ActorTypeDragon keywords.");
+						ImGui::Checkbox("Exclude giants", &cfg.excludeGiants);
+						ImGui::TextDisabled("Matches giant actors/races through ActorTypeGiant keywords.");
 					}
 					ImGui::EndTabItem();
 				}

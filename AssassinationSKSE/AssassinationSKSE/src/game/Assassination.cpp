@@ -1,4 +1,4 @@
-#include "game/Assassination.h"
+#include "game/AssassinationSettings.h"
 
 #include "util/LogUtil.h"
 
@@ -9,6 +9,10 @@
 #include "RE/T/TESForm.h"
 #include "RE/T/TESObjectWEAP.h"
 
+#include <algorithm>
+#include <random>
+#include <string_view>
+
 namespace GAME::ASSASSINATION {
 	namespace {
 		enum class AttackKind
@@ -18,8 +22,6 @@ namespace GAME::ASSASSINATION {
 			kUnarmed,
 			kBowCrossbow
 		};
-
-		Config g_config{};
 
 		using weapon_type_t = RE::WEAPON_TYPE;
 
@@ -89,6 +91,98 @@ namespace GAME::ASSASSINATION {
 			}
 		}
 
+		[[nodiscard]] bool HasActorKeyword(RE::Actor* a_actor, std::string_view a_keyword)
+		{
+			if (!a_actor) {
+				return false;
+			}
+
+			return a_actor->HasKeywordString(a_keyword);
+		}
+
+		[[nodiscard]] bool IsDragon(RE::Actor* a_actor)
+		{
+			if (!a_actor) {
+				return false;
+			}
+
+			if (HasActorKeyword(a_actor, "ActorTypeDragon")) {
+				return true;
+			}
+
+			const auto* race = a_actor->GetRace();
+			return race && race->HasKeywordString("ActorTypeDragon");
+		}
+
+		[[nodiscard]] bool IsGiant(RE::Actor* a_actor)
+		{
+			if (!a_actor) {
+				return false;
+			}
+
+			if (HasActorKeyword(a_actor, "ActorTypeGiant")) {
+				return true;
+			}
+
+			const auto* race = a_actor->GetRace();
+			return race && race->HasKeywordString("ActorTypeGiant");
+		}
+
+		[[nodiscard]] bool IsBossLike(RE::Actor* a_actor)
+		{
+			if (!a_actor) {
+				return false;
+			}
+
+			if (HasActorKeyword(a_actor, "ActorTypeBoss")) {
+				return true;
+			}
+
+			const auto* actorBase = a_actor->GetActorBase();
+			if (!actorBase) {
+				return false;
+			}
+
+			return actorBase->IsUnique() || actorBase->IsEssential() || actorBase->IsProtected();
+		}
+
+		[[nodiscard]] bool IsTargetExcluded(RE::Actor* a_victim, const Config& a_config)
+		{
+			if (!a_victim) {
+				return false;
+			}
+
+			if (a_config.excludeDragons && IsDragon(a_victim)) {
+				return true;
+			}
+
+			if (a_config.excludeGiants && IsGiant(a_victim)) {
+				return true;
+			}
+
+			if (a_config.excludeBosses && IsBossLike(a_victim)) {
+				return true;
+			}
+
+			return false;
+		}
+
+		[[nodiscard]] bool RollAssassinationChance(const Config& a_config)
+		{
+			const auto chance = std::clamp(a_config.assassinationChance, 0, 100);
+			if (chance <= 0) {
+				return false;
+			}
+
+			if (chance >= 100) {
+				return true;
+			}
+
+			static thread_local std::mt19937 rng{ std::random_device{}() };
+			std::uniform_int_distribution<int> dist(1, 100);
+			return dist(rng) <= chance;
+		}
+
 		bool IsUnseenByVictim(RE::Actor* a_attacker, RE::Actor* a_victim, const RE::TESHitEvent& a_event)
 		{
 			if (!a_attacker || !a_victim) {
@@ -150,8 +244,10 @@ namespace GAME::ASSASSINATION {
 				return false;
 			}
 
+			const auto config = Settings::GetSingleton()->Get();
+
 			const auto attackKind = ClassifyAttack(a_attacker, a_event);
-			if (!IsAttackEnabled(attackKind, g_config)) {
+			if (!IsAttackEnabled(attackKind, config)) {
 				return false;
 			}
 
@@ -159,7 +255,15 @@ namespace GAME::ASSASSINATION {
 				return false;
 			}
 
-			return IsWithinLevelDifference(a_attacker, a_victim, g_config);
+			if (!IsWithinLevelDifference(a_attacker, a_victim, config)) {
+				return false;
+			}
+
+			if (IsTargetExcluded(a_victim, config)) {
+				return false;
+			}
+
+			return RollAssassinationChance(config);
 		}
 
 		class HitManager final : public RE::BSTEventSink<RE::TESHitEvent> {
@@ -196,16 +300,6 @@ namespace GAME::ASSASSINATION {
 			static HitManager manager{};
 			return manager;
 		}
-	}
-
-	Config GetConfig()
-	{
-		return g_config;
-	}
-
-	void SetConfig(const Config& a_config)
-	{
-		g_config = a_config;
 	}
 
 	void Register()
