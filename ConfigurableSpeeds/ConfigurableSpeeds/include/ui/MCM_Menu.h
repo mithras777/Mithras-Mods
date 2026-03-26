@@ -30,6 +30,11 @@ namespace UI::MCM
 		void Render();
 	}
 
+	namespace PlayerTab
+	{
+		void Render();
+	}
+
 	namespace CombatTab
 	{
 		void Render();

@@ -41,6 +41,8 @@ namespace UI::MCM
 				out.erase(0, 4);
 			} else if (out.rfind("Horse_", 0) == 0) {
 				out.erase(0, 6);
+			} else if (out.rfind("Player_", 0) == 0) {
+				out.erase(0, 7);
 			}
 
 			if (out.size() > 3 && out.compare(out.size() - 3, 3, "_MT") == 0) {
@@ -115,6 +117,9 @@ namespace UI::MCM
 				if (l.name != r.name || l.form != r.form || l.group != r.group || l.enabled != r.enabled) {
 					return true;
 				}
+				if (l.playerOnly != r.playerOnly) {
+					return true;
+				}
 				for (std::size_t direction = 0; direction < 5; ++direction) {
 					if (l.speeds[direction][0] != r.speeds[direction][0] || l.speeds[direction][1] != r.speeds[direction][1]) {
 						return true;
@@ -146,11 +151,11 @@ namespace UI::MCM
 			g_dirty = false;
 		}
 
-		void RenderGroup(const char* a_group)
+		void RenderGroup(const char* a_group, bool a_playerOnly)
 		{
 			for (std::size_t i = 0; i < g_config.entries.size(); ++i) {
 				auto& entry = g_config.entries[i];
-				if (entry.group != a_group) {
+				if (entry.group != a_group || entry.playerOnly != a_playerOnly) {
 					continue;
 				}
 
@@ -168,19 +173,25 @@ namespace UI::MCM
 						}
 					}
 					if (IsSprintEntry(entry.name)) {
-						ImGui::SliderFloat("Sprinting", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
+						const auto* label = a_playerOnly ? "Sprinting SpeedMult" : "Sprinting";
+						ImGui::SliderFloat(label, &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
 					} else if (entry.group == "Horses") {
-						ImGui::SliderFloat("Forward", &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
+						const auto* label = a_playerOnly ? "Forward SpeedMult" : "Forward";
+						ImGui::SliderFloat(label, &entry.speeds[2][1], 0.0f, 2000.0f, "%.1f");
 					} else {
 						bool lateralChanged = false;
 						for (std::size_t direction = 0; direction < kDirections.size(); ++direction) {
-							std::string label = std::string(kDirections[direction]) + "##Run" + kDirections[direction];
+							std::string label = std::string(kDirections[direction]);
+							label += a_playerOnly ? " SpeedMult##Player" : "##Run";
+							label += kDirections[direction];
 							if (ImGui::SliderFloat(label.c_str(), &entry.speeds[direction][1], 0.0f, 2000.0f, "%.1f")) {
 								lateralChanged = lateralChanged || direction == 0 || direction == 1;
 							}
 						}
 						if (lateralChanged) {
-							EnforceLateralToForward(entry);
+							if (!a_playerOnly) {
+								EnforceLateralToForward(entry);
+							}
 						}
 					}
 					ImGui::TreePop();
@@ -215,6 +226,10 @@ namespace UI::MCM
 			if (ImGui::BeginTabBar("ConfigMovementSpeedTabs")) {
 				if (ImGui::BeginTabItem("General")) {
 					GeneralTab::Render();
+					ImGui::EndTabItem();
+				}
+				if (ImGui::BeginTabItem("Player")) {
+					PlayerTab::Render();
 					ImGui::EndTabItem();
 				}
 				if (ImGui::BeginTabItem("Default")) {
@@ -254,11 +269,19 @@ namespace UI::MCM
 		}
 	}
 
+	namespace PlayerTab
+	{
+		void Render()
+		{
+			RenderGroup("Player", true);
+		}
+	}
+
 	namespace CombatTab
 	{
 		void Render()
 		{
-			RenderGroup("Combat");
+			RenderGroup("Combat", false);
 		}
 	}
 
@@ -266,7 +289,7 @@ namespace UI::MCM
 	{
 		void Render()
 		{
-			RenderGroup("Default");
+			RenderGroup("Default", false);
 		}
 	}
 
@@ -274,7 +297,7 @@ namespace UI::MCM
 	{
 		void Render()
 		{
-			RenderGroup("Horses");
+			RenderGroup("Horses", false);
 		}
 	}
 }

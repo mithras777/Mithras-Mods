@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <string_view>
+#include <unordered_map>
 
 namespace MOVEMENT
 {
@@ -62,6 +63,9 @@ namespace MOVEMENT
 
 		std::string GroupForName(std::string_view a_name)
 		{
+			if (a_name.rfind("Player_", 0) == 0) {
+				return "Player";
+			}
 			if (a_name.rfind("Horse_", 0) == 0) {
 				return "Horses";
 			}
@@ -97,6 +101,7 @@ namespace MOVEMENT
 			entry.name = a_name;
 			entry.form = a_form;
 			entry.group = GroupForName(a_name);
+			entry.playerOnly = entry.group == "Player";
 			entry.enabled = false;
 			return entry;
 		}
@@ -174,6 +179,7 @@ namespace MOVEMENT
 				{ "name", entry.name },
 				{ "form", entry.form },
 				{ "group", entry.group },
+				{ "playerOnly", entry.playerOnly },
 				{ "enabled", entry.enabled },
 				{ "speeds", std::move(speeds) }
 			});
@@ -233,16 +239,12 @@ namespace MOVEMENT
 
 		const SettingsData defaults = Defaults();
 		SettingsData loaded = defaults;
+		bool shouldRewrite = false;
 
 		const auto loadedVersion = ReadOr<int>(root, "version", -1);
 		if (loadedVersion != defaults.version) {
 			LOG_INFO("[Movement] Config version mismatch (found {}, expected {}), regenerating defaults", loadedVersion, defaults.version);
-			{
-				std::scoped_lock lock(m_lock);
-				m_settings = defaults;
-			}
-			Save();
-			return;
+			shouldRewrite = true;
 		}
 
 		if (root.contains("general") && root["general"].is_object()) {
@@ -251,57 +253,55 @@ namespace MOVEMENT
 			loaded.general.restoreOnDisable = ReadOr<bool>(general, "restoreOnDisable", loaded.general.restoreOnDisable);
 		}
 
-		if (!root.contains("entries") || !root["entries"].is_array() ||
-		    root["entries"].size() != defaults.entries.size()) {
-			LOG_INFO("[Movement] Config entries mismatch, regenerating defaults");
-			{
-				std::scoped_lock lock(m_lock);
-				m_settings = defaults;
-			}
-			Save();
-			return;
+		if (!root.contains("entries") || !root["entries"].is_array()) {
+			LOG_INFO("[Movement] Config entries missing or invalid, regenerating defaults");
+			shouldRewrite = true;
 		}
 
-		const auto& entries = root["entries"];
+		std::unordered_map<std::string, const nlohmann::json*> entriesByForm;
+		if (root.contains("entries") && root["entries"].is_array()) {
+			const auto& entries = root["entries"];
+			if (entries.size() != defaults.entries.size()) {
+				shouldRewrite = true;
+			}
+			entriesByForm.reserve(entries.size());
+			for (const auto& node : entries) {
+				if (!node.is_object()) {
+					continue;
+				}
+				const auto form = ReadOr<std::string>(node, "form", "");
+				if (form.empty()) {
+					continue;
+				}
+				entriesByForm.emplace(CanonicalFormKey(form), &node);
+			}
+		}
+
 		for (std::size_t idx = 0; idx < defaults.entries.size(); ++idx) {
-			const auto& node = entries[idx];
-			if (!node.is_object()) {
-				LOG_INFO("[Movement] Invalid entry format at index {}, regenerating defaults", idx);
-				{
-					std::scoped_lock lock(m_lock);
-					m_settings = defaults;
-				}
-				Save();
-				return;
-			}
-
-			const auto form = ReadOr<std::string>(node, "form", "");
-			if (CanonicalFormKey(form) != CanonicalFormKey(defaults.entries[idx].form)) {
-				LOG_INFO("[Movement] Entry form mismatch at index {}, regenerating defaults", idx);
-				{
-					std::scoped_lock lock(m_lock);
-					m_settings = defaults;
-				}
-				Save();
-				return;
-			}
-
 			auto entry = defaults.entries[idx];
-			entry.enabled = ReadOr<bool>(node, "enabled", entry.enabled);
+			const auto entryKey = CanonicalFormKey(entry.form);
+			const auto found = entriesByForm.find(entryKey);
+			if (found != entriesByForm.end() && found->second && found->second->is_object()) {
+				const auto& node = *found->second;
+				entry.playerOnly = ReadOr<bool>(node, "playerOnly", entry.playerOnly);
+				entry.enabled = ReadOr<bool>(node, "enabled", entry.enabled);
 
-			if (node.contains("speeds") && node["speeds"].is_array()) {
-				const auto& speeds = node["speeds"];
-				for (std::size_t i = 0; i < 5 && i < speeds.size(); ++i) {
-					const auto& pair = speeds[i];
-					if (pair.is_array() && pair.size() >= 2) {
-						if (pair[0].is_number()) {
-							entry.speeds[i][0] = pair[0].get<float>();
-						}
-						if (pair[1].is_number()) {
-							entry.speeds[i][1] = pair[1].get<float>();
+				if (node.contains("speeds") && node["speeds"].is_array()) {
+					const auto& speeds = node["speeds"];
+					for (std::size_t i = 0; i < 5 && i < speeds.size(); ++i) {
+						const auto& pair = speeds[i];
+						if (pair.is_array() && pair.size() >= 2) {
+							if (pair[0].is_number()) {
+								entry.speeds[i][0] = pair[0].get<float>();
+							}
+							if (pair[1].is_number()) {
+								entry.speeds[i][1] = pair[1].get<float>();
+							}
 						}
 					}
 				}
+			} else if (!entry.playerOnly) {
+				shouldRewrite = true;
 			}
 
 			loaded.entries[idx] = std::move(entry);
@@ -312,12 +312,15 @@ namespace MOVEMENT
 			std::scoped_lock lock(m_lock);
 			m_settings = std::move(loaded);
 		}
+		if (shouldRewrite) {
+			Save();
+		}
 	}
 
 	SettingsData Settings::Defaults()
 	{
 		SettingsData data{};
-		data.version = 9;
+		data.version = 10;
 		data.entries = {
 			MakeEntry("Horse_Default_MT", "Skyrim.esm|0x0001CF24", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 125.110f, 450.000f }, { 108.080f, 108.080f }, { 1.571f, 4.712f }}}),
 			MakeEntry("Horse_Sprint_MT", "Skyrim.esm|0x0004408D", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 600.000f, 600.000f }, { 0.000f, 0.000f }, { 1.571f, 1.571f }}}),
@@ -328,7 +331,15 @@ namespace MOVEMENT
 			MakeEntry("NPC_MagicCasting_MT", "Skyrim.esm|0x00069CDC", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 170.840f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_Magic_MT", "Skyrim.esm|0x00069CDB", {{{ 80.090f, 370.000f }, { 79.750f, 370.000f }, { 80.100f, 370.000f }, { 71.930f, 170.840f }, { 3.142f, 3.142f }}}),
 			MakeEntry("NPC_Sneaking_MT", "Skyrim.esm|0x0003580B", {{{ 41.440f, 200.000f }, { 41.440f, 200.000f }, { 47.200f, 222.000f }, { 43.380f, 150.000f }, { 1.571f, 3.142f }}}),
-			MakeEntry("NPC_Sprinting_MT", "Skyrim.esm|0x00034D9C", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 500.000f, 500.000f }, { 270.840f, 270.840f }, { 1.571f, 1.571f }}})
+			MakeEntry("NPC_Sprinting_MT", "Skyrim.esm|0x00034D9C", {{{ 0.000f, 0.000f }, { 0.000f, 0.000f }, { 500.000f, 500.000f }, { 270.840f, 270.840f }, { 1.571f, 1.571f }}}),
+			MakeEntry("Player_Default_MT", "Player|Default", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_Blocking_MT", "Player|Blocking", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_BowDrawn_MT", "Player|BowDrawn", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_Bow_MT", "Player|Bow", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_MagicCasting_MT", "Player|MagicCasting", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_Magic_MT", "Player|Magic", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_Sneaking_MT", "Player|Sneaking", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}}),
+			MakeEntry("Player_Sprinting_MT", "Player|Sprinting", {{{ 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }, { 100.000f, 100.000f }}})
 		};
 		return data;
 	}
@@ -341,7 +352,7 @@ namespace MOVEMENT
 				entry.speeds[i][1] = std::clamp(entry.speeds[i][1], 0.0f, 2000.0f);
 			}
 
-			if (entry.group != "Horses" && !IsSprintEntry(entry.name)) {
+			if (entry.group != "Horses" && entry.group != "Player" && !IsSprintEntry(entry.name)) {
 				entry.speeds[2][1] = std::max({ entry.speeds[2][1], entry.speeds[0][1], entry.speeds[1][1] });
 			}
 		}

@@ -5,6 +5,11 @@
 #include <string>
 #include <unordered_map>
 
+namespace RE
+{
+	class PlayerCharacter;
+}
+
 namespace MOVEMENT
 {
 	class MovementPatcher final : public REX::Singleton<MovementPatcher>
@@ -15,6 +20,7 @@ namespace MOVEMENT
 		void ApplyNow(const SettingsData& a_settings);
 		void Restore();
 		void ShutdownRestoreIfNeeded(const SettingsData& a_settings);
+		float GetPlayerSpeedMultiplier(const SettingsData& a_settings, RE::PlayerCharacter& a_player) const;
 
 	private:
 		struct ResolvedTarget

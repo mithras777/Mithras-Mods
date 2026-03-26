@@ -17,6 +17,7 @@ namespace MOVEMENT
 		std::string name{};
 		std::string form{};  // "Plugin|0xID"
 		std::string group{}; // Default / Combat / Horses
+		bool playerOnly{ false };
 		bool enabled{ true };
 		float speeds[5][2]{};
 	};
