@@ -79,7 +79,6 @@ namespace UI
 			const auto keyOptions = BuildKeyboardOptions();
 
 			ImGui::Checkbox("Enable", &cfg.enabled);
-			ImGui::Checkbox("Global hidden lists (all playthroughs)", &cfg.globalHiddenLists);
 
 			const auto hotkeyName = MITHRAS::MAGIC_ORGANIZER::Manager::GetKeyboardKeyName(cfg.hotkey);
 			if (ImGui::BeginCombo("Hotkey", hotkeyName.c_str())) {
@@ -97,10 +96,10 @@ namespace UI
 
 			ImGui::Separator();
 			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextDisabled("Global mode stores hidden entries in MagicOrganizer.json instead of per-save cosave data.");
+			ImGui::TextDisabled("Hidden entries are stored in MagicOrganizer.json and shared across all playthroughs.");
 			ImGui::TextColored(
 				ImVec4(0.90f, 0.75f, 1.00f, 1.00f),
-				"Tip: Open Magic Menu, highlight any spell/power/shout/effect, then press your hotkey to hide it.");
+				"Tip: Open Magic Menu, highlight any spell/power/shout/effect, then press your hotkey to hide it. Hiding is UI-only.");
 			ImGui::PopTextWrapPos();
 
 			if (before.enabled != cfg.enabled) {
@@ -108,9 +107,6 @@ namespace UI
 			}
 			if (before.hotkey != cfg.hotkey) {
 				a_manager->SetHotkey(cfg.hotkey);
-			}
-			if (before.globalHiddenLists != cfg.globalHiddenLists) {
-				a_manager->SetGlobalHiddenLists(cfg.globalHiddenLists);
 			}
 		}
 	}

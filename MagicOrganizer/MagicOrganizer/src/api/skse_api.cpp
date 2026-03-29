@@ -94,7 +94,6 @@ namespace SKSE {
 		// Load Plugin
 		auto loadPlugin = DLLMAIN::Plugin::GetSingleton()->Load(a_skse);
 		if (loadPlugin) {
-			MITHRAS::MAGIC_ORGANIZER::Manager::RegisterSerialization();
 			// Register SKSE::MessagingInterface
 			SKSE::GetMessagingInterface()->RegisterListener(SKSEPlugin_Message);
 		}
