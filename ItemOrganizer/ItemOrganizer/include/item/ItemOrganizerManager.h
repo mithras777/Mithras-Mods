@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,7 @@ namespace MITHRAS::ITEM_ORGANIZER
 		[[nodiscard]] bool IsItemHidden(RE::FormID a_formID) const;
 
 		void ApplyFilter(RE::ItemList* a_itemList) const;
+		void RefreshVisibleItemList(RE::ItemList* a_itemList) const;
 
 	private:
 		void SaveConfigToJson() const;
@@ -51,10 +53,18 @@ namespace MITHRAS::ITEM_ORGANIZER
 		[[nodiscard]] std::filesystem::path GetConfigPath() const;
 
 		void NormalizeConfig();
-		void RefreshOpenMenus() const;
+		bool HideItemInternal(RE::FormID a_formID, bool a_refreshMenus);
+		void QueueDeferredRefresh(RE::FormID a_formID) const;
+		void RefreshOpenMenus(const RE::TESBoundObject* a_updatedItem = nullptr) const;
 		[[nodiscard]] static bool IsFormIDHidden(const std::vector<RE::FormID>& a_hidden, RE::FormID a_formID);
 		[[nodiscard]] static std::string BuildItemDisplayName(const RE::TESBoundObject* a_item);
 		[[nodiscard]] static RE::FormID ResolveItemFormID(const RE::ItemList::Item* a_item);
+		[[nodiscard]] static std::optional<RE::FormID> ResolveSelectedFormIDFromMovieView(const RE::ItemList* a_itemList);
+		void RemoveVisibleEntry(RE::ItemList* a_itemList, RE::FormID a_formID, std::int32_t a_selectedIndex) const;
+		void SynchronizeVisibleItemList(RE::ItemList* a_itemList) const;
+		[[nodiscard]] static std::int32_t ResolveSelectedIndex(RE::ItemList* a_itemList);
+		static void SetSelectionIndex(RE::GFxValue& a_target, std::int32_t a_index);
+		static void SetSelectedEntry(RE::ItemList* a_itemList, std::int32_t a_index);
 		[[nodiscard]] static RE::ItemList::Item* ResolveSelectedItemFallback(RE::ItemList* a_itemList);
 
 		mutable std::mutex m_lock;

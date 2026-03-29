@@ -2,10 +2,13 @@
 
 #include "util/LogUtil.h"
 
+#include "SKSE/API.h"
+
 #include <algorithm>
 #include <array>
 #include <format>
 #include <fstream>
+#include <optional>
 
 #include "json/single_include/nlohmann/json.hpp"
 
@@ -164,6 +167,11 @@ namespace MITHRAS::ITEM_ORGANIZER
 
 	bool Manager::HideItem(RE::FormID a_formID)
 	{
+		return HideItemInternal(a_formID, true);
+	}
+
+	bool Manager::HideItemInternal(RE::FormID a_formID, bool a_refreshMenus)
+	{
 		auto* item = RE::TESForm::LookupByID<RE::TESBoundObject>(a_formID);
 		if (!item) {
 			return false;
@@ -183,7 +191,9 @@ namespace MITHRAS::ITEM_ORGANIZER
 		}
 
 		SaveConfigToJson();
-		RefreshOpenMenus();
+		if (a_refreshMenus) {
+			RefreshOpenMenus(item);
+		}
 		return true;
 	}
 
@@ -203,8 +213,9 @@ namespace MITHRAS::ITEM_ORGANIZER
 			return false;
 		}
 
+		const auto* item = RE::TESForm::LookupByID<RE::TESBoundObject>(a_formID);
 		SaveConfigToJson();
-		RefreshOpenMenus();
+		RefreshOpenMenus(item);
 		return true;
 	}
 
@@ -215,13 +226,26 @@ namespace MITHRAS::ITEM_ORGANIZER
 				return false;
 			}
 
-			auto* selected = a_itemList->GetSelectedItem();
-			if (!selected) {
-				selected = ResolveSelectedItemFallback(a_itemList);
+			const auto selectedIndex = ResolveSelectedIndex(a_itemList);
+			RE::FormID formID = 0;
+			const auto movieViewFormID = ResolveSelectedFormIDFromMovieView(a_itemList);
+			if (movieViewFormID.has_value()) {
+				formID = *movieViewFormID;
 			}
-			const auto formID = ResolveItemFormID(selected);
+			if (formID == 0) {
+				auto* selected = a_itemList->GetSelectedItem();
+				if (!selected) {
+					selected = ResolveSelectedItemFallback(a_itemList);
+				}
+				formID = ResolveItemFormID(selected);
+			}
 			if (formID != 0) {
-				return HideItem(formID);
+				if (HideItemInternal(formID, false)) {
+					RemoveVisibleEntry(a_itemList, formID, selectedIndex);
+					QueueDeferredRefresh(formID);
+					return true;
+				}
+				return false;
 			}
 
 			LOG_INFO("ItemOrganizer: Hotkey pressed in {} but no hideable selected entry was resolved", a_menuName);
@@ -313,6 +337,137 @@ namespace MITHRAS::ITEM_ORGANIZER
 		}
 	}
 
+	void Manager::RefreshVisibleItemList(RE::ItemList* a_itemList) const
+	{
+		SynchronizeVisibleItemList(a_itemList);
+	}
+
+	void Manager::QueueDeferredRefresh(RE::FormID a_formID) const
+	{
+		if (const auto* task = SKSE::GetTaskInterface()) {
+			task->AddUITask([a_formID]() {
+				const auto* item = RE::TESForm::LookupByID<RE::TESBoundObject>(a_formID);
+				Manager::GetSingleton()->RefreshOpenMenus(item);
+				auto* queue = RE::UIMessageQueue::GetSingleton();
+				if (!queue) {
+					return;
+				}
+				auto* ui = RE::UI::GetSingleton();
+				if (!ui) {
+					return;
+				}
+				if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
+					queue->AddMessage(RE::InventoryMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
+				}
+				if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
+					queue->AddMessage(RE::ContainerMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
+				}
+				if (ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) {
+					queue->AddMessage(RE::BarterMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
+				}
+				if (ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
+					queue->AddMessage(RE::GiftMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
+				}
+			});
+		}
+	}
+
+	void Manager::SynchronizeVisibleItemList(RE::ItemList* a_itemList) const
+	{
+		if (!a_itemList) {
+			return;
+		}
+
+		const auto previousSelection = ResolveSelectedIndex(a_itemList);
+		ApplyFilter(a_itemList);
+
+		const auto itemCount = static_cast<std::int32_t>(a_itemList->items.size());
+		std::int32_t nextSelection = -1;
+		if (itemCount > 0) {
+			if (previousSelection < 0) {
+				nextSelection = 0;
+			} else if (previousSelection >= itemCount) {
+				nextSelection = itemCount - 1;
+			} else {
+				nextSelection = previousSelection;
+			}
+		}
+
+		SetSelectionIndex(a_itemList->root, nextSelection);
+		SetSelectionIndex(a_itemList->entryList, nextSelection);
+		SetSelectedEntry(a_itemList, nextSelection);
+		(void)a_itemList->root.SetMember("_entryList", a_itemList->entryList);
+		(void)a_itemList->root.SetMember("_maxListIndex", RE::GFxValue{ itemCount > 0 ? itemCount - 1 : -1 });
+		(void)a_itemList->root.SetMember("_bRequestInvalidate", RE::GFxValue{ true });
+
+		a_itemList->root.Invoke("invalidateData");
+		a_itemList->root.Invoke("validateNow");
+	}
+
+	void Manager::RemoveVisibleEntry(RE::ItemList* a_itemList, RE::FormID a_formID, std::int32_t a_selectedIndex) const
+	{
+		if (!a_itemList || a_formID == 0) {
+			return;
+		}
+
+		auto& items = a_itemList->items;
+		std::int32_t removedIndex = -1;
+		for (std::uint32_t i = 0; i < items.size(); ++i) {
+			if (ResolveItemFormID(items[i]) == a_formID) {
+				removedIndex = static_cast<std::int32_t>(i);
+				items.erase(items.begin() + static_cast<std::ptrdiff_t>(i));
+				break;
+			}
+		}
+
+		auto& entryList = a_itemList->entryList;
+		const auto entryCount = entryList.GetArraySize();
+		for (std::uint32_t i = 0; i < entryCount; ++i) {
+			RE::GFxValue entry{};
+			if (!entryList.GetElement(i, &entry) || !entry.IsObject()) {
+				continue;
+			}
+			RE::GFxValue formIdVal{};
+			if (!entry.GetMember("formId", &formIdVal) || !formIdVal.IsNumber()) {
+				continue;
+			}
+			const auto raw = static_cast<std::uint64_t>(formIdVal.GetNumber());
+			const auto formID = static_cast<RE::FormID>(raw & 0xFFFFFFFFu);
+			if (formID == a_formID) {
+				entryList.RemoveElements(i, 1);
+				if (removedIndex < 0) {
+					removedIndex = static_cast<std::int32_t>(i);
+				}
+				break;
+			}
+		}
+
+		if (removedIndex < 0) {
+			SynchronizeVisibleItemList(a_itemList);
+			return;
+		}
+
+		const auto itemCount = static_cast<std::int32_t>(items.size());
+		std::int32_t nextSelection = -1;
+		if (itemCount > 0) {
+			const auto preferredIndex = a_selectedIndex >= 0 ? a_selectedIndex : removedIndex;
+			nextSelection = (preferredIndex >= itemCount) ? (itemCount - 1) : preferredIndex;
+			if (nextSelection < 0) {
+				nextSelection = 0;
+			}
+		}
+
+		SetSelectionIndex(a_itemList->root, nextSelection);
+		SetSelectionIndex(a_itemList->entryList, nextSelection);
+		SetSelectedEntry(a_itemList, nextSelection);
+		(void)a_itemList->root.SetMember("_entryList", a_itemList->entryList);
+		(void)a_itemList->root.SetMember("_maxListIndex", RE::GFxValue{ itemCount > 0 ? itemCount - 1 : -1 });
+		(void)a_itemList->root.SetMember("_bRequestInvalidate", RE::GFxValue{ true });
+
+		a_itemList->root.Invoke("invalidateData");
+		a_itemList->root.Invoke("validateNow");
+	}
+
 	void Manager::SaveConfigToJson() const
 	{
 		const auto path = GetConfigPath();
@@ -399,36 +554,62 @@ namespace MITHRAS::ITEM_ORGANIZER
 		m_hiddenItemFormIDs.erase(std::unique(m_hiddenItemFormIDs.begin(), m_hiddenItemFormIDs.end()), m_hiddenItemFormIDs.end());
 	}
 
-	void Manager::RefreshOpenMenus() const
+	void Manager::RefreshOpenMenus(const RE::TESBoundObject* a_updatedItem) const
 	{
 		auto* ui = RE::UI::GetSingleton();
 		if (!ui) {
 			return;
 		}
 
-		auto refreshMenu = [&](auto a_menu) {
-			if (!a_menu) {
-				return;
-			}
-			auto& runtime = a_menu->GetRuntimeData();
-			if (!runtime.itemList) {
-				return;
-			}
-			runtime.itemList->Update();
-			ApplyFilter(runtime.itemList);
-		};
-
 		if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
-			refreshMenu(ui->GetMenu<RE::InventoryMenu>());
+			if (auto menu = ui->GetMenu<RE::InventoryMenu>()) {
+				auto& runtime = menu->GetRuntimeData();
+				if (runtime.itemList) {
+					auto* player = RE::PlayerCharacter::GetSingleton();
+					runtime.itemList->Update(player);
+					SynchronizeVisibleItemList(runtime.itemList);
+					if (player && a_updatedItem) {
+						RE::SendUIMessage::SendInventoryUpdateMessage(player, a_updatedItem);
+					}
+				}
+			}
 		}
 		if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
-			refreshMenu(ui->GetMenu<RE::ContainerMenu>());
+			if (auto menu = ui->GetMenu<RE::ContainerMenu>()) {
+				auto& runtime = menu->GetRuntimeData();
+				if (runtime.itemList) {
+					auto target = RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle());
+					runtime.itemList->Update(target.get());
+					SynchronizeVisibleItemList(runtime.itemList);
+					if (target && a_updatedItem) {
+						RE::SendUIMessage::SendInventoryUpdateMessage(target.get(), a_updatedItem);
+					}
+				}
+			}
 		}
 		if (ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) {
-			refreshMenu(ui->GetMenu<RE::BarterMenu>());
+			if (auto menu = ui->GetMenu<RE::BarterMenu>()) {
+				auto& runtime = menu->GetRuntimeData();
+				if (runtime.itemList) {
+					runtime.itemList->Update();
+					SynchronizeVisibleItemList(runtime.itemList);
+					if (a_updatedItem) {
+						auto target = RE::Actor::LookupByHandle(RE::BarterMenu::GetTargetRefHandle());
+						if (target) {
+							RE::SendUIMessage::SendInventoryUpdateMessage(target.get(), a_updatedItem);
+						}
+					}
+				}
+			}
 		}
 		if (ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
-			refreshMenu(ui->GetMenu<RE::GiftMenu>());
+			if (auto menu = ui->GetMenu<RE::GiftMenu>()) {
+				auto& runtime = menu->GetRuntimeData();
+				if (runtime.itemList) {
+					runtime.itemList->Update();
+					SynchronizeVisibleItemList(runtime.itemList);
+				}
+			}
 		}
 	}
 
@@ -460,6 +641,71 @@ namespace MITHRAS::ITEM_ORGANIZER
 		}
 		const auto* obj = a_item->data.objDesc->object;
 		return obj ? obj->GetFormID() : 0;
+	}
+
+	std::optional<RE::FormID> Manager::ResolveSelectedFormIDFromMovieView(const RE::ItemList* a_itemList)
+	{
+		if (!a_itemList || !a_itemList->view) {
+			return std::nullopt;
+		}
+
+		constexpr std::array<const char*, 2> kPaths{
+			"_root.Menu_mc.inventoryLists.panelContainer.itemList.selectedEntry.formId",
+			"_root.Menu_mc.inventoryLists.itemList.selectedEntry.formId"
+		};
+
+		RE::GFxValue val{};
+		for (const auto* path : kPaths) {
+			if (!a_itemList->view->GetVariable(&val, path) || !val.IsNumber()) {
+				continue;
+			}
+			const auto raw = static_cast<std::uint64_t>(val.GetNumber());
+			const auto formID = static_cast<RE::FormID>(raw & 0xFFFFFFFFu);
+			if (formID != 0) {
+				return formID;
+			}
+		}
+
+		return std::nullopt;
+	}
+
+	std::int32_t Manager::ResolveSelectedIndex(RE::ItemList* a_itemList)
+	{
+		if (!a_itemList) {
+			return -1;
+		}
+
+		RE::GFxValue idxValue{};
+		if (a_itemList->root.GetMember("selectedIndex", &idxValue) && idxValue.IsNumber()) {
+			return static_cast<std::int32_t>(idxValue.GetSInt());
+		}
+		if (a_itemList->entryList.GetMember("selectedIndex", &idxValue) && idxValue.IsNumber()) {
+			return static_cast<std::int32_t>(idxValue.GetSInt());
+		}
+		return -1;
+	}
+
+	void Manager::SetSelectionIndex(RE::GFxValue& a_target, std::int32_t a_index)
+	{
+		const RE::GFxValue value{ a_index };
+		(void)a_target.SetMember("selectedIndex", value);
+		(void)a_target.SetMember("_selectedIndex", value);
+		(void)a_target.SetMember("itemIndex", value);
+		(void)a_target.SetMember("index", value);
+	}
+
+	void Manager::SetSelectedEntry(RE::ItemList* a_itemList, std::int32_t a_index)
+	{
+		if (!a_itemList) {
+			return;
+		}
+
+		RE::GFxValue selectedEntry{ nullptr };
+		if (a_index >= 0 && static_cast<std::uint32_t>(a_index) < a_itemList->entryList.GetArraySize()) {
+			(void)a_itemList->entryList.GetElement(static_cast<std::uint32_t>(a_index), &selectedEntry);
+		}
+
+		(void)a_itemList->root.SetMember("selectedEntry", selectedEntry);
 	}
 
 	RE::ItemList::Item* Manager::ResolveSelectedItemFallback(RE::ItemList* a_itemList)
