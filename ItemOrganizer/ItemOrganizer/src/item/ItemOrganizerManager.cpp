@@ -19,6 +19,11 @@ namespace MITHRAS::ITEM_ORGANIZER
 		using json = nlohmann::json;
 		constexpr auto kHiddenItemsKey = "hidden_items";
 
+		bool HasFollowerEquipControl()
+		{
+			return GetModuleHandleW(L"FollowerEquipControl.dll") != nullptr;
+		}
+
 		std::vector<RE::FormID> ReadFormIDArray(const json& a_root, const char* a_key)
 		{
 			std::vector<RE::FormID> out;
@@ -261,7 +266,7 @@ namespace MITHRAS::ITEM_ORGANIZER
 				return tryHideFrom(menu->GetRuntimeData().itemList, RE::InventoryMenu::MENU_NAME.data());
 			}
 		}
-		if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
+		if (!HasFollowerEquipControl() && ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
 			if (auto menu = ui->GetMenu<RE::ContainerMenu>()) {
 				return tryHideFrom(menu->GetRuntimeData().itemList, RE::ContainerMenu::MENU_NAME.data());
 			}
@@ -271,7 +276,7 @@ namespace MITHRAS::ITEM_ORGANIZER
 				return tryHideFrom(menu->GetRuntimeData().itemList, RE::BarterMenu::MENU_NAME.data());
 			}
 		}
-		if (ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
+		if (!HasFollowerEquipControl() && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
 			if (auto menu = ui->GetMenu<RE::GiftMenu>()) {
 				return tryHideFrom(menu->GetRuntimeData().itemList, RE::GiftMenu::MENU_NAME.data());
 			}
@@ -359,13 +364,13 @@ namespace MITHRAS::ITEM_ORGANIZER
 				if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
 					queue->AddMessage(RE::InventoryMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
 				}
-				if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
+				if (!HasFollowerEquipControl() && ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
 					queue->AddMessage(RE::ContainerMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
 				}
 				if (ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) {
 					queue->AddMessage(RE::BarterMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
 				}
-				if (ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
+				if (!HasFollowerEquipControl() && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
 					queue->AddMessage(RE::GiftMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr);
 				}
 			});
@@ -574,7 +579,7 @@ namespace MITHRAS::ITEM_ORGANIZER
 				}
 			}
 		}
-		if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
+		if (!HasFollowerEquipControl() && ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
 			if (auto menu = ui->GetMenu<RE::ContainerMenu>()) {
 				auto& runtime = menu->GetRuntimeData();
 				if (runtime.itemList) {
@@ -602,7 +607,7 @@ namespace MITHRAS::ITEM_ORGANIZER
 				}
 			}
 		}
-		if (ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
+		if (!HasFollowerEquipControl() && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
 			if (auto menu = ui->GetMenu<RE::GiftMenu>()) {
 				auto& runtime = menu->GetRuntimeData();
 				if (runtime.itemList) {

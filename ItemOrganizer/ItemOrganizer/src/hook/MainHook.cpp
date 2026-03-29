@@ -10,6 +10,11 @@ namespace HOOK::MAIN {
 
 	namespace
 	{
+		bool HasFollowerEquipControl()
+		{
+			return GetModuleHandleW(L"FollowerEquipControl.dll") != nullptr;
+		}
+
 		template <class MenuT>
 		void FilterMenu(MenuT* a_menu)
 		{
@@ -144,14 +149,18 @@ namespace HOOK::MAIN {
 		stl::Hook::virtual_function<RE::InventoryMenu, InventoryMenu_ProcessMessage>(0, 4);
 		stl::Hook::virtual_function<RE::InventoryMenu, InventoryMenu_PostDisplay>(0, 6);
 		LOG_INFO("Hooked InventoryMenu::ProcessMessage");
-		stl::Hook::virtual_function<RE::ContainerMenu, ContainerMenu_ProcessMessage>(0, 4);
-		stl::Hook::virtual_function<RE::ContainerMenu, ContainerMenu_PostDisplay>(0, 6);
-		LOG_INFO("Hooked ContainerMenu::ProcessMessage");
 		stl::Hook::virtual_function<RE::BarterMenu, BarterMenu_ProcessMessage>(0, 4);
 		stl::Hook::virtual_function<RE::BarterMenu, BarterMenu_PostDisplay>(0, 6);
 		LOG_INFO("Hooked BarterMenu::ProcessMessage");
-		stl::Hook::virtual_function<RE::GiftMenu, GiftMenu_ProcessMessage>(0, 4);
-		stl::Hook::virtual_function<RE::GiftMenu, GiftMenu_PostDisplay>(0, 6);
-		LOG_INFO("Hooked GiftMenu::ProcessMessage");
+		if (HasFollowerEquipControl()) {
+			LOG_INFO("FollowerEquipControl detected - skipping ContainerMenu and GiftMenu hooks");
+		} else {
+			stl::Hook::virtual_function<RE::ContainerMenu, ContainerMenu_ProcessMessage>(0, 4);
+			stl::Hook::virtual_function<RE::ContainerMenu, ContainerMenu_PostDisplay>(0, 6);
+			LOG_INFO("Hooked ContainerMenu::ProcessMessage");
+			stl::Hook::virtual_function<RE::GiftMenu, GiftMenu_ProcessMessage>(0, 4);
+			stl::Hook::virtual_function<RE::GiftMenu, GiftMenu_PostDisplay>(0, 6);
+			LOG_INFO("Hooked GiftMenu::ProcessMessage");
+		}
 	}
 }
