@@ -316,7 +316,6 @@ namespace DIAGONAL
 		auto* camera = RE::PlayerCamera::GetSingleton();
 		if (!camera || !camera->IsInFirstPerson()) {
 			std::scoped_lock lock(m_lock);
-			ClearDriftVelocityMod(player);
 			ResetRuntimeState();
 			return;
 		}
@@ -374,7 +373,6 @@ namespace DIAGONAL
 		const bool shouldDrive = ((sprintActive || m_sprintAssistActive) && onGroundState) || jumpDiagonalIntent;
 		m_blockStrafeNow = shouldDrive;
 		if (!shouldDrive) {
-			ClearDriftVelocityMod(player);
 			return;
 		}
 
@@ -389,9 +387,7 @@ namespace DIAGONAL
 		const RE::NiPoint3 rightFlat = ComputeCameraRightFlat();
 		const float targetLateral = targetInput * m_config.lateralSpeed;
 
-		if (std::abs(targetLateral) <= kEpsilon) {
-			ClearDriftVelocityMod(player);
-		} else {
+		if (std::abs(targetLateral) > kEpsilon) {
 			ApplyLateralVelocity(player, a_dt, rightFlat, targetLateral, jumpSafetyLock);
 		}
 	}
@@ -780,19 +776,6 @@ namespace DIAGONAL
 		}
 		const bool movingUphill = uphillDot > kUphillDotThreshold;
 
-		if (!a_jumpSafetyLock) {
-			// Drive controller-intended side movement (preferred path).
-			controller->velocityMod.quad.m128_f32[0] = driftOnSupportPlane.x;
-			controller->velocityMod.quad.m128_f32[1] = driftOnSupportPlane.y;
-			controller->velocityMod.quad.m128_f32[2] = 0.0f;
-			controller->velocityMod.quad.m128_f32[3] = 0.0f;
-		} else {
-			controller->velocityMod.quad.m128_f32[0] = 0.0f;
-			controller->velocityMod.quad.m128_f32[1] = 0.0f;
-			controller->velocityMod.quad.m128_f32[2] = 0.0f;
-			controller->velocityMod.quad.m128_f32[3] = 0.0f;
-		}
-
 		const auto currentState = controller->context.currentState;
 		const bool onGroundState = currentState == RE::hkpCharacterStateType::kOnGround && !a_player->IsInMidair();
 		const bool jumpingState = currentState == RE::hkpCharacterStateType::kJumping;
@@ -833,19 +816,6 @@ namespace DIAGONAL
 			const RE::hkVector4 patchedVelocity{ newHorizontal.x, newHorizontal.y, vz, vw };
 			controller->SetLinearVelocityImpl(patchedVelocity);
 		}
-	}
-
-	void FakeDiagonalSprint::ClearDriftVelocityMod(RE::PlayerCharacter* a_player) const
-	{
-		auto* controller = a_player ? a_player->GetCharController() : nullptr;
-		if (!controller) {
-			return;
-		}
-
-		controller->velocityMod.quad.m128_f32[0] = 0.0f;
-		controller->velocityMod.quad.m128_f32[1] = 0.0f;
-		controller->velocityMod.quad.m128_f32[2] = 0.0f;
-		controller->velocityMod.quad.m128_f32[3] = 0.0f;
 	}
 
 	void FakeDiagonalSprint::LoadFromDisk()

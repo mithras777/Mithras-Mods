@@ -44,7 +44,6 @@ namespace DIAGONAL
 		bool IsGroundedReliable(RE::PlayerCharacter* a_player) const;
 		RE::NiPoint3 ComputeCameraRightFlat() const;
 		void ApplyLateralVelocity(RE::PlayerCharacter* a_player, float a_dt, const RE::NiPoint3& a_rightFlat, float a_targetLateral, bool a_jumpSafetyLock);
-		void ClearDriftVelocityMod(RE::PlayerCharacter* a_player) const;
 		void LoadFromDisk();
 		std::filesystem::path GetConfigPath() const;
 
